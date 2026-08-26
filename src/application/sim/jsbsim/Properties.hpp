@@ -176,6 +176,11 @@ public:
   // Local navigation velocity
   SpeedView NorthVelocity() const;
   SpeedView EastVelocity() const;
+  SpeedView GroundSpeed() const;
+  AngleView Course() const;
+
+  // Environment
+  double GravityMps2() const;
 
   // Body velocity
   LinearVelocityView U() const;

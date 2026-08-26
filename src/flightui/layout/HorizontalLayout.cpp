@@ -1,6 +1,7 @@
 #include "flightui/layout/HorizontalLayout.hpp"
 
 #include "flightui/core/UIElementFactory.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <imgui.h>
 
@@ -30,8 +31,8 @@ HorizontalLayoutBuilder::HorizontalLayoutBuilder(
 HorizontalLayoutBuilder::HorizontalLayoutBuilder(
     HorizontalLayoutBuilder &&other) noexcept = default;
 
-HorizontalLayoutBuilder &
-HorizontalLayoutBuilder::operator=(const HorizontalLayoutBuilder &other) {
+HorizontalLayoutBuilder &HorizontalLayoutBuilder::operator=(
+    const HorizontalLayoutBuilder &other) {
   if (this != &other) {
     m_Impl = other.m_Impl == nullptr ? nullptr
                                      : std::make_unique<Impl>(*other.m_Impl);
@@ -55,8 +56,8 @@ HorizontalLayoutBuilder &HorizontalLayoutBuilder::Spacing(float spacing) {
   return SetSpacing(spacing);
 }
 
-HorizontalLayoutBuilder
-HorizontalLayoutBuilder::operator+(UIElement child) const {
+HorizontalLayoutBuilder HorizontalLayoutBuilder::operator+(
+    UIElement child) const {
   HorizontalLayoutBuilder builder(*this);
   builder.m_Impl->ChildrenList.push_back(std::move(child));
   return builder;
@@ -75,7 +76,8 @@ UIElement HorizontalLayoutBuilder::operator[](ChildrenBuilder children) const {
 UIElement HorizontalLayoutBuilder::operator[](Children children) const {
   HorizontalLayoutBuilder builder(*this);
   builder.m_Impl->ChildrenList.insert(builder.m_Impl->ChildrenList.end(),
-                                      children.begin(), children.end());
+      children.begin(),
+      children.end());
   return builder;
 }
 
@@ -85,7 +87,7 @@ HorizontalLayoutBuilder::operator UIElement() const {
     for (std::size_t index = 0; index < state.ChildrenList.size(); ++index) {
       if (index > 0) {
         if (state.HasSpacing) {
-          ImGui::SameLine(0.0F, state.Spacing);
+          ImGui::SameLine(0.0F, Ui(state.Spacing));
         } else {
           ImGui::SameLine();
         }

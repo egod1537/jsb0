@@ -9,6 +9,7 @@
 #include "application/sim/InitialCondition.hpp"
 #include "application/sim/SimulationConfig.h"
 
+#include <filesystem>
 #include <memory>
 
 namespace JSBSim {
@@ -32,6 +33,7 @@ public:
   bool Initialize(const SimulationConfig &config,
       const InitialCondition &initialCondition);
   bool Tick();
+  bool Step(double dtSec);
 
   // Configuration
   const SimulationConfig &GetConfig() const;
@@ -72,12 +74,17 @@ public:
 private:
   // JSBSim setup
   void ConfigurePaths();
+  void ConfigureOutputPath();
+  void RemoveOutputDirectory();
   bool LoadAircraft(const SimulationConfig &config);
   void ConfigureSimulation(const SimulationConfig &config);
+  void DisableExternalOutput();
+  void PrepareExternalOutputForReset();
   bool InitializeState();
 
   // Configuration
   SimulationConfig config_;
+  std::filesystem::path outputDirectory_;
 
   // JSBSim dependencies
   std::unique_ptr<JSBSim::FGFDMExec> fdm_;

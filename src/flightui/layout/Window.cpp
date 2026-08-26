@@ -2,6 +2,7 @@
 
 #include "flightui/core/UIElementFactory.hpp"
 #include "flightui/core/UIRenderHelpers.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <imgui.h>
 
@@ -47,8 +48,8 @@ WindowBuilder &WindowBuilder::operator=(const WindowBuilder &other) {
   return *this;
 }
 
-WindowBuilder &
-WindowBuilder::operator=(WindowBuilder &&other) noexcept = default;
+WindowBuilder &WindowBuilder::operator=(
+    WindowBuilder &&other) noexcept = default;
 
 WindowBuilder::~WindowBuilder() = default;
 
@@ -147,24 +148,24 @@ UIElement WindowBuilder::operator[](Children children) const {
     }
 
     if (state.HasInitialSize) {
-      ImGui::SetNextWindowSize(ToImVec2(state.InitialSize),
-                               ImGuiCond_FirstUseEver);
+      ImGui::SetNextWindowSize(ToImVec2(UiSize(state.InitialSize)),
+          ImGuiCond_FirstUseEver);
     }
 
     if (state.HasInitialPosition) {
-      ImGui::SetNextWindowPos(ToImVec2(state.InitialPosition),
-                              ImGuiCond_FirstUseEver);
+      ImGui::SetNextWindowPos(ToImVec2(Ui(state.InitialPosition)),
+          ImGuiCond_FirstUseEver);
     }
 
     Internal::DisabledScope disabledScope(!state.Enabled);
     const std::string title =
         state.Id.empty() ? state.Title : state.Title + "###" + state.Id;
-    const bool isVisible =
-        ImGui::Begin(title.c_str(),
-                     state.Open == nullptr ? nullptr : &localOpen, state.Flags);
+    const bool isVisible = ImGui::Begin(title.c_str(),
+        state.Open == nullptr ? nullptr : &localOpen,
+        state.Flags);
 
-    if (!state.Tooltip.empty() &&
-        ImGui::IsWindowHovered(ImGuiHoveredFlags_DelayNormal)) {
+    if (!state.Tooltip.empty()
+        && ImGui::IsWindowHovered(ImGuiHoveredFlags_DelayNormal)) {
       ImGui::SetTooltip("%s", state.Tooltip.c_str());
     }
 

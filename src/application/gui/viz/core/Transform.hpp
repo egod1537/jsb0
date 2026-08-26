@@ -1,6 +1,7 @@
 #pragma once
 
 #include "application/gui/viz/core/Math.hpp"
+#include "common/math/Math.hpp"
 
 namespace viz {
 class Transform {
@@ -19,9 +20,12 @@ public:
 
   Vec3 TransformPoint(Vec3 localPoint) const {
     Vec3 worldPoint = localPoint * scale_;
-    worldPoint = RotateX(worldPoint, rotationDeg_.x * DegToRad);
-    worldPoint = RotateY(worldPoint, rotationDeg_.y * DegToRad);
-    worldPoint = RotateZ(worldPoint, rotationDeg_.z * DegToRad);
+    worldPoint =
+        RotateX(worldPoint, static_cast<float>(math::DegToRad(rotationDeg_.x)));
+    worldPoint =
+        RotateY(worldPoint, static_cast<float>(math::DegToRad(rotationDeg_.y)));
+    worldPoint =
+        RotateZ(worldPoint, static_cast<float>(math::DegToRad(rotationDeg_.z)));
     return worldPoint + position_;
   }
 

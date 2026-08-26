@@ -1,6 +1,7 @@
 #include "flightui/layout/VerticalLayout.hpp"
 
 #include "flightui/core/UIElementFactory.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <imgui.h>
 
@@ -29,8 +30,8 @@ VerticalLayoutBuilder::VerticalLayoutBuilder(const VerticalLayoutBuilder &other)
 VerticalLayoutBuilder::VerticalLayoutBuilder(
     VerticalLayoutBuilder &&other) noexcept = default;
 
-VerticalLayoutBuilder &
-VerticalLayoutBuilder::operator=(const VerticalLayoutBuilder &other) {
+VerticalLayoutBuilder &VerticalLayoutBuilder::operator=(
+    const VerticalLayoutBuilder &other) {
   if (this != &other) {
     m_Impl = other.m_Impl == nullptr ? nullptr
                                      : std::make_unique<Impl>(*other.m_Impl);
@@ -73,7 +74,8 @@ UIElement VerticalLayoutBuilder::operator[](ChildrenBuilder children) const {
 UIElement VerticalLayoutBuilder::operator[](Children children) const {
   VerticalLayoutBuilder builder(*this);
   builder.m_Impl->ChildrenList.insert(builder.m_Impl->ChildrenList.end(),
-                                      children.begin(), children.end());
+      children.begin(),
+      children.end());
   return builder;
 }
 
@@ -86,7 +88,7 @@ VerticalLayoutBuilder::operator UIElement() const {
     if (state.HasSpacing) {
       previousSpacing = ImGui::GetStyle().ItemSpacing;
       ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
-                          ImVec2(previousSpacing.x, state.Spacing));
+          ImVec2(previousSpacing.x, Ui(state.Spacing)));
       pushedSpacing = true;
     }
 

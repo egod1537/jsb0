@@ -1,9 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <string>
 
 namespace sim {
 struct InitialCondition;
+struct SimulationScenario;
 }
 
 namespace application {
@@ -14,6 +17,12 @@ enum class SimulationExecutionState {
   Running,
   Paused,
   Stopped,
+};
+
+struct ScenarioExecutionStatus {
+  std::string name;
+  double elapsedSec = 0.0;
+  double durationSec = 0.0;
 };
 
 inline const char *ToString(SimulationExecutionState state) {
@@ -33,12 +42,19 @@ class SimulationExecutionControl {
 public:
   virtual ~SimulationExecutionControl() = default;
 
+  virtual bool RunScenario(const sim::SimulationScenario &scenario) = 0;
+  virtual std::optional<ScenarioExecutionStatus>
+  GetScenarioExecutionStatus() const = 0;
   virtual SimulationExecutionState GetSimulationExecutionState() const = 0;
+  virtual void StartSimulation() = 0;
+  virtual void StopSimulation() = 0;
   virtual void PauseSimulation() = 0;
   virtual void ResumeSimulation() = 0;
   virtual void RequestSimulationTick() = 0;
   virtual double GetAutomaticSimulationHz() const = 0;
   virtual void SetAutomaticSimulationHz(double hz) = 0;
+  virtual bool IsMaximumSimulationSpeedEnabled() const = 0;
+  virtual void SetMaximumSimulationSpeedEnabled(bool enabled) = 0;
   virtual bool ResetSimulation() = 0;
   virtual bool ResetSimulation(
       const sim::InitialCondition &initialCondition) = 0;

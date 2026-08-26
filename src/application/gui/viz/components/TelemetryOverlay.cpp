@@ -1,6 +1,7 @@
 #include "application/gui/viz/components/TelemetryOverlay.hpp"
 
 #include "application/gui/viz/render/LineCanvas.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <cstdio>
 
@@ -10,11 +11,12 @@ void TelemetryOverlay::Render(RenderContext &context) const {
     return;
   }
 
-  const auto &aircraftState = context.snapshot.aircraftState;
-  const auto &controlInput = context.snapshot.controlInput;
-  const char *viewMode =
-      context.snapshot.viewMode == ViewMode::ThirdPerson ? "Third Person"
-                                                         : "Orbit";
+  const AircraftSnapshot &aircraft = context.snapshot.aircraft;
+  const auto &aircraftState = aircraft.state;
+  const auto &controlInput = aircraft.controlInput;
+  const char *viewMode = context.snapshot.viewMode == ViewMode::ThirdPerson
+                             ? "Third Person"
+                             : "Orbit";
   const ImVec2 min = context.canvas.GetMin();
   ImDrawList &drawList = context.canvas.GetDrawList();
 
@@ -24,17 +26,20 @@ void TelemetryOverlay::Render(RenderContext &context) const {
       "t %.2f  View %s",
       aircraftState.simulationTimeSec,
       viewMode);
-  drawList.AddText(ImVec2(min.x + 10.0F, min.y + 10.0F),
+  drawList.AddText(
+      ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(10.0F)),
       IM_COL32(232, 238, 246, 255),
       line);
 
   std::snprintf(line,
       sizeof(line),
-      "Alt AGL %.0f ft  CAS %.1f kt  TAS %.1f m/s",
+      "Alt AGL %.0f ft  Course %.1f deg  CAS %.1f kt  TAS %.1f m/s",
       aircraftState.altitudeAglFt,
+      aircraftState.courseDeg,
       aircraftState.calibratedAirspeedKts,
       aircraftState.trueAirspeedMps);
-  drawList.AddText(ImVec2(min.x + 10.0F, min.y + 30.0F),
+  drawList.AddText(
+      ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(30.0F)),
       IM_COL32(232, 238, 246, 255),
       line);
 
@@ -44,7 +49,8 @@ void TelemetryOverlay::Render(RenderContext &context) const {
       aircraftState.rollDeg,
       aircraftState.pitchDeg,
       aircraftState.headingDeg);
-  drawList.AddText(ImVec2(min.x + 10.0F, min.y + 50.0F),
+  drawList.AddText(
+      ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(50.0F)),
       IM_COL32(232, 238, 246, 255),
       line);
 
@@ -55,8 +61,9 @@ void TelemetryOverlay::Render(RenderContext &context) const {
       controlInput.elevator,
       controlInput.rudder,
       controlInput.throttle,
-      context.snapshot.pitchTrim);
-  drawList.AddText(ImVec2(min.x + 10.0F, min.y + 70.0F),
+      aircraft.pitchTrim);
+  drawList.AddText(
+      ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(70.0F)),
       IM_COL32(178, 189, 202, 255),
       line);
 }

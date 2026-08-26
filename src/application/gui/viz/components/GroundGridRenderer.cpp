@@ -7,7 +7,6 @@
 #include <cmath>
 
 namespace {
-constexpr float AircraftOriginZ = 0.35F;
 constexpr float MinimumVisualAltitude = 0.35F;
 constexpr float AltitudeSmoothing = 0.18F;
 constexpr float LodCoarsenRatio = 1.0F;
@@ -69,8 +68,9 @@ int FadeAlpha(float offset, float extent, int nearAlpha, int farAlpha) {
 
 namespace viz {
 void GroundGridRenderer::OnTick(const TickContext &context) {
+  const AircraftSnapshot &aircraft = context.snapshot.aircraft;
   const float targetAltitude =
-      SanitizeAltitude(context.snapshot.visualAltitude);
+      SanitizeAltitude(aircraft.visualAltitude);
   if (!hasVisualAltitude_) {
     visualAltitude_ = targetAltitude;
     hasVisualAltitude_ = true;
@@ -84,9 +84,11 @@ void GroundGridRenderer::OnTick(const TickContext &context) {
   const float repeatDistance =
       spacing_ * static_cast<float>(majorLineInterval_);
   GetTransform().SetPosition({
-      WrapOffset(context.snapshot.groundScroll.x, repeatDistance),
-      WrapOffset(context.snapshot.groundScroll.y, repeatDistance),
-      AircraftOriginZ - visualAltitude_,
+      aircraft.position.x
+          + WrapOffset(context.snapshot.groundScroll.x, repeatDistance),
+      aircraft.position.y
+          + WrapOffset(context.snapshot.groundScroll.y, repeatDistance),
+      aircraft.position.z - visualAltitude_,
   });
 }
 

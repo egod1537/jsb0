@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONSOLE_BINARY=""
 CONSOLE_BINARY_CANDIDATES=(
+  "$ROOT_DIR/build/jsb-flight-console.exe"
+  "$ROOT_DIR/build/jsb-flight-console"
   "$ROOT_DIR/build/debug/jsb-flight-console.exe"
   "$ROOT_DIR/build/debug/jsb-flight-console"
 )
@@ -37,7 +39,7 @@ done
 if [[ -z "$CONSOLE_BINARY" ]]; then
   echo "Console binary not found. Checked:" >&2
   printf '  %s\n' "${CONSOLE_BINARY_CANDIDATES[@]}" >&2
-  echo "Build it first with: cmake --build --preset debug" >&2
+  echo "Build it first with: cmake --build build" >&2
   exit 1
 fi
 

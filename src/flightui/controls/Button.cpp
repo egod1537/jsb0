@@ -2,6 +2,7 @@
 
 #include "flightui/core/UIElementFactory.hpp"
 #include "flightui/core/UIRenderHelpers.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <imgui.h>
 
@@ -43,8 +44,8 @@ ButtonBuilder &ButtonBuilder::operator=(const ButtonBuilder &other) {
   return *this;
 }
 
-ButtonBuilder &
-ButtonBuilder::operator=(ButtonBuilder &&other) noexcept = default;
+ButtonBuilder &ButtonBuilder::operator=(
+    ButtonBuilder &&other) noexcept = default;
 
 ButtonBuilder::~ButtonBuilder() = default;
 
@@ -113,8 +114,8 @@ ButtonBuilder::operator UIElement() const {
     Internal::IdScope idScope(state.Id);
     Internal::DisabledScope disabledScope(!state.Enabled);
 
-    if (ImGui::Button(state.Label.c_str(), ToImVec2(state.Size)) &&
-        state.OnClick) {
+    if (ImGui::Button(state.Label.c_str(), ToImVec2(UiSize(state.Size)))
+        && state.OnClick) {
       state.OnClick();
     }
 

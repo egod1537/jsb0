@@ -2,6 +2,7 @@
 
 #include "flightui/core/UIElementFactory.hpp"
 #include "flightui/core/UIRenderHelpers.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <algorithm>
 #include <array>
@@ -154,7 +155,7 @@ KeyValueGridBuilder::operator UIElement() const {
       ImGui::TableSetupColumn(nullptr,
           isLabelColumn ? ImGuiTableColumnFlags_WidthFixed
                         : ImGuiTableColumnFlags_WidthStretch,
-          isLabelColumn ? state.LabelWidth : 1.0F);
+          isLabelColumn ? Ui(state.LabelWidth) : 1.0F);
     }
 
     for (std::size_t index = 0; index < state.Items.size(); ++index) {

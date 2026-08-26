@@ -7,17 +7,30 @@
 #include "application/sim/SimulationConfig.h"
 #include "application/sim/Tick.hpp"
 #include "application/sim/control/FlightControlManager.hpp"
+#include "application/sim/gnc/TrimService.hpp"
+#include "application/telemetry/TelemetryRegistry.hpp"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <typeinfo>
 #include <vector>
 
+namespace gnc {
+class IAutopilot;
+} // namespace gnc
+
 namespace sim {
+struct SimulationResetOptions {
+  bool runTrim = true;
+  gnc::TrimMode trimMode = gnc::TrimMode::Full;
+  std::optional<FDMEnvironmentState> environment;
+};
+
 class Simulation {
 public:
   // Lifetime and stepping
-  Simulation();
+  explicit Simulation(std::unique_ptr<gnc::IAutopilot> autopilot);
   ~Simulation();
 
   Simulation(const Simulation &other) = delete;
@@ -25,21 +38,36 @@ public:
 
   bool Initialize(const SimulationConfig &config);
   bool Tick();
+  bool Step(double dtSec);
   void Shutdown();
+  bool IsInitialized() const { return initialized_; }
 
   // Configuration
   const SimulationConfig &GetConfig() const;
   double GetTickSizeSec() const;
+  double GetTime() const;
 
   // Initial condition
   bool Reset();
   bool Reset(const InitialCondition &initialCondition);
+  bool Reset(const InitialCondition &initialCondition,
+      const SimulationResetOptions &options);
   InitialCondition GetCurrentCondition() const;
   const InitialCondition &GetDefaultInitialCondition() const;
+
+  // Trim
+  gnc::TrimService &GetTrimService();
+  const gnc::TrimService &GetTrimService() const;
 
   // Aircraft
   Aircraft &GetAircraft();
   const Aircraft &GetAircraft() const;
+
+  // Telemetry
+  telemetry::TelemetryRegistry &GetTelemetryRegistry();
+  const telemetry::TelemetryRegistry &GetTelemetryRegistry() const;
+  telemetry::TelemetryRegistry &GetTelemetry();
+  const telemetry::TelemetryRegistry &GetTelemetry() const;
 
   // Components
   template <typename T, typename... Args> T *AddComponent(Args &&...args);
@@ -53,11 +81,15 @@ public:
 
 private:
   // Tick processing
-  bool ProcessTick();
-  sim::Tick MakeTick() const;
+  bool ProcessStep(double dtSec);
+  sim::Tick MakeTick(double dtSec) const;
+  void PublishAutopilotTelemetry(const sim::Tick &tick);
+  void PublishAircraftTelemetry(const sim::Tick &tick);
 
   // Initial condition
-  bool ApplyInitialTrim(const InitialCondition &initialCondition);
+  bool ApplyInitialTrim(const InitialCondition &initialCondition,
+      gnc::TrimMode mode = gnc::TrimMode::Full);
+  void ApplyEnvironment(const FDMEnvironmentState &environment);
 
   // Components
   bool InitializeComponent(Component &component);
@@ -79,11 +111,17 @@ private:
   // Initial condition
   InitialCondition defaultInitialCondition_;
 
+  // Trim state
+  gnc::TrimService trimService_;
+
   // Simulation clock
   std::uint64_t tickIndex_ = 0;
 
   // Aircraft state
   Aircraft aircraft_;
+
+  // Telemetry
+  telemetry::TelemetryRegistry telemetryRegistry_;
 
   // Components
   std::vector<std::unique_ptr<Component>> components_;

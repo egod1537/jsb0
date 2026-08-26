@@ -28,6 +28,8 @@ public:
   FoldOutBuilder &SetVisible(bool visible);
   FoldOutBuilder &SetTooltip(std::string tooltip);
   FoldOutBuilder &SetId(std::string id);
+  FoldOutBuilder &SetHeaderLeft(UIElement element, float width);
+  FoldOutBuilder &SetHeaderRight(UIElement element, float width);
 
   // Fluent configuration
   FoldOutBuilder &Open(bool &isOpen);
@@ -39,6 +41,8 @@ public:
   FoldOutBuilder &Visible(bool visible);
   FoldOutBuilder &Tooltip(std::string tooltip);
   FoldOutBuilder &Id(std::string id);
+  FoldOutBuilder &HeaderLeft(UIElement element, float width);
+  FoldOutBuilder &HeaderRight(UIElement element, float width);
 
   // Child content
   UIElement operator[](UIElement child) const;

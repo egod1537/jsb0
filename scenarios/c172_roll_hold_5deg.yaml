@@ -1,0 +1,28 @@
+name: C172 Roll Hold 5deg
+
+initial_condition:
+  altitude_ft: 3000
+  airspeed_kts: 100
+  roll_deg: 0
+  pitch_deg: 0
+  heading_deg: 0
+
+environment:
+  wind_enabled: false
+
+trim:
+  enabled: true
+  mode: Full
+
+command:
+  start_sec: 5
+  roll_deg: 5
+
+simulation:
+  duration_sec: 30
+
+acceptance:
+  settling_band_deg: 0.5
+  settling_time_limit_sec: 10
+  overshoot_limit_deg: 1.0
+  max_oscillation_cycles: 2

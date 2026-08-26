@@ -1,405 +1,2394 @@
 #include "FlightDataMonitorWindow.hpp"
-#include "flightui/controls/Custom.hpp"
-#include "flightui/controls/ValueLabel.hpp"
-#include "flightui/layout/FoldOut.hpp"
-#include "flightui/layout/HorizontalLayout.hpp"
-#include "flightui/layout/VerticalLayout.hpp"
-#include "flightui/plot/Plot.hpp"
+
 #include "application/gui/GUI.hpp"
-#include "application/sim/Aircraft.hpp"
-#include "application/sim/AircraftState.hpp"
+#include "application/gui/windows/monitor/RollTrackingAcceptance.hpp"
 #include "application/sim/Simulation.hpp"
+#include "application/sim/control/FlightControlManager.hpp"
+#include "application/sim/gnc/autopilot/IAutopilotAnalysis.hpp"
+#include "application/sim/linearizer/DynamicModeAnalyzer.hpp"
+#include "application/sim/linearizer/DynamicModeHistory.hpp"
+#include "application/telemetry/AircraftTelemetry.hpp"
+#include "application/telemetry/AutopilotTelemetry.hpp"
+#include "application/telemetry/TelemetryChannel.hpp"
+#include "application/telemetry/TelemetryRegistry.hpp"
+#include "flightui/core/Theme.hpp"
+#include "flightui/core/UIScale.hpp"
+#include "flightui/plot/DataView.hpp"
+#include "flightui/plot/Plot.hpp"
 
 #include <imgui.h>
+#include <implot.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <initializer_list>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace gui {
 namespace UI = FlightUI;
 
 namespace {
-constexpr float PlotHeight = 245.0f;
-constexpr float ValueSpacing = 24.0f;
-constexpr float PlotGridMinColumnWidth = 430.0f;
-constexpr float PlotGridColumnSpacing = 8.0f;
-constexpr float PlotSelectorButtonWidth = 96.0f;
-constexpr std::size_t VisiblePlotSampleCount = 300;
-constexpr double MetersPerSecondToKnots = 1.9438444924406048;
+constexpr float ExplorerMinWidth = 180.0F;
+constexpr float ExplorerMaxWidth = 600.0F;
+constexpr float ExplorerMinimumPlotWidth = 320.0F;
+constexpr float ExplorerCollapsedWidth = 30.0F;
+constexpr float PaneSplitterThickness = 6.0F;
+constexpr float PlotHeight = 245.0F;
+constexpr float MinimumGridPlotHeight = 105.0F;
+constexpr float WorkspaceSpacing = 8.0F;
+constexpr float PlotCardTopMargin = 3.0F;
+constexpr float PlotTitleFrameSpacing = 5.0F;
+constexpr float PlotCardBottomMargin = 12.0F;
+constexpr float PlotGridCellPadding = 4.0F;
+constexpr float TelemetryTreeIndentSpacing = 12.0F;
+constexpr float TelemetryTreeControlSpacing = 5.0F;
+constexpr float TimelineMinHeight = 200.0F;
+constexpr float TimelineMaxHeight = 300.0F;
+constexpr float TimelineCollapsedHeight = 32.0F;
+constexpr float TimelineOverviewBarHeight = 12.0F;
+constexpr float TimelineDetailBarHeight = 18.0F;
+constexpr float LinearizationTrackHeight = 14.0F;
+constexpr float LinearizationMarkerRadius = 3.5F;
+constexpr float LinearizationMarkerHitRadius = 7.0F;
+constexpr float TimelineHandleWidth = 10.0F;
+constexpr float TimelineHorizontalPadding = 12.0F;
+constexpr float TimelineRowSpacing = 7.0F;
+constexpr double MinimumTimelineWindowSec = 0.1;
+constexpr double TimelineZoomFactor = 1.15;
+constexpr int TargetTimelineTickCount = 6;
+constexpr std::size_t MaximumPresetPlots = 4;
+constexpr std::size_t MaximumDisplayedModeStates = 6;
+constexpr std::size_t MinimumRenderedSamplesPerChannel = 512;
+constexpr std::size_t MaximumRenderedSamplesPerChannel = 8192;
+constexpr double MinimumDisplayedParticipation = 0.05;
 
-struct TimeRange {
-  double Min = 0.0;
-  double Max = 1.0;
+void DrawDashedPlotLine(const std::vector<telemetry::TelemetrySample> &samples,
+    double valueOffset, ImU32 color, float dashLength, float gapLength,
+    float thickness) {
+  if (samples.size() < 2) {
+    return;
+  }
+
+  ImDrawList *drawList = ImPlot::GetPlotDrawList();
+  const float patternLength = dashLength + gapLength;
+  float patternOffset = 0.0F;
+
+  for (std::size_t sampleIndex = 1; sampleIndex < samples.size();
+      ++sampleIndex) {
+    const telemetry::TelemetrySample &previous = samples[sampleIndex - 1];
+    const telemetry::TelemetrySample &current = samples[sampleIndex];
+    if (!std::isfinite(previous.timeSec) || !std::isfinite(previous.value)
+        || !std::isfinite(current.timeSec) || !std::isfinite(current.value)) {
+      continue;
+    }
+
+    const ImVec2 start =
+        ImPlot::PlotToPixels(previous.timeSec, previous.value + valueOffset);
+    const ImVec2 end =
+        ImPlot::PlotToPixels(current.timeSec, current.value + valueOffset);
+    const ImVec2 delta(end.x - start.x, end.y - start.y);
+    const float segmentLength =
+        std::sqrt(delta.x * delta.x + delta.y * delta.y);
+    if (segmentLength <= 0.001F) {
+      continue;
+    }
+
+    float segmentOffset = 0.0F;
+    while (segmentOffset < segmentLength) {
+      const float positionInPattern = std::fmod(patternOffset, patternLength);
+      const bool drawing = positionInPattern < dashLength;
+      const float runLength = drawing ? dashLength - positionInPattern
+                                      : patternLength - positionInPattern;
+      const float nextOffset =
+          std::min(segmentLength, segmentOffset + runLength);
+      if (drawing && nextOffset > segmentOffset) {
+        const float startRatio = segmentOffset / segmentLength;
+        const float endRatio = nextOffset / segmentLength;
+        drawList->AddLine(ImVec2(start.x + delta.x * startRatio,
+                              start.y + delta.y * startRatio),
+            ImVec2(start.x + delta.x * endRatio, start.y + delta.y * endRatio),
+            color,
+            thickness);
+      }
+      const float advanced = nextOffset - segmentOffset;
+      segmentOffset = nextOffset;
+      patternOffset += advanced;
+    }
+  }
+}
+
+template <typename T>
+T ClampToOrderedRange(T value, T firstBound, T secondBound) {
+  const T minimum = std::min(firstBound, secondBound);
+  const T maximum = std::max(firstBound, secondBound);
+  return std::min(std::max(value, minimum), maximum);
+}
+
+enum class DefaultTelemetryPlot {
+  AerodynamicAngles,
+  Attitude,
+  BodyVelocities,
+  BodyRates,
+  Airspeed,
+  AltitudeAgl,
+  BodyAccelerations,
+  AngularAccelerations,
+  RollHoldRollTracking,
+  RollHoldAerodynamicAngles,
+  RollHoldLateralRates,
+  RollHoldAileron,
+  Count,
 };
 
-TimeRange GetFocusedTimeRange(const ds::RingBuffer<double> &timeHistory) {
-  if (timeHistory.empty()) {
-    return {};
+struct TelemetryPlotBinding {
+  std::string_view nodePath;
+  std::string_view plotTitle;
+  std::string_view yAxisLabel;
+};
+
+struct TelemetryDisplayInfo {
+  std::string_view rawName;
+  std::string_view displayName;
+};
+
+constexpr std::array TelemetryDisplayNames{
+    TelemetryDisplayInfo{"alpha", "Alpha"},
+    TelemetryDisplayInfo{"beta", "Beta"},
+    TelemetryDisplayInfo{"roll", "Roll"},
+    TelemetryDisplayInfo{"pitch", "Pitch"},
+    TelemetryDisplayInfo{"heading", "Heading"},
+    TelemetryDisplayInfo{"course", "Course"},
+    TelemetryDisplayInfo{"p", "P"},
+    TelemetryDisplayInfo{"q", "Q"},
+    TelemetryDisplayInfo{"r", "R"},
+    TelemetryDisplayInfo{"p_dot", "p\xCC\x87"},
+    TelemetryDisplayInfo{"q_dot", "q\xCC\x87"},
+    TelemetryDisplayInfo{"r_dot", "r\xCC\x87"},
+    TelemetryDisplayInfo{"commanded_roll", "Commanded Roll"},
+    TelemetryDisplayInfo{"aileron_command", "Roll Hold Aileron Command"},
+    TelemetryDisplayInfo{"aileron", "Aileron"},
+    TelemetryDisplayInfo{"rudder", "Rudder"},
+};
+
+std::string_view GetTelemetryDisplayName(std::string_view rawName) {
+  const auto displayInfo = std::find_if(TelemetryDisplayNames.begin(),
+      TelemetryDisplayNames.end(),
+      [rawName](const TelemetryDisplayInfo &candidate) {
+        return candidate.rawName == rawName;
+      });
+  return displayInfo == TelemetryDisplayNames.end() ? rawName
+                                                    : displayInfo->displayName;
+}
+
+std::string MakeTelemetrySeriesLabel(std::string_view path,
+    std::string_view sourceName) {
+  const std::size_t separator = path.rfind('/');
+  const std::string_view rawName =
+      separator == std::string_view::npos ? path : path.substr(separator + 1);
+  return std::string(sourceName) + " · "
+         + std::string(GetTelemetryDisplayName(rawName)) + "##"
+         + std::string(sourceName) + "/" + std::string(path);
+}
+
+constexpr std::array<TelemetryPlotBinding,
+    static_cast<std::size_t>(DefaultTelemetryPlot::Count)>
+    TelemetryPlotBindings{{
+        {"aircraft/aero", "Aerodynamic Angles", "deg"},
+        {"aircraft/attitude", "Attitude", "deg"},
+        {"aircraft/body_velocity", "Body Velocities", "m/s"},
+        {"aircraft/rates", "Body Rates", "deg/s"},
+        {"aircraft/airdata", "Airspeed", "kt"},
+        {"aircraft/position", "Altitude AGL", "ft"},
+        {"aircraft/body_acceleration", "Body Accelerations", "m/s^2"},
+        {"aircraft/angular_acceleration", "Angular Accelerations", "deg/s^2"},
+        {"preset/roll_hold/roll_tracking", "Roll Tracking", "deg"},
+        {"preset/roll_hold/aerodynamic_angles", "Alpha / Beta", "deg"},
+        {"preset/roll_hold/lateral_rates", "P / R", "deg/s"},
+        {"preset/roll_hold/aileron", "Roll Hold Aileron", "normalized"},
+    }};
+
+constexpr const TelemetryPlotBinding &GetTelemetryPlotBinding(
+    DefaultTelemetryPlot plot) {
+  return TelemetryPlotBindings[static_cast<std::size_t>(plot)];
+}
+
+enum class MonitorPreset {
+  RollHold,
+  Count,
+};
+
+enum class MonitorPresetCategory {
+  Controllers,
+};
+
+struct MonitorPresetCategoryDefinition {
+  MonitorPresetCategory category;
+  std::string_view name;
+};
+
+constexpr std::array MonitorPresetCategoryDefinitions{
+    MonitorPresetCategoryDefinition{MonitorPresetCategory::Controllers,
+        "Controllers"},
+};
+
+struct MonitorPresetDefinition {
+  MonitorPreset preset;
+  MonitorPresetCategory category;
+  std::string_view name;
+  std::array<DefaultTelemetryPlot, MaximumPresetPlots> requiredPlots;
+  std::size_t requiredPlotCount;
+};
+
+constexpr std::array<MonitorPresetDefinition,
+    static_cast<std::size_t>(MonitorPreset::Count)>
+    MonitorPresetDefinitions{{
+        {MonitorPreset::RollHold,
+            MonitorPresetCategory::Controllers,
+            "Roll Hold",
+            {DefaultTelemetryPlot::RollHoldRollTracking,
+                DefaultTelemetryPlot::RollHoldAerodynamicAngles,
+                DefaultTelemetryPlot::RollHoldLateralRates,
+                DefaultTelemetryPlot::RollHoldAileron},
+            4},
+    }};
+
+constexpr std::uint32_t GetPresetBit(MonitorPreset preset) {
+  return std::uint32_t{1} << static_cast<std::size_t>(preset);
+}
+
+enum class PaneSelectionAction {
+  NoChange,
+  SelectAll,
+  SelectNone,
+};
+
+PaneSelectionAction DrawPaneHeader(const char *title) {
+  ImGui::TextUnformatted(title);
+  ImGui::SameLine();
+
+  const ImGuiStyle &style = ImGui::GetStyle();
+  const float allButtonWidth =
+      ImGui::CalcTextSize("All").x + style.FramePadding.x * 2.0F;
+  const float noneButtonWidth =
+      ImGui::CalcTextSize("None").x + style.FramePadding.x * 2.0F;
+  const float buttonRowWidth =
+      allButtonWidth + style.ItemSpacing.x + noneButtonWidth;
+  const float availableWidth = ImGui::GetContentRegionAvail().x;
+  ImGui::SetCursorPosX(
+      ImGui::GetCursorPosX() + std::max(0.0F, availableWidth - buttonRowWidth));
+
+  PaneSelectionAction action = PaneSelectionAction::NoChange;
+  if (ImGui::Button("All", ImVec2(allButtonWidth, 0.0F))) {
+    action = PaneSelectionAction::SelectAll;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("None", ImVec2(noneButtonWidth, 0.0F))) {
+    action = PaneSelectionAction::SelectNone;
+  }
+  return action;
+}
+
+bool DrawVisibilityCheckbox(const char *label, bool &manualVisible,
+    bool presetOnlyVisible) {
+  bool displayedValue = manualVisible;
+  const bool changed = ImGui::Checkbox(label, &displayedValue);
+  if (changed) {
+    manualVisible = displayedValue;
+  } else if (presetOnlyVisible) {
+    const ImVec2 itemMin = ImGui::GetItemRectMin();
+    const ImVec2 itemMax = ImGui::GetItemRectMax();
+    const float inset = (itemMax.y - itemMin.y) * 0.28F;
+    const float centerY = (itemMin.y + itemMax.y) * 0.5F;
+    const float halfThickness = std::max(1.0F, UI::Ui(1.0F));
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        ImVec2(itemMin.x + inset, centerY - halfThickness),
+        ImVec2(itemMax.x - inset, centerY + halfThickness),
+        ImGui::GetColorU32(ImGuiCol_CheckMark),
+        UI::Ui(1.0F));
+  }
+  return changed;
+}
+
+bool ContainsCaseInsensitive(std::string_view text, std::string_view query) {
+  if (query.empty()) {
+    return true;
   }
 
-  const double max = timeHistory[timeHistory.size() - 1];
-  if (timeHistory.size() == 1) {
-    return {max - 1.0, max};
+  const auto equalIgnoringCase = [](char left, char right) {
+    const auto toLower = [](char value) {
+      if (value >= 'A' && value <= 'Z') {
+        return static_cast<char>(value - 'A' + 'a');
+      }
+      return value;
+    };
+    return toLower(left) == toLower(right);
+  };
+  return std::search(text.begin(),
+             text.end(),
+             query.begin(),
+             query.end(),
+             equalIgnoringCase)
+         != text.end();
+}
+
+double CalculateTimelineTickSpacing(double durationSec) {
+  if (!std::isfinite(durationSec) || durationSec <= 0.0) {
+    return 1.0;
   }
 
-  const double min = timeHistory[0];
-  if (min < max) {
-    return {min, max};
+  const double rawSpacing =
+      durationSec / static_cast<double>(TargetTimelineTickCount - 1);
+  const double magnitude = std::pow(10.0, std::floor(std::log10(rawSpacing)));
+  const double normalized = rawSpacing / magnitude;
+  const double niceNormalized = normalized <= 1.0   ? 1.0
+                                : normalized <= 2.0 ? 2.0
+                                : normalized <= 5.0 ? 5.0
+                                                    : 10.0;
+  return niceNormalized * magnitude;
+}
+
+std::vector<double> CalculateTimelineTicks(double minSec, double maxSec) {
+  std::vector<double> ticks;
+  const double spacing = CalculateTimelineTickSpacing(maxSec - minSec);
+  if (!std::isfinite(spacing) || spacing <= 0.0) {
+    return ticks;
   }
 
-  return {max - 1.0, max + 1.0};
+  const double firstTick = std::ceil(minSec / spacing) * spacing;
+  constexpr std::size_t MaximumTickCount = 64;
+  for (double tick = firstTick;
+      tick <= maxSec + spacing * 1.0e-6 && ticks.size() < MaximumTickCount;
+      tick += spacing) {
+    ticks.push_back(std::abs(tick) < spacing * 1.0e-9 ? 0.0 : tick);
+  }
+  return ticks;
+}
+
+void DrawVerticalPaneSplitter(const char *id, float height, float &sizeLogical,
+    float minLogical, float maxLogical) {
+  const float splitterWidth = UI::Ui(PaneSplitterThickness);
+  const ImVec2 splitterMin = ImGui::GetCursorScreenPos();
+  ImGui::InvisibleButton(id,
+      ImVec2(splitterWidth, std::max(height, 1.0F)),
+      ImGuiButtonFlags_MouseButtonLeft);
+  const bool hovered = ImGui::IsItemHovered();
+  const bool active = ImGui::IsItemActive();
+  if (hovered || active) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+  }
+  if (active) {
+    const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+    sizeLogical =
+        ClampToOrderedRange(sizeLogical + ImGui::GetIO().MouseDelta.x / uiScale,
+            minLogical,
+            maxLogical);
+  }
+
+  const ImU32 color = ImGui::GetColorU32(active    ? ImGuiCol_SeparatorActive
+                                         : hovered ? ImGuiCol_SeparatorHovered
+                                                   : ImGuiCol_Separator);
+  const float centerX = splitterMin.x + splitterWidth * 0.5F;
+  ImGui::GetWindowDrawList()->AddLine(ImVec2(centerX, splitterMin.y),
+      ImVec2(centerX, splitterMin.y + height),
+      color,
+      active || hovered ? UI::Ui(2.0F) : UI::Ui(1.0F));
+}
+
+void DrawHorizontalPaneSplitter(const char *id, float width,
+    float &bottomSizeLogical, float minLogical, float maxLogical) {
+  const float splitterHeight = UI::Ui(PaneSplitterThickness);
+  const ImVec2 splitterMin = ImGui::GetCursorScreenPos();
+  ImGui::InvisibleButton(id,
+      ImVec2(std::max(width, 1.0F), splitterHeight),
+      ImGuiButtonFlags_MouseButtonLeft);
+  const bool hovered = ImGui::IsItemHovered();
+  const bool active = ImGui::IsItemActive();
+  if (hovered || active) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+  }
+  if (active) {
+    const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+    bottomSizeLogical = ClampToOrderedRange(
+        bottomSizeLogical - ImGui::GetIO().MouseDelta.y / uiScale,
+        minLogical,
+        maxLogical);
+  }
+
+  const ImU32 color = ImGui::GetColorU32(active    ? ImGuiCol_SeparatorActive
+                                         : hovered ? ImGuiCol_SeparatorHovered
+                                                   : ImGuiCol_Separator);
+  const float centerY = splitterMin.y + splitterHeight * 0.5F;
+  ImGui::GetWindowDrawList()->AddLine(ImVec2(splitterMin.x, centerY),
+      ImVec2(splitterMin.x + width, centerY),
+      color,
+      active || hovered ? UI::Ui(2.0F) : UI::Ui(1.0F));
 }
 } // namespace
 
 FlightDataMonitorWindow::FlightDataMonitorWindow()
-    : gui::Window("Monitor"), timeHistory_(VisiblePlotSampleCount),
-      alphaDegHistory_(VisiblePlotSampleCount),
-      betaDegHistory_(VisiblePlotSampleCount),
-      rollDegHistory_(VisiblePlotSampleCount),
-      pitchDegHistory_(VisiblePlotSampleCount),
-      headingDegHistory_(VisiblePlotSampleCount),
-      uMpsHistory_(VisiblePlotSampleCount),
-      vMpsHistory_(VisiblePlotSampleCount),
-      wMpsHistory_(VisiblePlotSampleCount),
-      pDegPerSecHistory_(VisiblePlotSampleCount),
-      qDegPerSecHistory_(VisiblePlotSampleCount),
-      rDegPerSecHistory_(VisiblePlotSampleCount),
-      calibratedAirspeedKtsHistory_(VisiblePlotSampleCount),
-      trueAirspeedKtsHistory_(VisiblePlotSampleCount),
-      altitudeAglFtHistory_(VisiblePlotSampleCount),
-      uDotMps2History_(VisiblePlotSampleCount),
-      vDotMps2History_(VisiblePlotSampleCount),
-      wDotMps2History_(VisiblePlotSampleCount),
-      pDotDegPerSec2History_(VisiblePlotSampleCount),
-      qDotDegPerSec2History_(VisiblePlotSampleCount),
-      rDotDegPerSec2History_(VisiblePlotSampleCount) {}
+    : gui::Window("Monitor", EditorIconAliases::Monitor) {
+  CreateDefaultPreset();
+}
+
+ImGuiWindowFlags FlightDataMonitorWindow::GetWindowFlags() const {
+  return ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+}
 
 void FlightDataMonitorWindow::OnRender(gui::GUI &gui) {
-  auto &sim = gui.GetSimulation();
-  OnRecordSamples(sim);
-  DrawWindow(sim);
-}
-
-UI::UIElement FlightDataMonitorWindow::DrawAerodynamicAnglesPlot() const {
-  const int offset = timeHistory_.offset();
-  const TimeRange timeRange = GetFocusedTimeRange(timeHistory_);
-
-  return UI::Plot("Aerodynamic Angles")
-      .Height(PlotHeight)
-      .FixedView()
-      .XAxisLimitsAlways(timeRange.Min, timeRange.Max)
-      .FocusedYAxis()
-      .XAxisLabel("Time (s)")
-      .YAxisLabel("deg")
-      .AddLine("alpha",
-          timeHistory_.data_view(),
-          alphaDegHistory_.data_view(),
-          offset)
-      .AddLine("beta",
-          timeHistory_.data_view(),
-          betaDegHistory_.data_view(),
-          offset);
-}
-
-UI::UIElement FlightDataMonitorWindow::DrawAttitudePlot() const {
-  const int offset = timeHistory_.offset();
-  const TimeRange timeRange = GetFocusedTimeRange(timeHistory_);
-
-  return UI::Plot("Attitude")
-      .Height(PlotHeight)
-      .FixedView()
-      .XAxisLimitsAlways(timeRange.Min, timeRange.Max)
-      .FocusedYAxis()
-      .XAxisLabel("Time (s)")
-      .YAxisLabel("deg")
-      .AddLine("roll",
-          timeHistory_.data_view(),
-          rollDegHistory_.data_view(),
-          offset)
-      .AddLine("pitch",
-          timeHistory_.data_view(),
-          pitchDegHistory_.data_view(),
-          offset)
-      .AddLine("heading",
-          timeHistory_.data_view(),
-          headingDegHistory_.data_view(),
-          offset);
-}
-
-UI::UIElement FlightDataMonitorWindow::DrawBodyVelocitiesPlot() const {
-  const int offset = timeHistory_.offset();
-  const TimeRange timeRange = GetFocusedTimeRange(timeHistory_);
-
-  return UI::Plot("Body Velocities")
-      .Height(PlotHeight)
-      .FixedView()
-      .XAxisLimitsAlways(timeRange.Min, timeRange.Max)
-      .FocusedYAxis()
-      .XAxisLabel("Time (s)")
-      .YAxisLabel("m/s")
-      .AddLine("u", timeHistory_.data_view(), uMpsHistory_.data_view(), offset)
-      .AddLine("v", timeHistory_.data_view(), vMpsHistory_.data_view(), offset)
-      .AddLine("w", timeHistory_.data_view(), wMpsHistory_.data_view(), offset);
-}
-
-UI::UIElement FlightDataMonitorWindow::DrawBodyRatesPlot() const {
-  const int offset = timeHistory_.offset();
-  const TimeRange timeRange = GetFocusedTimeRange(timeHistory_);
-
-  return UI::Plot("Body Rates")
-      .Height(PlotHeight)
-      .FixedView()
-      .XAxisLimitsAlways(timeRange.Min, timeRange.Max)
-      .FocusedYAxis()
-      .XAxisLabel("Time (s)")
-      .YAxisLabel("deg/s")
-      .AddLine("p",
-          timeHistory_.data_view(),
-          pDegPerSecHistory_.data_view(),
-          offset)
-      .AddLine("q",
-          timeHistory_.data_view(),
-          qDegPerSecHistory_.data_view(),
-          offset)
-      .AddLine("r",
-          timeHistory_.data_view(),
-          rDegPerSecHistory_.data_view(),
-          offset);
-}
-
-UI::UIElement FlightDataMonitorWindow::DrawAirspeedPlot() const {
-  const int offset = timeHistory_.offset();
-  const TimeRange timeRange = GetFocusedTimeRange(timeHistory_);
-
-  return UI::Plot("Airspeed")
-      .Height(PlotHeight)
-      .FixedView()
-      .XAxisLimitsAlways(timeRange.Min, timeRange.Max)
-      .FocusedYAxis()
-      .XAxisLabel("Time (s)")
-      .YAxisLabel("kt")
-      .AddLine("calibrated",
-          timeHistory_.data_view(),
-          calibratedAirspeedKtsHistory_.data_view(),
-          offset)
-      .AddLine("true",
-          timeHistory_.data_view(),
-          trueAirspeedKtsHistory_.data_view(),
-          offset);
-}
-
-UI::UIElement FlightDataMonitorWindow::DrawAltitudePlot() const {
-  const int offset = timeHistory_.offset();
-  const TimeRange timeRange = GetFocusedTimeRange(timeHistory_);
-
-  return UI::Plot("Altitude AGL")
-      .Height(PlotHeight)
-      .FixedView()
-      .XAxisLimitsAlways(timeRange.Min, timeRange.Max)
-      .FocusedYAxis()
-      .XAxisLabel("Time (s)")
-      .YAxisLabel("ft")
-      .AddLine("altitude",
-          timeHistory_.data_view(),
-          altitudeAglFtHistory_.data_view(),
-          offset);
-}
-
-UI::UIElement FlightDataMonitorWindow::DrawBodyAccelerationsPlot() const {
-  const int offset = timeHistory_.offset();
-  const TimeRange timeRange = GetFocusedTimeRange(timeHistory_);
-
-  return UI::Plot("Body Accelerations")
-      .Height(PlotHeight)
-      .FixedView()
-      .XAxisLimitsAlways(timeRange.Min, timeRange.Max)
-      .FocusedYAxis()
-      .XAxisLabel("Time (s)")
-      .YAxisLabel("m/s^2")
-      .AddLine("u_dot",
-          timeHistory_.data_view(),
-          uDotMps2History_.data_view(),
-          offset)
-      .AddLine("v_dot",
-          timeHistory_.data_view(),
-          vDotMps2History_.data_view(),
-          offset)
-      .AddLine("w_dot",
-          timeHistory_.data_view(),
-          wDotMps2History_.data_view(),
-          offset);
-}
-
-UI::UIElement FlightDataMonitorWindow::DrawAngularAccelerationsPlot() const {
-  const int offset = timeHistory_.offset();
-  const TimeRange timeRange = GetFocusedTimeRange(timeHistory_);
-
-  return UI::Plot("Angular Accelerations")
-      .Height(PlotHeight)
-      .FixedView()
-      .XAxisLimitsAlways(timeRange.Min, timeRange.Max)
-      .FocusedYAxis()
-      .XAxisLabel("Time (s)")
-      .YAxisLabel("deg/s^2")
-      .AddLine("p_dot",
-          timeHistory_.data_view(),
-          pDotDegPerSec2History_.data_view(),
-          offset)
-      .AddLine("q_dot",
-          timeHistory_.data_view(),
-          qDotDegPerSec2History_.data_view(),
-          offset)
-      .AddLine("r_dot",
-          timeHistory_.data_view(),
-          rDotDegPerSec2History_.data_view(),
-          offset);
-}
-
-void FlightDataMonitorWindow::DrawCurrentValues(
-    const sim::AircraftState &state) const {
-  UI::HorizontalLayout()
-      .Spacing(ValueSpacing)[+UI::ValueLabel("Sim Time",
-                                 state.simulationTimeSec,
-                                 "{:.2f}")
-                             + UI::ValueLabel("u (m/s)", state.uMps, "{:.2f}")
-                             + UI::ValueLabel("v (m/s)", state.vMps, "{:.2f}")
-                             + UI::ValueLabel("w (m/s)", state.wMps, "{:.2f}")]
-      .Render();
-}
-
-void FlightDataMonitorWindow::DrawPlotSelector() {
-  ImGui::PushID("MonitorPlotSelector");
-
-  if (ImGui::Button("Plots", ImVec2(PlotSelectorButtonWidth, 0.0f))) {
-    ImGui::OpenPopup("PlotOptions");
+  const TelemetrySources sources = ResolveTelemetrySources(gui);
+  if (sources.primary == nullptr) {
+    ImGui::TextDisabled("Primary telemetry is unavailable.");
+    return;
   }
 
-  if (ImGui::BeginPopup("PlotOptions")) {
-    ImGui::TextDisabled("Visible plots");
+  sim::Simulation &simulation = gui.GetPrimarySimulation();
+  const telemetry::TelemetryRegistry &telemetryRegistry = *sources.primary;
+  SynchronizeTimelineState(telemetryRegistry);
+
+  const auto *flightControlManager =
+      simulation.GetComponent<control::FlightControlManager>();
+  const auto *analysis = flightControlManager != nullptr
+                             ? dynamic_cast<const gnc::IAutopilotAnalysis *>(
+                                   &flightControlManager->GetAutopilot())
+                             : nullptr;
+  const gnc::DynamicModeHistory *dynamicModeHistory =
+      analysis != nullptr ? &analysis->GetDynamicModeHistory() : nullptr;
+
+  if (!ImGui::BeginTabBar("MonitorViews")) {
+    return;
+  }
+
+  if (ImGui::BeginTabItem("Plots")) {
+    DrawWindow(sources, dynamicModeHistory);
+    ImGui::EndTabItem();
+  }
+  if (ImGui::BeginTabItem("Dynamic Modes")) {
+    DrawDynamicModes(simulation);
+    ImGui::EndTabItem();
+  }
+  ImGui::EndTabBar();
+}
+
+FlightDataMonitorWindow::TelemetrySources
+FlightDataMonitorWindow::ResolveTelemetrySources(const gui::GUI &gui) const {
+  TelemetrySources sources{
+      .primary = &gui.GetPrimarySimulation().GetTelemetryRegistry(),
+  };
+  const sim::Simulation *baseline = gui.GetBaselineSimulation();
+  if (baseline != nullptr && baseline->IsInitialized()) {
+    sources.baseline = &baseline->GetTelemetryRegistry();
+  }
+  return sources;
+}
+
+void FlightDataMonitorWindow::DrawDynamicModes(sim::Simulation &simulation) {
+  auto *flightControlManager =
+      simulation.GetComponent<control::FlightControlManager>();
+  if (flightControlManager == nullptr) {
+    ImGui::TextDisabled("Flight control manager is unavailable.");
+    return;
+  }
+
+  auto *analysisCapability = dynamic_cast<gnc::IAutopilotAnalysis *>(
+      &flightControlManager->GetAutopilot());
+  if (analysisCapability == nullptr) {
+    ImGui::TextDisabled(
+        "Dynamic mode analysis is not available for this autopilot.");
+    return;
+  }
+
+  bool automaticUpdates = analysisCapability->IsAutomaticLinearizationEnabled();
+  if (ImGui::Checkbox("Automatic linearization", &automaticUpdates)) {
+    analysisCapability->SetAutomaticLinearizationEnabled(automaticUpdates);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Run asynchronous aircraft linearization every 5 seconds");
+  }
+  ImGui::SameLine();
+
+  const gnc::DynamicModeHistory &history =
+      analysisCapability->GetDynamicModeHistory();
+  const bool updateInProgress = analysisCapability->IsLinearizationInProgress();
+  const std::string_view updateError =
+      analysisCapability->GetLinearizationErrorMessage();
+
+  if (!automaticUpdates) {
+    ImGui::TextDisabled(updateInProgress ? "Off (current worker is finishing)"
+                                         : "Off (latest result retained)");
+  } else if (updateInProgress) {
+    ImGui::TextDisabled("Updating linearization asynchronously...");
+  } else if (!updateError.empty()) {
+    ImGui::TextColored(UI::GetDarkEditorSemanticColor(UI::SemanticColor::Error),
+        "Latest linearization failed: %.*s",
+        static_cast<int>(updateError.size()),
+        updateError.data());
+  }
+
+  if (!selectedTimeInitialized_) {
     ImGui::Separator();
-    ImGui::Checkbox("Aerodynamic Angles", &plotVisibility_.aerodynamicAngles);
-    ImGui::Checkbox("Attitude", &plotVisibility_.attitude);
-    ImGui::Checkbox("Body Velocities", &plotVisibility_.bodyVelocities);
-    ImGui::Checkbox("Body Rates", &plotVisibility_.bodyRates);
-    ImGui::Checkbox("Airspeed", &plotVisibility_.airspeed);
-    ImGui::Checkbox("Altitude AGL", &plotVisibility_.altitude);
-    ImGui::Checkbox("Body Accelerations", &plotVisibility_.bodyAccelerations);
-    ImGui::Checkbox("Angular Accelerations",
-        &plotVisibility_.angularAccelerations);
-    ImGui::EndPopup();
+    ImGui::TextDisabled("Waiting for a Monitor timeline time.");
+    return;
+  }
+  const gnc::DynamicModeSnapshot *snapshot =
+      history.FindLatestAtOrBefore(selectedTimeSec_);
+  if (snapshot == nullptr) {
+    selectedDynamicModeIndex_.reset();
+    selectedDynamicModeSnapshotTimeSec_.reset();
+    ImGui::Separator();
+    ImGui::Text("Timeline time: %.3f s", selectedTimeSec_);
+    ImGui::TextDisabled("No linearization available at this time.");
+    return;
   }
 
+  const gnc::DynamicModeAnalysis *analysis = &snapshot->analysis;
+  if (!analysis->valid) {
+    ImGui::Separator();
+    ImGui::TextColored(UI::GetDarkEditorSemanticColor(UI::SemanticColor::Error),
+        "Dynamic-mode analysis is unavailable: %s",
+        analysis->errorMessage.c_str());
+    return;
+  }
+
+  const double ageSec =
+      std::max(0.0, selectedTimeSec_ - snapshot->simulationTimeSec);
+  ImGui::TextDisabled("Timeline %.3f s  |  Linearization %.3f s  |  Age %.3f s",
+      selectedTimeSec_,
+      snapshot->simulationTimeSec,
+      ageSec);
+  ImGui::TextDisabled("Linearization: Valid  |  Full A: %zu modes",
+      analysis->modes.size());
+  ImGui::Separator();
+
+  if (analysis->modes.empty()) {
+    ImGui::TextDisabled("No dynamic modes were detected.");
+    return;
+  }
+  if (!selectedDynamicModeSnapshotTimeSec_
+      || *selectedDynamicModeSnapshotTimeSec_ != snapshot->simulationTimeSec) {
+    selectedDynamicModeSnapshotTimeSec_ = snapshot->simulationTimeSec;
+    selectedDynamicModeIndex_ = 0;
+  } else if (!selectedDynamicModeIndex_
+             || *selectedDynamicModeIndex_ >= analysis->modes.size()) {
+    selectedDynamicModeIndex_ = 0;
+  }
+
+  constexpr ImGuiTableFlags ModeTableFlags =
+      ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg
+      | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp;
+  if (ImGui::BeginTable("DynamicModeTable", 6, ModeTableFlags)) {
+    ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthStretch, 1.3F);
+    ImGui::TableSetupColumn("Eigenvalue",
+        ImGuiTableColumnFlags_WidthStretch,
+        1.5F);
+    ImGui::TableSetupColumn("wn (rad/s)",
+        ImGuiTableColumnFlags_WidthStretch,
+        0.9F);
+    ImGui::TableSetupColumn("zeta", ImGuiTableColumnFlags_WidthStretch, 0.7F);
+    ImGui::TableSetupColumn("Period", ImGuiTableColumnFlags_WidthStretch, 0.8F);
+    ImGui::TableSetupColumn("Stability",
+        ImGuiTableColumnFlags_WidthStretch,
+        0.9F);
+    ImGui::TableHeadersRow();
+
+    for (std::size_t modeIndex = 0; modeIndex < analysis->modes.size();
+        ++modeIndex) {
+      const gnc::DynamicMode &mode = analysis->modes[modeIndex];
+      ImGui::PushID(static_cast<int>(modeIndex));
+      ImGui::TableNextRow();
+      ImGui::TableSetColumnIndex(0);
+      const std::string_view modeName = gnc::ToString(mode.classification);
+      if (ImGui::Selectable(modeName.data(),
+              selectedDynamicModeIndex_ == modeIndex,
+              ImGuiSelectableFlags_SpanAllColumns)) {
+        selectedDynamicModeIndex_ = modeIndex;
+      }
+
+      ImGui::TableSetColumnIndex(1);
+      if (std::abs(mode.eigenvalue.imag()) > 0.0) {
+        ImGui::Text("%.3f \xC2\xB1 %.3fi",
+            mode.eigenvalue.real(),
+            std::abs(mode.eigenvalue.imag()));
+      } else {
+        ImGui::Text("%.3f", mode.eigenvalue.real());
+      }
+      ImGui::TableSetColumnIndex(2);
+      ImGui::Text("%.3f", mode.naturalFrequencyRadPerSec);
+      ImGui::TableSetColumnIndex(3);
+      if (mode.dampingRatio) {
+        ImGui::Text("%.3f", *mode.dampingRatio);
+      } else {
+        ImGui::TextDisabled("--");
+      }
+      ImGui::TableSetColumnIndex(4);
+      if (mode.periodSec) {
+        ImGui::Text("%.3f s", *mode.periodSec);
+      } else {
+        ImGui::TextDisabled("--");
+      }
+      ImGui::TableSetColumnIndex(5);
+      const UI::SemanticColor stabilityColor =
+          mode.stability == gnc::DynamicModeStability::Stable
+              ? UI::SemanticColor::Success
+          : mode.stability == gnc::DynamicModeStability::Unstable
+              ? UI::SemanticColor::Error
+              : UI::SemanticColor::Warning;
+      const std::string_view stability = gnc::ToString(mode.stability);
+      ImGui::TextColored(UI::GetDarkEditorSemanticColor(stabilityColor),
+          "%.*s",
+          static_cast<int>(stability.size()),
+          stability.data());
+      ImGui::PopID();
+    }
+    ImGui::EndTable();
+  }
+
+  const gnc::DynamicMode &selectedMode =
+      analysis->modes[*selectedDynamicModeIndex_];
+  const std::string_view selectedModeName =
+      gnc::ToString(selectedMode.classification);
+  ImGui::Spacing();
+  ImGui::SeparatorText("Dominant States");
+  ImGui::Text("%.*s",
+      static_cast<int>(selectedModeName.size()),
+      selectedModeName.data());
+
+  constexpr ImGuiTableFlags ParticipationTableFlags =
+      ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerH
+      | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp;
+  if (ImGui::BeginTable("DynamicModeParticipation",
+          2,
+          ParticipationTableFlags)) {
+    ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthStretch, 1.0F);
+    ImGui::TableSetupColumn("Normalized participation",
+        ImGuiTableColumnFlags_WidthStretch,
+        2.0F);
+    ImGui::TableHeadersRow();
+
+    std::size_t displayedCount = 0;
+    for (const gnc::DynamicModeStateParticipation &state :
+        selectedMode.stateParticipations) {
+      if (displayedCount >= MaximumDisplayedModeStates
+          || (displayedCount > 0
+              && state.normalizedMagnitude < MinimumDisplayedParticipation)) {
+        break;
+      }
+      ImGui::TableNextRow();
+      ImGui::TableSetColumnIndex(0);
+      ImGui::TextUnformatted(state.stateName.c_str());
+      ImGui::TableSetColumnIndex(1);
+      ImGui::Text("%.2f", state.normalizedMagnitude);
+      ++displayedCount;
+    }
+    ImGui::EndTable();
+  }
+}
+
+void FlightDataMonitorWindow::CreateDefaultPreset() {
+  plots_.clear();
+  nextPlotId_ = 1;
+
+  const auto addPresetPlot = [this](DefaultTelemetryPlot preset,
+                                 std::initializer_list<std::string_view>
+                                     paths) {
+    const TelemetryPlotBinding &binding = GetTelemetryPlotBinding(preset);
+    MonitorPlot &plot = CreatePlot(std::string(binding.plotTitle),
+        std::string(binding.nodePath),
+        std::string(binding.yAxisLabel));
+    for (const std::string_view path : paths) {
+      SetChannelEnabled(plot, path, true);
+    }
+  };
+
+  addPresetPlot(DefaultTelemetryPlot::AerodynamicAngles,
+      {telemetry::paths::AircraftAeroAlpha,
+          telemetry::paths::AircraftAeroBeta});
+  addPresetPlot(DefaultTelemetryPlot::Attitude,
+      {telemetry::paths::AircraftAttitudeRoll,
+          telemetry::paths::AircraftAttitudePitch,
+          telemetry::paths::AircraftAttitudeHeading});
+  addPresetPlot(DefaultTelemetryPlot::BodyVelocities,
+      {telemetry::paths::AircraftBodyVelocityU,
+          telemetry::paths::AircraftBodyVelocityV,
+          telemetry::paths::AircraftBodyVelocityW});
+  addPresetPlot(DefaultTelemetryPlot::BodyRates,
+      {telemetry::paths::AircraftRateP,
+          telemetry::paths::AircraftRateQ,
+          telemetry::paths::AircraftRateR});
+  addPresetPlot(DefaultTelemetryPlot::Airspeed,
+      {telemetry::paths::AircraftCalibratedAirspeed,
+          telemetry::paths::AircraftTrueAirspeed});
+  addPresetPlot(DefaultTelemetryPlot::AltitudeAgl,
+      {telemetry::paths::AircraftAltitudeAgl});
+  addPresetPlot(DefaultTelemetryPlot::BodyAccelerations,
+      {telemetry::paths::AircraftBodyAccelerationU,
+          telemetry::paths::AircraftBodyAccelerationV,
+          telemetry::paths::AircraftBodyAccelerationW});
+  addPresetPlot(DefaultTelemetryPlot::AngularAccelerations,
+      {telemetry::paths::AircraftAngularAccelerationP,
+          telemetry::paths::AircraftAngularAccelerationQ,
+          telemetry::paths::AircraftAngularAccelerationR});
+
+  const auto addHiddenPresetPlot = [this](DefaultTelemetryPlot preset,
+                                       std::initializer_list<std::string_view>
+                                           paths) {
+    const TelemetryPlotBinding &binding = GetTelemetryPlotBinding(preset);
+    MonitorPlot &plot = CreatePlot(std::string(binding.plotTitle),
+        std::string(binding.nodePath),
+        std::string(binding.yAxisLabel));
+    plot.manualVisible = false;
+    for (const std::string_view path : paths) {
+      SetChannelEnabled(plot, path, true);
+    }
+  };
+
+  addHiddenPresetPlot(DefaultTelemetryPlot::RollHoldRollTracking,
+      {telemetry::paths::AutopilotRollHoldCommandedRoll,
+          telemetry::paths::AircraftAttitudeRoll});
+  addHiddenPresetPlot(DefaultTelemetryPlot::RollHoldAerodynamicAngles,
+      {telemetry::paths::AircraftAeroAlpha,
+          telemetry::paths::AircraftAeroBeta});
+  addHiddenPresetPlot(DefaultTelemetryPlot::RollHoldLateralRates,
+      {telemetry::paths::AircraftRateP, telemetry::paths::AircraftRateR});
+  addHiddenPresetPlot(DefaultTelemetryPlot::RollHoldAileron,
+      {telemetry::paths::AutopilotRollHoldAileronCommand,
+          telemetry::paths::AircraftControlAileron});
+
+  selectedPlotId_ = plots_.empty() ? 0 : plots_.front().id;
+}
+
+FlightDataMonitorWindow::MonitorPlot &FlightDataMonitorWindow::CreatePlot(
+    std::string title, std::string telemetryGroupPath, std::string yAxisLabel) {
+  plots_.push_back(MonitorPlot{nextPlotId_++,
+      std::move(title),
+      {},
+      std::move(telemetryGroupPath),
+      std::move(yAxisLabel),
+      true});
+  selectedPlotId_ = plots_.back().id;
+  return plots_.back();
+}
+
+FlightDataMonitorWindow::MonitorPlot *FlightDataMonitorWindow::FindBoundPlot(
+    std::string_view telemetryNodePath) {
+  const auto plot = std::find_if(plots_.begin(),
+      plots_.end(),
+      [telemetryNodePath](const MonitorPlot &candidate) {
+        return candidate.telemetryGroupPath == telemetryNodePath;
+      });
+  return plot == plots_.end() ? nullptr : &*plot;
+}
+
+void FlightDataMonitorWindow::DeletePlot(std::uint64_t plotId) {
+  const auto plot = std::find_if(plots_.begin(),
+      plots_.end(),
+      [plotId](
+          const MonitorPlot &candidate) { return candidate.id == plotId; });
+  if (plot == plots_.end()) {
+    return;
+  }
+
+  plots_.erase(plot);
+  if (selectedPlotId_ == plotId) {
+    selectedPlotId_ = plots_.empty() ? 0 : plots_.front().id;
+  }
+}
+
+void FlightDataMonitorWindow::SetChannelEnabled(MonitorPlot &plot,
+    std::string_view channelPath, bool enabled) {
+  const auto channel =
+      std::find(plot.channels.begin(), plot.channels.end(), channelPath);
+  if (enabled) {
+    if (channel == plot.channels.end()) {
+      plot.channels.emplace_back(channelPath);
+    }
+    return;
+  }
+
+  if (channel != plot.channels.end()) {
+    plot.channels.erase(channel);
+  }
+}
+
+void FlightDataMonitorWindow::DrawWindow(const TelemetrySources &sources,
+    const gnc::DynamicModeHistory *dynamicModeHistory) {
+  const telemetry::TelemetryRegistry &telemetryRegistry = *sources.primary;
+  if (!selectedChannelPath_.empty()
+      && telemetryRegistry.Find(selectedChannelPath_) == nullptr) {
+    selectedChannelPath_.clear();
+  }
+
+  const ImVec2 workspaceSize = ImGui::GetContentRegionAvail();
+  const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+  if (explorerPaneOpen_) {
+    const float availableWidthLogical = workspaceSize.x / uiScale;
+    const float maximumExplorerWidth = std::max(ExplorerMinWidth,
+        std::min(ExplorerMaxWidth,
+            availableWidthLogical - ExplorerMinimumPlotWidth
+                - PaneSplitterThickness));
+    explorerPaneWidth_ = ClampToOrderedRange(explorerPaneWidth_,
+        ExplorerMinWidth,
+        maximumExplorerWidth);
+
+    if (ImGui::BeginChild("ExplorerPane",
+            ImVec2(UI::Ui(explorerPaneWidth_), 0.0F),
+            false,
+            ImGuiWindowFlags_NoScrollbar
+                | ImGuiWindowFlags_NoScrollWithMouse)) {
+      DrawExplorerHeader();
+      DrawTelemetryBrowser(telemetryRegistry);
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine(0.0F, 0.0F);
+    DrawVerticalPaneSplitter("##ExplorerSplitter",
+        workspaceSize.y,
+        explorerPaneWidth_,
+        ExplorerMinWidth,
+        maximumExplorerWidth);
+  } else {
+    if (ImGui::BeginChild("ExplorerPaneCollapsed",
+            ImVec2(UI::Ui(ExplorerCollapsedWidth), 0.0F),
+            true,
+            ImGuiWindowFlags_NoScrollbar
+                | ImGuiWindowFlags_NoScrollWithMouse)) {
+      if (ImGui::Button(">##OpenExplorer", ImVec2(-1.0F, 0.0F))) {
+        explorerPaneOpen_ = true;
+      }
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Open Telemetry / Presets");
+      }
+    }
+    ImGui::EndChild();
+  }
+
+  ImGui::SameLine(0.0F, 0.0F);
+  if (ImGui::BeginChild("MonitorPlotPane",
+          ImVec2(0.0F, 0.0F),
+          false,
+          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+    DrawPlotWorkspace(sources, dynamicModeHistory);
+  }
+  ImGui::EndChild();
+}
+
+void FlightDataMonitorWindow::DrawExplorerHeader() {
+  if (ImGui::Button("<##CloseExplorer")) {
+    explorerPaneOpen_ = false;
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Collapse Telemetry / Presets");
+  }
+  ImGui::SameLine();
+  ImGui::TextUnformatted("Telemetry / Presets");
+}
+
+void FlightDataMonitorWindow::DrawToolbar(
+    const telemetry::TelemetryRegistry &telemetryRegistry) {
+  if (ImGui::Button("+ Plot")) {
+    CreatePlot("Plot " + std::to_string(nextPlotId_));
+  }
+  ImGui::SameLine();
+
+  bool live = liveView_;
+  if (ImGui::Checkbox("Live##Toolbar", &live)) {
+    SetLiveView(live);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(liveView_
+                          ? "Following the latest telemetry time"
+                          : "Viewport paused; telemetry continues recording");
+  }
+  ImGui::SameLine();
+
+  DrawPlotLayoutSelector();
+
+  ImGui::SameLine();
+  const std::size_t channelCount = telemetryRegistry.GetChannelPaths().size();
+  ImGui::TextDisabled("%zu channels | %.2f - %.2f s%s",
+      channelCount,
+      visibleTimeRange_.minSec,
+      visibleTimeRange_.maxSec,
+      liveView_ ? " | following latest" : " | view paused");
+}
+
+void FlightDataMonitorWindow::DrawPlotLayoutSelector() {
+  ImGui::TextUnformatted("Layout:");
+  const auto drawLayoutButton = [this](const char *label,
+                                    MonitorPlotLayout layout) {
+    ImGui::SameLine();
+    const bool isSelected = plotLayout_ == layout;
+    if (isSelected) {
+      ImGui::PushStyleColor(ImGuiCol_Button,
+          ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+    }
+    if (ImGui::Button(label)) {
+      plotLayout_ = layout;
+    }
+    if (isSelected) {
+      ImGui::PopStyleColor();
+    }
+  };
+
+  drawLayoutButton("List", MonitorPlotLayout::List);
+  drawLayoutButton("2x2", MonitorPlotLayout::Grid2x2);
+  drawLayoutButton("3x3", MonitorPlotLayout::Grid3x3);
+}
+
+void FlightDataMonitorWindow::DrawTelemetryBrowser(
+    const telemetry::TelemetryRegistry &telemetryRegistry) {
+  constexpr ImGuiWindowFlags OuterContainerFlags =
+      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+  if (!ImGui::BeginChild("TelemetryBrowser",
+          ImVec2(0.0F, 0.0F),
+          true,
+          OuterContainerFlags)) {
+    ImGui::EndChild();
+    return;
+  }
+
+  const ImGuiStyle &style = ImGui::GetStyle();
+  const float availableHeight = ImGui::GetContentRegionAvail().y;
+  const float dividerHeight =
+      style.ItemSpacing.y * 2.0F + std::max(style.SeparatorSize, 1.0F);
+  const float paneHeight =
+      std::max(0.0F, (availableHeight - dividerHeight) * 0.5F);
+
+  if (ImGui::BeginChild("TelemetryPane",
+          ImVec2(0.0F, paneHeight),
+          false,
+          ImGuiWindowFlags_HorizontalScrollbar)) {
+    const PaneSelectionAction selectionAction = DrawPaneHeader("Telemetry");
+    if (selectionAction != PaneSelectionAction::NoChange) {
+      const bool visible = selectionAction == PaneSelectionAction::SelectAll;
+      for (MonitorPlot &plot : plots_) {
+        if (!plot.telemetryGroupPath.empty()) {
+          plot.manualVisible = visible;
+        }
+      }
+    }
+    ImGui::SetNextItemWidth(-1.0F);
+    ImGui::InputTextWithHint("##TelemetrySearch",
+        "Search channels...",
+        channelSearch_.data(),
+        channelSearch_.size());
+
+    BrowserNode root;
+    const std::string_view search(channelSearch_.data());
+    for (const std::string_view path : telemetryRegistry.GetChannelPaths()) {
+      if (ContainsCaseInsensitive(path, search)) {
+        AddBrowserPath(root, path);
+      }
+    }
+
+    ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing,
+        UI::Ui(TelemetryTreeIndentSpacing));
+    if (root.children.empty()) {
+      ImGui::TextDisabled(search.empty() ? "Waiting for telemetry channels."
+                                         : "No matching channels.");
+    } else {
+      for (const auto &[name, child] : root.children) {
+        (void)name;
+        DrawBrowserNode(child, !search.empty());
+      }
+    }
+    ImGui::PopStyleVar();
+  }
+  ImGui::EndChild();
+
+  ImGui::Separator();
+  if (ImGui::BeginChild("PresetPane", ImVec2(0.0F, 0.0F), false)) {
+    DrawPresetPanel();
+  }
+  ImGui::EndChild();
+
+  ImGui::EndChild();
+}
+
+void FlightDataMonitorWindow::DrawPresetPanel() {
+  const PaneSelectionAction selectionAction = DrawPaneHeader("Presets");
+  if (selectionAction == PaneSelectionAction::SelectAll) {
+    activePresetMask_ = 0;
+    for (const MonitorPresetDefinition &preset : MonitorPresetDefinitions) {
+      activePresetMask_ |= GetPresetBit(preset.preset);
+    }
+  } else if (selectionAction == PaneSelectionAction::SelectNone) {
+    activePresetMask_ = 0;
+  }
+
+  constexpr ImGuiTreeNodeFlags CategoryFlags =
+      ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow
+      | ImGuiTreeNodeFlags_SpanAvailWidth;
+
+  for (const MonitorPresetCategoryDefinition &category :
+      MonitorPresetCategoryDefinitions) {
+    ImGui::PushID(static_cast<int>(category.category));
+    const bool isOpen = ImGui::TreeNodeEx(category.name.data(), CategoryFlags);
+    if (isOpen) {
+      for (std::size_t presetIndex = 0;
+          presetIndex < MonitorPresetDefinitions.size();
+          ++presetIndex) {
+        const MonitorPresetDefinition &preset =
+            MonitorPresetDefinitions[presetIndex];
+        if (preset.category != category.category) {
+          continue;
+        }
+
+        bool active = IsPresetActive(presetIndex);
+        ImGui::PushID(static_cast<int>(presetIndex));
+        if (ImGui::Checkbox(preset.name.data(), &active)) {
+          SetPresetActive(presetIndex, active);
+        }
+        ImGui::PopID();
+      }
+      ImGui::TreePop();
+    }
+    ImGui::PopID();
+  }
+}
+
+void FlightDataMonitorWindow::AddBrowserPath(BrowserNode &root,
+    std::string_view path) const {
+  BrowserNode *node = &root;
+  std::string currentPath;
+  std::size_t segmentStart = 0;
+  while (segmentStart < path.size()) {
+    const std::size_t separator = path.find('/', segmentStart);
+    const std::size_t segmentEnd =
+        separator == std::string_view::npos ? path.size() : separator;
+    const std::string segment(
+        path.substr(segmentStart, segmentEnd - segmentStart));
+    if (!currentPath.empty()) {
+      currentPath.push_back('/');
+    }
+    currentPath += segment;
+
+    auto [child, inserted] = node->children.try_emplace(segment);
+    if (inserted) {
+      child->second.name = segment;
+      child->second.fullPath = currentPath;
+    }
+    node = &child->second;
+
+    if (separator == std::string_view::npos) {
+      break;
+    }
+    segmentStart = separator + 1;
+  }
+  node->isChannel = true;
+}
+
+void FlightDataMonitorWindow::DrawBrowserNode(const BrowserNode &node,
+    bool expandAll) {
+  if (node.isChannel && node.children.empty()) {
+    DrawBrowserChannel(node.name, node.fullPath);
+    return;
+  }
+
+  ImGui::PushID(node.fullPath.c_str());
+  if (expandAll) {
+    ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+  }
+  constexpr ImGuiTreeNodeFlags FoldoutFlags =
+      ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+  const bool isOpen = ImGui::TreeNodeEx("##Foldout", FoldoutFlags);
+  ImGui::SameLine(0.0F, UI::Ui(TelemetryTreeControlSpacing));
+
+  if (MonitorPlot *plot = FindBoundPlot(node.fullPath)) {
+    bool manualVisible = plot->manualVisible;
+    const bool presetOnlyVisible =
+        !manualVisible && IsPlotVisibleByPreset(*plot);
+    if (DrawVisibilityCheckbox("##PlotVisible",
+            manualVisible,
+            presetOnlyVisible)) {
+      plot->manualVisible = manualVisible;
+    }
+    ImGui::SameLine(0.0F, UI::Ui(TelemetryTreeControlSpacing));
+  }
+  ImGui::TextUnformatted(node.name.c_str());
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s", node.fullPath.c_str());
+  }
+
+  if (isOpen) {
+    ImGui::TreePush("##Children");
+    for (const auto &[name, child] : node.children) {
+      (void)name;
+      DrawBrowserNode(child, expandAll);
+    }
+    ImGui::TreePop();
+  }
   ImGui::PopID();
 }
 
-void FlightDataMonitorWindow::DrawPlotGrid() const {
-  if (!plotVisibility_.aerodynamicAngles && !plotVisibility_.attitude
-      && !plotVisibility_.bodyVelocities && !plotVisibility_.bodyRates
-      && !plotVisibility_.airspeed && !plotVisibility_.altitude
-      && !plotVisibility_.bodyAccelerations
-      && !plotVisibility_.angularAccelerations) {
-    ImGui::TextDisabled("No plots selected.");
+void FlightDataMonitorWindow::DrawBrowserChannel(std::string_view label,
+    std::string_view channelPath) {
+  const std::string channelId(channelPath);
+  ImGui::PushID(channelId.c_str());
+  const bool isSelected = selectedChannelPath_ == channelPath;
+  const std::string channelLabel(GetTelemetryDisplayName(label));
+  if (ImGui::Selectable(channelLabel.c_str(),
+          isSelected,
+          ImGuiSelectableFlags_None,
+          ImVec2(0.0F, 0.0F))) {
+    selectedChannelPath_ = channelPath;
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s", channelId.c_str());
+  }
+  ImGui::PopID();
+}
+
+void FlightDataMonitorWindow::DrawPlotWorkspace(const TelemetrySources &sources,
+    const gnc::DynamicModeHistory *dynamicModeHistory) {
+  const telemetry::TelemetryRegistry &telemetryRegistry = *sources.primary;
+  DrawToolbar(telemetryRegistry);
+  ImGui::Separator();
+
+  const ImVec2 availableSize = ImGui::GetContentRegionAvail();
+  const ImGuiStyle &style = ImGui::GetStyle();
+  float plotRegionHeight = availableSize.y;
+  float timelineRegionHeight = UI::Ui(TimelineCollapsedHeight);
+  float maximumTimelineHeight = TimelineMinHeight;
+  if (timelinePaneOpen_) {
+    const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+    maximumTimelineHeight = std::max(TimelineMinHeight,
+        std::min(TimelineMaxHeight, availableSize.y / uiScale * 0.5F));
+    timelinePaneHeight_ = ClampToOrderedRange(timelinePaneHeight_,
+        TimelineMinHeight,
+        maximumTimelineHeight);
+    timelineRegionHeight = UI::Ui(timelinePaneHeight_);
+    plotRegionHeight = std::max(1.0F,
+        availableSize.y - timelineRegionHeight - UI::Ui(PaneSplitterThickness)
+            - style.ItemSpacing.y * 2.0F);
+  } else {
+    plotRegionHeight = std::max(1.0F,
+        availableSize.y - timelineRegionHeight - style.ItemSpacing.y);
+  }
+
+  if (ImGui::BeginChild("PlotScrollRegion",
+          ImVec2(0.0F, plotRegionHeight),
+          true,
+          ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
+    DrawPlotScrollRegion(sources);
+  }
+  ImGui::EndChild();
+
+  if (timelinePaneOpen_) {
+    DrawHorizontalPaneSplitter("##TimelineSplitter",
+        availableSize.x,
+        timelinePaneHeight_,
+        TimelineMinHeight,
+        maximumTimelineHeight);
+  }
+
+  constexpr ImGuiWindowFlags TimelineRegionFlags =
+      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+  if (ImGui::BeginChild("TimelineRegion",
+          ImVec2(0.0F, 0.0F),
+          true,
+          TimelineRegionFlags)) {
+    DrawTimelineHeader();
+    if (timelinePaneOpen_) {
+      DrawTimeline(dynamicModeHistory);
+    }
+  }
+  ImGui::EndChild();
+}
+
+void FlightDataMonitorWindow::DrawPlotScrollRegion(
+    const TelemetrySources &sources) {
+  if (plotLayout_ == MonitorPlotLayout::List) {
+    DrawPlotList(sources);
+  } else if (plotLayout_ == MonitorPlotLayout::Grid2x2) {
+    DrawPlotGrid(sources, 2);
+  } else {
+    DrawPlotGrid(sources, 3);
+  }
+}
+
+void FlightDataMonitorWindow::DrawTimelineHeader() {
+  const bool wasOpen = timelinePaneOpen_;
+  if (wasOpen) {
+    if (ImGui::Button("v##CollapseTimeline")) {
+      timelinePaneOpen_ = false;
+    }
+  } else if (ImGui::Button("^##OpenTimeline")) {
+    timelinePaneOpen_ = true;
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(wasOpen ? "Collapse Timeline" : "Open Timeline");
+  }
+  ImGui::SameLine();
+  ImGui::TextUnformatted("Timeline");
+  ImGui::SameLine();
+
+  const ImGuiStyle &style = ImGui::GetStyle();
+  const float liveControlWidth = ImGui::GetFrameHeight()
+                                 + style.ItemInnerSpacing.x
+                                 + ImGui::CalcTextSize("Live").x;
+  const float availableWidth = ImGui::GetContentRegionAvail().x;
+  ImGui::SetCursorPosX(ImGui::GetCursorPosX()
+                       + std::max(0.0F, availableWidth - liveControlWidth));
+  bool live = liveView_;
+  if (ImGui::Checkbox("Live##Timeline", &live)) {
+    SetLiveView(live);
+  }
+}
+
+void FlightDataMonitorWindow::DrawTimeline(
+    const gnc::DynamicModeHistory *dynamicModeHistory) {
+  if (selectedTimeInitialized_) {
+    ImGui::Text("View %.2f - %.2f s  |  Plot %.2f - %.2f s  |  Selected %.2f s",
+        timelineViewRange_.minSec,
+        timelineViewRange_.maxSec,
+        visibleTimeRange_.minSec,
+        visibleTimeRange_.maxSec,
+        selectedTimeSec_);
+  } else {
+    ImGui::Text("View %.2f - %.2f s  |  Plot %.2f - %.2f s",
+        timelineViewRange_.minSec,
+        timelineViewRange_.maxSec,
+        visibleTimeRange_.minSec,
+        visibleTimeRange_.maxSec);
+  }
+
+  if (!telemetryHistoryRange_) {
+    ImGui::TextDisabled("Waiting for telemetry history.");
     return;
   }
 
-  const float availableWidth = ImGui::GetContentRegionAvail().x;
-  const int columnCount =
-      availableWidth >= PlotGridMinColumnWidth * 2.0f ? 2 : 1;
+  DrawTimelineOverview(*telemetryHistoryRange_);
+  ImGui::Dummy(ImVec2(0.0F, UI::Ui(TimelineRowSpacing)));
+  DrawTimelineDetail();
+  ImGui::Dummy(ImVec2(0.0F, UI::Ui(TimelineRowSpacing)));
+  DrawLinearizationTrack(dynamicModeHistory);
+}
+
+void FlightDataMonitorWindow::DrawTimelineOverview(
+    const TimelineRange &historyRange) {
+  ImGui::TextDisabled("Overview  History %.2f - %.2f s",
+      historyRange.minSec,
+      historyRange.maxSec);
+
+  const TimelineRange trackRange = GetEffectiveHistoryRange(historyRange);
+
+  const float barWidth = std::max(UI::Ui(80.0F),
+      ImGui::GetContentRegionAvail().x
+          - UI::Ui(TimelineHorizontalPadding) * 2.0F);
+  const float barHeight = UI::Ui(TimelineOverviewBarHeight);
+  const ImVec2 cursorPosition = ImGui::GetCursorScreenPos();
+  const ImVec2 barMin(cursorPosition.x + UI::Ui(TimelineHorizontalPadding),
+      cursorPosition.y);
+  const ImVec2 barMax(barMin.x + barWidth, barMin.y + barHeight);
+  const double historyDuration = trackRange.maxSec - trackRange.minSec;
+
+  const auto timeToX = [&](double timeSec) {
+    const double ratio =
+        ClampToOrderedRange((timeSec - trackRange.minSec) / historyDuration,
+            0.0,
+            1.0);
+    return barMin.x + static_cast<float>(ratio) * barWidth;
+  };
+  const auto xToTime = [&](float x) {
+    const double ratio =
+        ClampToOrderedRange(static_cast<double>((x - barMin.x) / barWidth),
+            0.0,
+            1.0);
+    return trackRange.minSec + ratio * historyDuration;
+  };
+
+  const ImGuiIO &io = ImGui::GetIO();
+  const bool barHovered = io.MousePos.x >= barMin.x && io.MousePos.x <= barMax.x
+                          && io.MousePos.y >= barMin.y
+                          && io.MousePos.y <= barMax.y;
+  if (barHovered && io.KeyCtrl && io.MouseWheel != 0.0F
+      && timelineDragMode_ == TimelineDragMode::None) {
+    ZoomTimelineView(io.MouseWheel, xToTime(io.MousePos.x));
+  }
+
+  ImDrawList *drawList = ImGui::GetWindowDrawList();
+  drawList->AddRectFilled(barMin,
+      barMax,
+      ImGui::GetColorU32(ImGuiCol_FrameBg),
+      UI::Ui(3.0F));
+
+  const float selectionMinX = timeToX(timelineViewRange_.minSec);
+  const float selectionMaxX = timeToX(timelineViewRange_.maxSec);
+  drawList->AddRectFilled(ImVec2(selectionMinX, barMin.y),
+      ImVec2(selectionMaxX, barMax.y),
+      ImGui::GetColorU32(ImGuiCol_FrameBgHovered),
+      UI::Ui(3.0F));
+
+  const float handleWidth = UI::Ui(TimelineHandleWidth);
+  const ImU32 viewHandleColor = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+  drawList->AddLine(ImVec2(selectionMinX, barMin.y - UI::Ui(2.0F)),
+      ImVec2(selectionMinX, barMax.y + UI::Ui(2.0F)),
+      viewHandleColor,
+      UI::Ui(1.5F));
+  drawList->AddLine(ImVec2(selectionMaxX, barMin.y - UI::Ui(2.0F)),
+      ImVec2(selectionMaxX, barMax.y + UI::Ui(2.0F)),
+      viewHandleColor,
+      UI::Ui(1.5F));
+
+  ImGui::SetCursorScreenPos(ImVec2(barMin.x - handleWidth * 0.5F, barMin.y));
+  ImGui::InvisibleButton("##TimelineOverviewInteraction",
+      ImVec2(barWidth + handleWidth, barHeight),
+      ImGuiButtonFlags_MouseButtonLeft);
+  const bool isHovered = ImGui::IsItemHovered();
+  const bool isActive = ImGui::IsItemActive();
+  const float mouseX = ImGui::GetIO().MousePos.x;
+  const float handleHitRadius = handleWidth;
+  const float startHandleDistance = std::abs(mouseX - selectionMinX);
+  const float endHandleDistance = std::abs(mouseX - selectionMaxX);
+  const bool isHandleHovered =
+      std::min(startHandleDistance, endHandleDistance) <= handleHitRadius;
+  const bool isSelectionHovered =
+      mouseX > selectionMinX && mouseX < selectionMaxX;
+  if (isHovered || isActive) {
+    ImGui::SetMouseCursor(isHandleHovered      ? ImGuiMouseCursor_ResizeEW
+                          : isSelectionHovered ? ImGuiMouseCursor_ResizeAll
+                                               : ImGuiMouseCursor_Arrow);
+  }
+
+  if (ImGui::IsItemActivated()) {
+    if (isHandleHovered) {
+      timelineDragMode_ = startHandleDistance <= endHandleDistance
+                              ? TimelineDragMode::Start
+                              : TimelineDragMode::End;
+    } else if (isSelectionHovered) {
+      timelineDragMode_ = TimelineDragMode::Window;
+    } else {
+      timelineDragMode_ = TimelineDragMode::Window;
+    }
+    timelineDragTarget_ = TimelineDragTarget::TimelineView;
+    timelineDragAnchorSec_ = xToTime(mouseX);
+    timelineDragInitialRange_ = timelineViewRange_;
+    timelineDragAxisRange_ = trackRange;
+    SetLiveView(false);
+  }
+
+  if (isActive && timelineDragTarget_ == TimelineDragTarget::TimelineView) {
+    const double mouseRatio = ClampToOrderedRange(
+        static_cast<double>((ImGui::GetIO().MousePos.x - barMin.x) / barWidth),
+        0.0,
+        1.0);
+    const double mouseTime =
+        timelineDragAxisRange_.minSec
+        + mouseRatio
+              * (timelineDragAxisRange_.maxSec - timelineDragAxisRange_.minSec);
+    const double minimumViewDuration = MinimumTimelineWindowSec;
+    if (timelineDragMode_ == TimelineDragMode::Start) {
+      const double maximumStartSec = std::max(trackRange.minSec,
+          timelineViewRange_.maxSec - minimumViewDuration);
+      timelineViewRange_.minSec =
+          ClampToOrderedRange(mouseTime, trackRange.minSec, maximumStartSec);
+    } else if (timelineDragMode_ == TimelineDragMode::End) {
+      const double minimumEndSec = std::min(trackRange.maxSec,
+          timelineViewRange_.minSec + minimumViewDuration);
+      timelineViewRange_.maxSec =
+          ClampToOrderedRange(mouseTime, minimumEndSec, trackRange.maxSec);
+    } else {
+      const double duration = ClampToOrderedRange(
+          timelineDragInitialRange_.maxSec - timelineDragInitialRange_.minSec,
+          MinimumTimelineWindowSec,
+          historyDuration);
+      const double desiredMin =
+          timelineDragInitialRange_.minSec + mouseTime - timelineDragAnchorSec_;
+      const double maximumMinSec =
+          std::max(trackRange.minSec, trackRange.maxSec - duration);
+      const double minSec =
+          ClampToOrderedRange(desiredMin, trackRange.minSec, maximumMinSec);
+      timelineViewRange_ = {minSec, minSec + duration};
+    }
+    ClampTimelineViewRangeToHistory();
+    timelineViewWindowSec_ =
+        timelineViewRange_.maxSec - timelineViewRange_.minSec;
+  }
+  if (ImGui::IsItemDeactivated()) {
+    timelineDragMode_ = TimelineDragMode::None;
+    timelineDragTarget_ = TimelineDragTarget::None;
+  }
+}
+
+void FlightDataMonitorWindow::DrawTimelineDetail() {
+  ImGui::TextDisabled("Detail  View %.2f - %.2f s",
+      timelineViewRange_.minSec,
+      timelineViewRange_.maxSec);
+
+  const TimelineRange detailRange = timelineViewRange_;
+  const double viewDuration = detailRange.maxSec - detailRange.minSec;
+  if (!std::isfinite(viewDuration) || viewDuration <= 0.0) {
+    return;
+  }
+
+  const float barWidth = std::max(UI::Ui(80.0F),
+      ImGui::GetContentRegionAvail().x
+          - UI::Ui(TimelineHorizontalPadding) * 2.0F);
+  const float barHeight = UI::Ui(TimelineDetailBarHeight);
+  const ImVec2 cursorPosition = ImGui::GetCursorScreenPos();
+  const ImVec2 barMin(cursorPosition.x + UI::Ui(TimelineHorizontalPadding),
+      cursorPosition.y + ImGui::GetTextLineHeight());
+  const ImVec2 barMax(barMin.x + barWidth, barMin.y + barHeight);
+
+  const auto timeToX = [&](double timeSec) {
+    const double ratio =
+        ClampToOrderedRange((timeSec - detailRange.minSec) / viewDuration,
+            0.0,
+            1.0);
+    return barMin.x + static_cast<float>(ratio) * barWidth;
+  };
+  const auto xToTime = [&](float x) {
+    const double ratio =
+        ClampToOrderedRange(static_cast<double>((x - barMin.x) / barWidth),
+            0.0,
+            1.0);
+    return detailRange.minSec + ratio * viewDuration;
+  };
+
+  const ImGuiIO &io = ImGui::GetIO();
+  const bool barHovered = io.MousePos.x >= barMin.x && io.MousePos.x <= barMax.x
+                          && io.MousePos.y >= barMin.y
+                          && io.MousePos.y <= barMax.y;
+  if (barHovered && io.KeyCtrl && io.MouseWheel != 0.0F
+      && timelineDragMode_ == TimelineDragMode::None) {
+    ZoomTimelineView(io.MouseWheel, xToTime(io.MousePos.x));
+  }
+
+  ImDrawList *drawList = ImGui::GetWindowDrawList();
+  drawList->AddRectFilled(barMin,
+      barMax,
+      ImGui::GetColorU32(ImGuiCol_FrameBg),
+      UI::Ui(3.0F));
+  const std::vector<double> ticks =
+      CalculateTimelineTicks(detailRange.minSec, detailRange.maxSec);
+  for (double tick : ticks) {
+    const float tickX = timeToX(tick);
+    drawList->AddLine(ImVec2(tickX, barMin.y),
+        ImVec2(tickX, barMax.y),
+        ImGui::GetColorU32(ImGuiCol_Border));
+    char label[32]{};
+    std::snprintf(label, sizeof(label), "%.3g s", tick);
+    const ImVec2 labelSize = ImGui::CalcTextSize(label);
+    drawList->AddText(ImVec2(tickX - labelSize.x * 0.5F,
+                          barMin.y - labelSize.y - UI::Ui(2.0F)),
+        ImGui::GetColorU32(ImGuiCol_TextDisabled),
+        label);
+  }
+
+  const float selectionMinX = timeToX(visibleTimeRange_.minSec);
+  const float selectionMaxX = timeToX(visibleTimeRange_.maxSec);
+  drawList->AddRectFilled(ImVec2(selectionMinX, barMin.y),
+      ImVec2(selectionMaxX, barMax.y),
+      ImGui::GetColorU32(ImGuiCol_SliderGrabActive),
+      UI::Ui(3.0F));
+
+  const float handleWidth = UI::Ui(TimelineHandleWidth);
+  drawList->AddRectFilled(ImVec2(selectionMinX - handleWidth * 0.5F, barMin.y),
+      ImVec2(selectionMinX + handleWidth * 0.5F, barMax.y),
+      ImGui::GetColorU32(ImGuiCol_SliderGrab),
+      UI::Ui(2.0F));
+  drawList->AddRectFilled(ImVec2(selectionMaxX - handleWidth * 0.5F, barMin.y),
+      ImVec2(selectionMaxX + handleWidth * 0.5F, barMax.y),
+      ImGui::GetColorU32(ImGuiCol_SliderGrab),
+      UI::Ui(2.0F));
+
+  if (selectedTimeInitialized_ && selectedTimeSec_ >= detailRange.minSec
+      && selectedTimeSec_ <= detailRange.maxSec) {
+    const float cursorX = timeToX(selectedTimeSec_);
+    drawList->AddLine(ImVec2(cursorX, barMin.y - UI::Ui(3.0F)),
+        ImVec2(cursorX, barMax.y + UI::Ui(3.0F)),
+        ImGui::GetColorU32(ImVec4(0.95F, 0.75F, 0.25F, 0.9F)),
+        UI::Ui(1.5F));
+  }
+
+  ImGui::SetCursorScreenPos(ImVec2(barMin.x - handleWidth * 0.5F, barMin.y));
+  ImGui::InvisibleButton("##TimelineDetailInteraction",
+      ImVec2(barWidth + handleWidth, barHeight),
+      ImGuiButtonFlags_MouseButtonLeft);
+  const bool isHovered = ImGui::IsItemHovered();
+  const bool isActive = ImGui::IsItemActive();
+  const float mouseX = ImGui::GetIO().MousePos.x;
+  const float handleHitRadius = handleWidth;
+  const float startHandleDistance = std::abs(mouseX - selectionMinX);
+  const float endHandleDistance = std::abs(mouseX - selectionMaxX);
+  const bool isHandleHovered =
+      std::min(startHandleDistance, endHandleDistance) <= handleHitRadius;
+  const bool isSelectionHovered =
+      mouseX > selectionMinX && mouseX < selectionMaxX;
+  if (isHovered || isActive) {
+    ImGui::SetMouseCursor(isHandleHovered      ? ImGuiMouseCursor_ResizeEW
+                          : isSelectionHovered ? ImGuiMouseCursor_ResizeAll
+                                               : ImGuiMouseCursor_Hand);
+  }
+
+  if (ImGui::IsItemActivated()) {
+    if (isHandleHovered) {
+      timelineDragMode_ = startHandleDistance <= endHandleDistance
+                              ? TimelineDragMode::Start
+                              : TimelineDragMode::End;
+      timelineDragTarget_ = TimelineDragTarget::PlotVisible;
+      timelineDragInitialRange_ = visibleTimeRange_;
+    } else if (isSelectionHovered) {
+      timelineDragMode_ = TimelineDragMode::Window;
+      timelineDragTarget_ = TimelineDragTarget::PlotVisible;
+      timelineDragInitialRange_ = visibleTimeRange_;
+    } else {
+      timelineDragMode_ = TimelineDragMode::Window;
+      timelineDragTarget_ = TimelineDragTarget::TimelineView;
+      timelineDragInitialRange_ = timelineViewRange_;
+    }
+    timelineDragAnchorSec_ = xToTime(mouseX);
+    timelineDragAxisRange_ = timelineViewRange_;
+    SetLiveView(false);
+  }
+
+  if (isActive && timelineDragTarget_ != TimelineDragTarget::None) {
+    const double mouseRatio = ClampToOrderedRange(
+        static_cast<double>((ImGui::GetIO().MousePos.x - barMin.x) / barWidth),
+        0.0,
+        1.0);
+    const double mouseTime =
+        timelineDragAxisRange_.minSec
+        + mouseRatio
+              * (timelineDragAxisRange_.maxSec - timelineDragAxisRange_.minSec);
+    if (timelineDragTarget_ == TimelineDragTarget::TimelineView) {
+      const double duration =
+          timelineDragInitialRange_.maxSec - timelineDragInitialRange_.minSec;
+      const double desiredMin =
+          timelineDragInitialRange_.minSec + mouseTime - timelineDragAnchorSec_;
+      timelineViewRange_ = {desiredMin, desiredMin + duration};
+      ClampTimelineViewRangeToHistory();
+      timelineViewWindowSec_ =
+          timelineViewRange_.maxSec - timelineViewRange_.minSec;
+    } else if (timelineDragMode_ == TimelineDragMode::Start) {
+      visibleTimeRange_.minSec = std::min(mouseTime,
+          visibleTimeRange_.maxSec - MinimumTimelineWindowSec);
+      ClampVisibleTimeRangeToHistory();
+      EnsureVisibleTimeRangeInTimelineView();
+      liveWindowSec_ = visibleTimeRange_.maxSec - visibleTimeRange_.minSec;
+      timelineViewWindowSec_ =
+          timelineViewRange_.maxSec - timelineViewRange_.minSec;
+      UpdateSharedXAxisTicks();
+    } else if (timelineDragMode_ == TimelineDragMode::End) {
+      visibleTimeRange_.maxSec = std::max(mouseTime,
+          visibleTimeRange_.minSec + MinimumTimelineWindowSec);
+      ClampVisibleTimeRangeToHistory();
+      EnsureVisibleTimeRangeInTimelineView();
+      liveWindowSec_ = visibleTimeRange_.maxSec - visibleTimeRange_.minSec;
+      timelineViewWindowSec_ =
+          timelineViewRange_.maxSec - timelineViewRange_.minSec;
+      UpdateSharedXAxisTicks();
+    } else {
+      const double duration =
+          timelineDragInitialRange_.maxSec - timelineDragInitialRange_.minSec;
+      const double desiredMin =
+          timelineDragInitialRange_.minSec + mouseTime - timelineDragAnchorSec_;
+      visibleTimeRange_ = {desiredMin, desiredMin + duration};
+      ClampVisibleTimeRangeToHistory();
+      EnsureVisibleTimeRangeInTimelineView();
+      liveWindowSec_ = visibleTimeRange_.maxSec - visibleTimeRange_.minSec;
+      timelineViewWindowSec_ =
+          timelineViewRange_.maxSec - timelineViewRange_.minSec;
+      UpdateSharedXAxisTicks();
+    }
+  }
+  if (ImGui::IsItemDeactivated()) {
+    timelineDragMode_ = TimelineDragMode::None;
+    timelineDragTarget_ = TimelineDragTarget::None;
+  }
+}
+
+void FlightDataMonitorWindow::DrawLinearizationTrack(
+    const gnc::DynamicModeHistory *dynamicModeHistory) {
+  ImGui::TextDisabled("Linearization");
+
+  const TimelineRange trackRange = timelineViewRange_;
+  const double trackDuration = trackRange.maxSec - trackRange.minSec;
+  if (!std::isfinite(trackDuration) || trackDuration <= 0.0) {
+    return;
+  }
+
+  const float trackWidth = std::max(UI::Ui(80.0F),
+      ImGui::GetContentRegionAvail().x
+          - UI::Ui(TimelineHorizontalPadding) * 2.0F);
+  const float trackHeight = UI::Ui(LinearizationTrackHeight);
+  const ImVec2 cursorPosition = ImGui::GetCursorScreenPos();
+  const ImVec2 trackMin(cursorPosition.x + UI::Ui(TimelineHorizontalPadding),
+      cursorPosition.y);
+  const ImVec2 trackMax(trackMin.x + trackWidth, trackMin.y + trackHeight);
+  const auto timeToX = [&](double timeSec) {
+    const double ratio =
+        ClampToOrderedRange((timeSec - trackRange.minSec) / trackDuration,
+            0.0,
+            1.0);
+    return trackMin.x + static_cast<float>(ratio) * trackWidth;
+  };
+  const auto xToTime = [&](float x) {
+    const double ratio =
+        ClampToOrderedRange(static_cast<double>((x - trackMin.x) / trackWidth),
+            0.0,
+            1.0);
+    return trackRange.minSec + ratio * trackDuration;
+  };
+
+  ImDrawList *drawList = ImGui::GetWindowDrawList();
+  drawList->AddRectFilled(trackMin,
+      trackMax,
+      ImGui::GetColorU32(ImGuiCol_FrameBg),
+      UI::Ui(3.0F));
+
+  const std::vector<gnc::DynamicModeSnapshot> *snapshots =
+      dynamicModeHistory != nullptr ? &dynamicModeHistory->GetSnapshots()
+                                    : nullptr;
+  if (snapshots != nullptr) {
+    const ImU32 markerColor = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
+    for (const gnc::DynamicModeSnapshot &snapshot : *snapshots) {
+      if (snapshot.simulationTimeSec < trackRange.minSec
+          || snapshot.simulationTimeSec > trackRange.maxSec) {
+        continue;
+      }
+      const float markerX = timeToX(snapshot.simulationTimeSec);
+      const ImVec2 markerCenter(markerX, (trackMin.y + trackMax.y) * 0.5F);
+      drawList->AddLine(ImVec2(markerX, trackMin.y + UI::Ui(2.0F)),
+          ImVec2(markerX, trackMax.y - UI::Ui(2.0F)),
+          markerColor,
+          UI::Ui(1.0F));
+      drawList->AddCircleFilled(markerCenter,
+          UI::Ui(LinearizationMarkerRadius),
+          markerColor);
+    }
+  }
+
+  if (selectedTimeInitialized_ && selectedTimeSec_ >= trackRange.minSec
+      && selectedTimeSec_ <= trackRange.maxSec) {
+    const float selectedX = timeToX(selectedTimeSec_);
+    drawList->AddLine(ImVec2(selectedX, trackMin.y - UI::Ui(2.0F)),
+        ImVec2(selectedX, trackMax.y + UI::Ui(2.0F)),
+        ImGui::GetColorU32(ImVec4(0.95F, 0.75F, 0.25F, 0.9F)),
+        UI::Ui(1.5F));
+  }
+
+  ImGui::SetCursorScreenPos(trackMin);
+  ImGui::InvisibleButton("##LinearizationTrackInteraction",
+      ImVec2(trackWidth, trackHeight),
+      ImGuiButtonFlags_MouseButtonLeft);
+  const bool isHovered = ImGui::IsItemHovered();
+  const bool isActive = ImGui::IsItemActive();
+
+  const gnc::DynamicModeSnapshot *hoveredSnapshot = nullptr;
+  float nearestDistance = UI::Ui(LinearizationMarkerHitRadius) + 1.0F;
+  if ((isHovered || isActive) && snapshots != nullptr) {
+    const float mouseX = ImGui::GetIO().MousePos.x;
+    for (const gnc::DynamicModeSnapshot &snapshot : *snapshots) {
+      if (snapshot.simulationTimeSec < trackRange.minSec
+          || snapshot.simulationTimeSec > trackRange.maxSec) {
+        continue;
+      }
+      const float distance =
+          std::abs(mouseX - timeToX(snapshot.simulationTimeSec));
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        hoveredSnapshot = &snapshot;
+      }
+    }
+  }
+
+  if (isHovered) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (hoveredSnapshot != nullptr) {
+      ImGui::BeginTooltip();
+      ImGui::TextUnformatted("Linearization");
+      ImGui::Text("Time: %.3f s", hoveredSnapshot->simulationTimeSec);
+      ImGui::EndTooltip();
+    }
+  }
+
+  if (ImGui::IsItemActivated()) {
+    if (hoveredSnapshot != nullptr) {
+      linearizationTrackSnapTimeSec_ = hoveredSnapshot->simulationTimeSec;
+      SelectTimelineTime(*linearizationTrackSnapTimeSec_, true);
+    } else {
+      linearizationTrackSnapTimeSec_.reset();
+      SelectTimelineTime(xToTime(ImGui::GetIO().MousePos.x), true);
+    }
+  } else if (isActive) {
+    const float dragDistance =
+        std::abs(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x);
+    if (dragDistance > ImGui::GetIO().MouseDragThreshold) {
+      linearizationTrackSnapTimeSec_.reset();
+    }
+    if (!linearizationTrackSnapTimeSec_) {
+      SelectTimelineTime(xToTime(ImGui::GetIO().MousePos.x), true);
+    }
+  }
+  if (ImGui::IsItemDeactivated()) {
+    linearizationTrackSnapTimeSec_.reset();
+  }
+}
+
+void FlightDataMonitorWindow::DrawPlotList(const TelemetrySources &sources) {
+  DrawPlotTable(sources, 1, PlotHeight, "MonitorPlotList");
+}
+
+void FlightDataMonitorWindow::DrawPlotGrid(const TelemetrySources &sources,
+    int dimension) {
+  const char *tableId =
+      dimension == 2 ? "MonitorPlotGrid2x2" : "MonitorPlotGrid3x3";
+  DrawPlotTable(sources,
+      dimension,
+      CalculateGridPlotHeight(dimension),
+      tableId);
+}
+
+void FlightDataMonitorWindow::DrawPlotTable(const TelemetrySources &sources,
+    int columnCount, float plotHeight, const char *tableId) {
+  const std::size_t visiblePlotCount =
+      static_cast<std::size_t>(std::count_if(plots_.begin(),
+          plots_.end(),
+          [this](const MonitorPlot &plot) { return IsPlotVisible(plot); }));
+  if (visiblePlotCount == 0) {
+    ImGui::TextDisabled(plots_.empty()
+                            ? "No plots. Use + Plot or add a telemetry channel."
+                            : "No visible plots. Enable one in the Explorer.");
+    return;
+  }
+
   constexpr ImGuiTableFlags Flags =
       ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings;
-
-  if (!ImGui::BeginTable("MonitorPlotGrid", columnCount, Flags)) {
+  ImGui::PushStyleVar(ImGuiStyleVar_CellPadding,
+      ImVec2(UI::Ui(PlotGridCellPadding), 0.0F));
+  if (!ImGui::BeginTable(tableId, columnCount, Flags)) {
+    ImGui::PopStyleVar();
     return;
   }
-
-  for (int columnIndex = 0; columnIndex < columnCount; ++columnIndex) {
+  for (int column = 0; column < columnCount; ++column) {
     ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
   }
 
-  std::size_t plotIndex = 0;
-  const auto renderPlot = [&](const char *title, UI::UIElement plot) {
-    if (plotIndex % static_cast<std::size_t>(columnCount) == 0U) {
-      ImGui::TableNextRow();
+  std::optional<std::uint64_t> plotToDelete;
+  std::size_t visibleIndex = 0;
+  for (MonitorPlot &plot : plots_) {
+    if (!IsPlotVisible(plot)) {
+      continue;
     }
 
+    if (visibleIndex % static_cast<std::size_t>(columnCount) == 0) {
+      ImGui::TableNextRow();
+    }
     ImGui::TableNextColumn();
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
-        ImVec2(PlotGridColumnSpacing, 8.0f));
-    UI::FoldOut(title)
-        .DefaultOpen()
-        .Framed()
-        .SpanAvailWidth()[std::move(plot)]
-        .Render();
-    ImGui::PopStyleVar();
-    ++plotIndex;
-  };
-
-  if (plotVisibility_.aerodynamicAngles) {
-    renderPlot("Aerodynamic Angles", DrawAerodynamicAnglesPlot());
+    if (DrawPlotCard(plot, sources, plotHeight)) {
+      plotToDelete = plot.id;
+    }
+    ++visibleIndex;
   }
-  if (plotVisibility_.attitude) {
-    renderPlot("Attitude", DrawAttitudePlot());
-  }
-  if (plotVisibility_.bodyVelocities) {
-    renderPlot("Body Velocities", DrawBodyVelocitiesPlot());
-  }
-  if (plotVisibility_.bodyRates) {
-    renderPlot("Body Rates", DrawBodyRatesPlot());
-  }
-  if (plotVisibility_.airspeed) {
-    renderPlot("Airspeed", DrawAirspeedPlot());
-  }
-  if (plotVisibility_.altitude) {
-    renderPlot("Altitude AGL", DrawAltitudePlot());
-  }
-  if (plotVisibility_.bodyAccelerations) {
-    renderPlot("Body Accelerations", DrawBodyAccelerationsPlot());
-  }
-  if (plotVisibility_.angularAccelerations) {
-    renderPlot("Angular Accelerations", DrawAngularAccelerationsPlot());
-  }
-
   ImGui::EndTable();
+  ImGui::PopStyleVar();
+
+  if (plotToDelete) {
+    DeletePlot(*plotToDelete);
+  }
 }
 
-void FlightDataMonitorWindow::DrawWindow(sim::Simulation &sim) {
-  const sim::AircraftState aircraftState = sim.GetAircraft().GetAircraftState();
-
-  UI::VerticalLayout()
-      .Spacing(8.0f)[+UI::Custom([this, aircraftState] {
-        DrawCurrentValues(aircraftState);
-      }) + UI::Custom([this] { DrawPlotSelector(); })
-                     + UI::Custom([this] { DrawPlotGrid(); })]
-      .Render();
+float FlightDataMonitorWindow::CalculateGridPlotHeight(int rowCount) const {
+  const float availableHeight = ImGui::GetContentRegionAvail().y;
+  const float cardChromeHeight =
+      UI::Ui(PlotCardTopMargin) + ImGui::GetTextLineHeight()
+      + UI::Ui(PlotTitleFrameSpacing) + UI::Ui(PlotCardBottomMargin);
+  const float plotHeightPixels =
+      availableHeight / static_cast<float>(rowCount) - cardChromeHeight;
+  const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+  return std::max(MinimumGridPlotHeight, plotHeightPixels / uiScale);
 }
 
-void FlightDataMonitorWindow::OnRecordSamples(sim::Simulation &sim) {
-  const sim::AircraftState state = sim.GetAircraft().GetAircraftState();
-  const sim::AircraftStateDerivative derivative =
-      sim.GetAircraft().GetAircraftStateDerivative();
+bool FlightDataMonitorWindow::DrawPlotCard(MonitorPlot &plot,
+    const TelemetrySources &sources, float plotHeight) {
+  ImGui::PushID(static_cast<int>(plot.id));
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+      ImVec2(UI::Ui(WorkspaceSpacing), 0.0F));
+  ImGui::BeginGroup();
 
-  timeHistory_.push_back(state.simulationTimeSec);
-  alphaDegHistory_.push_back(state.alphaDeg);
-  betaDegHistory_.push_back(state.betaDeg);
-  rollDegHistory_.push_back(state.rollDeg);
-  pitchDegHistory_.push_back(state.pitchDeg);
-  headingDegHistory_.push_back(state.headingDeg);
-  uMpsHistory_.push_back(state.uMps);
-  vMpsHistory_.push_back(state.vMps);
-  wMpsHistory_.push_back(state.wMps);
-  pDegPerSecHistory_.push_back(state.pDegPerSec);
-  qDegPerSecHistory_.push_back(state.qDegPerSec);
-  rDegPerSecHistory_.push_back(state.rDegPerSec);
-  calibratedAirspeedKtsHistory_.push_back(state.calibratedAirspeedKts);
-  trueAirspeedKtsHistory_.push_back(
-      state.trueAirspeedMps * MetersPerSecondToKnots);
-  altitudeAglFtHistory_.push_back(state.altitudeAglFt);
-  uDotMps2History_.push_back(derivative.uDotMps2);
-  vDotMps2History_.push_back(derivative.vDotMps2);
-  wDotMps2History_.push_back(derivative.wDotMps2);
-  pDotDegPerSec2History_.push_back(derivative.pDotDegPerSec2);
-  qDotDegPerSec2History_.push_back(derivative.qDotDegPerSec2);
-  rDotDegPerSec2History_.push_back(derivative.rDotDegPerSec2);
+  ImGui::Dummy(ImVec2(0.0F, UI::Ui(PlotCardTopMargin)));
+
+  const bool isSelected = selectedPlotId_ == plot.id;
+  if (isSelected) {
+    ImGui::PushStyleColor(ImGuiCol_Text,
+        ImGui::GetStyleColorVec4(ImGuiCol_TextLink));
+  }
+  ImGui::TextUnformatted(plot.title.c_str());
+  if (isSelected) {
+    ImGui::PopStyleColor();
+  }
+  if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+    selectedPlotId_ = plot.id;
+  }
+
+  bool deleteRequested = false;
+  if (ImGui::BeginPopupContextItem("PlotContextMenu")) {
+    char titleBuffer[128]{};
+    std::snprintf(titleBuffer, sizeof(titleBuffer), "%s", plot.title.c_str());
+    ImGui::SetNextItemWidth(UI::Ui(220.0F));
+    if (ImGui::InputText("Title", titleBuffer, sizeof(titleBuffer))) {
+      plot.title = titleBuffer;
+    }
+    if (ImGui::MenuItem("Delete Plot")) {
+      deleteRequested = true;
+    }
+    ImGui::EndPopup();
+  }
+
+  if (!deleteRequested) {
+    ImGui::Dummy(ImVec2(0.0F, UI::Ui(PlotTitleFrameSpacing)));
+    DrawTelemetryPlot(plot, sources, plotHeight);
+    ImGui::Dummy(ImVec2(0.0F, UI::Ui(PlotCardBottomMargin)));
+  }
+
+  ImGui::EndGroup();
+  ImGui::PopStyleVar();
+  ImGui::PopID();
+  return deleteRequested;
 }
 
+void FlightDataMonitorWindow::DrawTelemetryPlot(const MonitorPlot &plot,
+    const TelemetrySources &sources, float plotHeight) {
+  const telemetry::TelemetryRegistry &telemetryRegistry = *sources.primary;
+  const float availablePlotWidth = ImGui::GetContentRegionAvail().x;
+  const std::size_t maximumRenderedSampleCount = std::clamp(
+      static_cast<std::size_t>(std::max(0.0F, availablePlotWidth) * 2.0F),
+      MinimumRenderedSamplesPerChannel,
+      MaximumRenderedSamplesPerChannel);
+  UI::PlotBuilder plotBuilder =
+      UI::Plot("##TelemetryPlot" + std::to_string(plot.id))
+          .Height(plotHeight)
+          .Flags(ImPlotFlags_NoTitle | ImPlotFlags_NoInputs
+                 | ImPlotFlags_NoBoxSelect)
+          .FocusedYAxis()
+          .XAxisLinks(visibleTimeRange_.minSec, visibleTimeRange_.maxSec)
+          .XAxisTicks(sharedXAxisTicks_)
+          .XAxisLabel("Time (s)")
+          .YAxisLabel(plot.yAxisLabel);
+
+  plotBuilder.Underlay(
+      [this, &plot, &telemetryRegistry, maximumRenderedSampleCount] {
+        DrawRollTrackingAcceptanceUnderlay(plot,
+            telemetryRegistry,
+            maximumRenderedSampleCount);
+      });
+
+  std::size_t renderedChannelCount = 0;
+  const auto addSource =
+      [this,
+          &plot,
+          &plotBuilder,
+          maximumRenderedSampleCount,
+          &renderedChannelCount](const telemetry::TelemetryRegistry *registry,
+          std::string_view sourceName) {
+        if (registry == nullptr) {
+          return;
+        }
+
+        for (const std::string &path : plot.channels) {
+          const telemetry::TelemetryChannel *channel = registry->Find(path);
+          if (channel == nullptr || channel->GetSamples().IsEmpty()) {
+            continue;
+          }
+
+          const auto &memorySamples = channel->GetSamples();
+          if (visibleTimeRange_.minSec >= memorySamples.Front().timeSec) {
+            const telemetry::TelemetrySample *data = memorySamples.GetData();
+            const std::size_t sampleCount = memorySamples.GetSize();
+            plotBuilder.AddLine(MakeTelemetrySeriesLabel(path, sourceName),
+                UI::DataView(&data->timeSec,
+                    sampleCount,
+                    sizeof(telemetry::TelemetrySample)),
+                UI::DataView(&data->value,
+                    sampleCount,
+                    sizeof(telemetry::TelemetrySample)),
+                static_cast<int>(memorySamples.GetStorageOffset()));
+          } else {
+            const std::vector<telemetry::TelemetrySample> &samples =
+                channel->ReadSamples(visibleTimeRange_.minSec,
+                    visibleTimeRange_.maxSec,
+                    maximumRenderedSampleCount);
+            if (samples.empty()) {
+              continue;
+            }
+            const telemetry::TelemetrySample *data = samples.data();
+            plotBuilder.AddLine(MakeTelemetrySeriesLabel(path, sourceName),
+                UI::DataView(&data->timeSec,
+                    samples.size(),
+                    sizeof(telemetry::TelemetrySample)),
+                UI::DataView(&data->value,
+                    samples.size(),
+                    sizeof(telemetry::TelemetrySample)));
+          }
+          ++renderedChannelCount;
+        }
+      };
+  addSource(sources.primary, "Primary");
+  addSource(sources.baseline, "Baseline");
+
+  plotBuilder.Overlay([this, &plot, &telemetryRegistry] {
+    DrawPlotOverlay(plot, telemetryRegistry);
+  });
+  UI::UIElement plotElement = plotBuilder;
+  plotElement.Render();
+
+  if (plot.channels.empty()) {
+    ImGui::TextDisabled("No channels assigned.");
+  } else if (renderedChannelCount == 0) {
+    ImGui::TextDisabled("Waiting for assigned telemetry channels.");
+  }
+}
+
+void FlightDataMonitorWindow::DrawRollTrackingAcceptanceUnderlay(
+    const MonitorPlot &plot,
+    const telemetry::TelemetryRegistry &telemetryRegistry,
+    std::size_t maximumRenderedSampleCount) const {
+  const std::string_view rollTrackingPath =
+      GetTelemetryPlotBinding(DefaultTelemetryPlot::RollHoldRollTracking)
+          .nodePath;
+  if (plot.telemetryGroupPath != rollTrackingPath) {
+    return;
+  }
+
+  const telemetry::TelemetryChannel *commandChannel =
+      telemetryRegistry.Find(telemetry::paths::AutopilotRollHoldCommandedRoll);
+  if (commandChannel == nullptr) {
+    return;
+  }
+
+  std::vector<telemetry::TelemetrySample> samples;
+  const auto &memorySamples = commandChannel->GetSamples();
+  if (!memorySamples.IsEmpty()
+      && visibleTimeRange_.minSec >= memorySamples.Front().timeSec) {
+    samples.reserve(memorySamples.GetSize());
+    for (std::size_t sampleIndex = 0; sampleIndex < memorySamples.GetSize();
+        ++sampleIndex) {
+      const telemetry::TelemetrySample &sample = memorySamples[sampleIndex];
+      if (sample.timeSec < visibleTimeRange_.minSec) {
+        continue;
+      }
+      if (sample.timeSec > visibleTimeRange_.maxSec) {
+        break;
+      }
+      samples.push_back(sample);
+    }
+  } else {
+    const std::vector<telemetry::TelemetrySample> &rangeSamples =
+        commandChannel->ReadSamples(visibleTimeRange_.minSec,
+            visibleTimeRange_.maxSec,
+            maximumRenderedSampleCount);
+    samples.assign(rangeSamples.begin(), rangeSamples.end());
+  }
+  if (samples.size() < 2) {
+    return;
+  }
+
+  std::vector<double> times;
+  std::vector<double> settlingUpper;
+  std::vector<double> settlingLower;
+  std::vector<double> overshootLimit;
+  std::vector<double> undershootLimit;
+  times.reserve(samples.size());
+  settlingUpper.reserve(samples.size());
+  settlingLower.reserve(samples.size());
+  overshootLimit.reserve(samples.size());
+  undershootLimit.reserve(samples.size());
+  for (const telemetry::TelemetrySample &sample : samples) {
+    if (!std::isfinite(sample.timeSec) || !std::isfinite(sample.value)) {
+      continue;
+    }
+    const RollTrackingAcceptance acceptance =
+        MakeRollTrackingAcceptance(sample.value);
+    times.push_back(sample.timeSec);
+    settlingUpper.push_back(acceptance.settlingUpperDeg);
+    settlingLower.push_back(acceptance.settlingLowerDeg);
+    overshootLimit.push_back(acceptance.overshootLimitDeg);
+    undershootLimit.push_back(acceptance.undershootLimitDeg);
+  }
+  if (times.size() < 2) {
+    return;
+  }
+
+  const int sampleCount = static_cast<int>(times.size());
+  ImPlotSpec bandSpec;
+  bandSpec.LineColor = ImVec4(0.25F, 0.72F, 0.52F, 0.0F);
+  bandSpec.LineWeight = 0.0F;
+  bandSpec.FillColor = ImVec4(0.25F, 0.72F, 0.52F, 0.10F);
+  bandSpec.Flags = ImPlotItemFlags_NoLegend;
+  ImPlot::PlotShaded("Settling Band##RollAcceptance",
+      times.data(),
+      settlingUpper.data(),
+      settlingLower.data(),
+      sampleCount,
+      bandSpec);
+
+  ImPlotSpec fitSpec;
+  fitSpec.LineColor = ImVec4(0.0F, 0.0F, 0.0F, 0.0F);
+  fitSpec.LineWeight = 0.0F;
+  fitSpec.Flags = ImPlotItemFlags_NoLegend;
+  ImPlot::PlotLine("Overshoot Limit##RollAcceptanceFit",
+      times.data(),
+      overshootLimit.data(),
+      sampleCount,
+      fitSpec);
+  ImPlot::PlotLine("Undershoot Limit##RollAcceptanceFit",
+      times.data(),
+      undershootLimit.data(),
+      sampleCount,
+      fitSpec);
+
+  const ImU32 settlingBoundaryColor =
+      ImGui::ColorConvertFloat4ToU32(ImVec4(0.38F, 0.82F, 0.62F, 0.38F));
+  const ImU32 limitBoundaryColor =
+      ImGui::ColorConvertFloat4ToU32(ImVec4(0.90F, 0.68F, 0.34F, 0.22F));
+  ImPlot::PushPlotClipRect();
+  DrawDashedPlotLine(samples,
+      RollSettlingToleranceDeg,
+      settlingBoundaryColor,
+      UI::Ui(5.0F),
+      UI::Ui(4.0F),
+      std::max(1.0F, UI::Ui(0.8F)));
+  DrawDashedPlotLine(samples,
+      -RollSettlingToleranceDeg,
+      settlingBoundaryColor,
+      UI::Ui(5.0F),
+      UI::Ui(4.0F),
+      std::max(1.0F, UI::Ui(0.8F)));
+  DrawDashedPlotLine(samples,
+      RollLimitToleranceDeg,
+      limitBoundaryColor,
+      UI::Ui(1.0F),
+      UI::Ui(4.0F),
+      std::max(1.0F, UI::Ui(0.7F)));
+  DrawDashedPlotLine(samples,
+      -RollLimitToleranceDeg,
+      limitBoundaryColor,
+      UI::Ui(1.0F),
+      UI::Ui(4.0F),
+      std::max(1.0F, UI::Ui(0.7F)));
+  ImPlot::PopPlotClipRect();
+}
+
+bool FlightDataMonitorWindow::IsPlotVisible(const MonitorPlot &plot) const {
+  return plot.manualVisible || IsPlotVisibleByPreset(plot);
+}
+
+bool FlightDataMonitorWindow::IsPlotVisibleByPreset(
+    const MonitorPlot &plot) const {
+  for (std::size_t presetIndex = 0;
+      presetIndex < MonitorPresetDefinitions.size();
+      ++presetIndex) {
+    if (!IsPresetActive(presetIndex)) {
+      continue;
+    }
+
+    const MonitorPresetDefinition &preset =
+        MonitorPresetDefinitions[presetIndex];
+    for (std::size_t plotIndex = 0; plotIndex < preset.requiredPlotCount;
+        ++plotIndex) {
+      const TelemetryPlotBinding &binding =
+          GetTelemetryPlotBinding(preset.requiredPlots[plotIndex]);
+      if (plot.telemetryGroupPath == binding.nodePath) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool FlightDataMonitorWindow::IsPresetActive(std::size_t presetIndex) const {
+  return (activePresetMask_
+             & GetPresetBit(MonitorPresetDefinitions[presetIndex].preset))
+         != 0;
+}
+
+void FlightDataMonitorWindow::SetPresetActive(std::size_t presetIndex,
+    bool active) {
+  const std::uint32_t presetBit =
+      GetPresetBit(MonitorPresetDefinitions[presetIndex].preset);
+  if (active) {
+    activePresetMask_ |= presetBit;
+  } else {
+    activePresetMask_ &= ~presetBit;
+  }
+}
+
+std::optional<FlightDataMonitorWindow::TimelineRange>
+FlightDataMonitorWindow::GetTelemetryHistoryRange(
+    const telemetry::TelemetryRegistry &telemetryRegistry) const {
+  const std::optional<telemetry::TelemetryTimeRange> range =
+      telemetryRegistry.GetPublishedTimeRange();
+  if (!range) {
+    return std::nullopt;
+  }
+
+  return TimelineRange{std::min(0.0, range->minSec), range->maxSec};
+}
+
+void FlightDataMonitorWindow::SynchronizeTimelineState(
+    const telemetry::TelemetryRegistry &telemetryRegistry) {
+  telemetryHistoryRange_ = GetTelemetryHistoryRange(telemetryRegistry);
+  if (!telemetryHistoryRange_) {
+    selectedTimeInitialized_ = false;
+    return;
+  }
+
+  if (liveView_) {
+    UpdateLiveTimeRanges();
+    selectedTimeSec_ = telemetryHistoryRange_->maxSec;
+    selectedTimeInitialized_ = true;
+  } else {
+    ClampTimelineViewRangeToHistory();
+    ClampVisibleTimeRangeToHistory();
+    if (!selectedTimeInitialized_) {
+      selectedTimeSec_ = visibleTimeRange_.maxSec;
+      selectedTimeInitialized_ = true;
+    } else {
+      selectedTimeSec_ = ClampToOrderedRange(selectedTimeSec_,
+          telemetryHistoryRange_->minSec,
+          telemetryHistoryRange_->maxSec);
+    }
+  }
+  UpdateSharedXAxisTicks();
+}
+
+FlightDataMonitorWindow::TimelineRange
+FlightDataMonitorWindow::GetEffectiveHistoryRange(
+    const TimelineRange &historyRange) const {
+  if (historyRange.maxSec - historyRange.minSec >= MinimumTimelineWindowSec) {
+    return historyRange;
+  }
+  return {historyRange.minSec, historyRange.minSec + MinimumTimelineWindowSec};
+}
+
+void FlightDataMonitorWindow::ClampTimelineViewRangeToHistory() {
+  if (!telemetryHistoryRange_) {
+    return;
+  }
+
+  const TimelineRange historyRange =
+      GetEffectiveHistoryRange(*telemetryHistoryRange_);
+  const double historyDuration = historyRange.maxSec - historyRange.minSec;
+  double duration = timelineViewRange_.maxSec - timelineViewRange_.minSec;
+  const bool isFiniteRange = std::isfinite(timelineViewRange_.minSec)
+                             && std::isfinite(timelineViewRange_.maxSec);
+  const bool isInsideHistory =
+      isFiniteRange && duration >= MinimumTimelineWindowSec
+      && duration <= historyDuration
+      && timelineViewRange_.minSec >= historyRange.minSec
+      && timelineViewRange_.maxSec <= historyRange.maxSec;
+  if (isInsideHistory) {
+    return;
+  }
+
+  if (!std::isfinite(duration) || duration < MinimumTimelineWindowSec) {
+    duration = MinimumTimelineWindowSec;
+  }
+  duration = std::min(duration, historyDuration);
+  double minSec = timelineViewRange_.minSec;
+  if (!std::isfinite(minSec)) {
+    minSec = historyRange.minSec;
+  }
+  const double maximumMinSec = historyRange.maxSec - duration;
+  minSec = ClampToOrderedRange(minSec, historyRange.minSec, maximumMinSec);
+  timelineViewRange_ = {minSec, minSec + duration};
+}
+
+void FlightDataMonitorWindow::ClampVisibleTimeRangeToHistory() {
+  if (!telemetryHistoryRange_) {
+    return;
+  }
+
+  const TimelineRange historyRange =
+      GetEffectiveHistoryRange(*telemetryHistoryRange_);
+  const double historyDuration = std::max(MinimumTimelineWindowSec,
+      historyRange.maxSec - historyRange.minSec);
+  double duration = visibleTimeRange_.maxSec - visibleTimeRange_.minSec;
+  const bool isFiniteRange = std::isfinite(visibleTimeRange_.minSec)
+                             && std::isfinite(visibleTimeRange_.maxSec);
+  const bool hasValidDuration = isFiniteRange
+                                && duration >= MinimumTimelineWindowSec
+                                && duration <= historyDuration;
+  const bool isInsideHistory =
+      hasValidDuration && visibleTimeRange_.minSec >= historyRange.minSec
+      && visibleTimeRange_.maxSec <= historyRange.maxSec;
+  if (isInsideHistory) {
+    return;
+  }
+
+  if (!std::isfinite(duration) || duration < MinimumTimelineWindowSec) {
+    duration = MinimumTimelineWindowSec;
+  }
+  duration = std::min(duration, historyDuration);
+
+  double minSec = visibleTimeRange_.minSec;
+  if (!std::isfinite(minSec)) {
+    minSec = historyRange.minSec;
+  }
+  const double maximumMinSec =
+      std::max(historyRange.minSec, historyRange.maxSec - duration);
+  minSec = ClampToOrderedRange(minSec, historyRange.minSec, maximumMinSec);
+  visibleTimeRange_ = {minSec, minSec + duration};
+}
+
+void FlightDataMonitorWindow::EnsureVisibleTimeRangeInTimelineView() {
+  const double visibleDuration =
+      visibleTimeRange_.maxSec - visibleTimeRange_.minSec;
+  double viewDuration = timelineViewRange_.maxSec - timelineViewRange_.minSec;
+  if (visibleDuration > viewDuration) {
+    timelineViewRange_ = visibleTimeRange_;
+    viewDuration = visibleDuration;
+  } else if (visibleTimeRange_.minSec < timelineViewRange_.minSec) {
+    timelineViewRange_.minSec = visibleTimeRange_.minSec;
+    timelineViewRange_.maxSec = timelineViewRange_.minSec + viewDuration;
+  } else if (visibleTimeRange_.maxSec > timelineViewRange_.maxSec) {
+    timelineViewRange_.maxSec = visibleTimeRange_.maxSec;
+    timelineViewRange_.minSec = timelineViewRange_.maxSec - viewDuration;
+  }
+  ClampTimelineViewRangeToHistory();
+}
+
+void FlightDataMonitorWindow::UpdateSharedXAxisTicks() {
+  sharedXAxisTicks_ = CalculateTimelineTicks(visibleTimeRange_.minSec,
+      visibleTimeRange_.maxSec);
+}
+
+void FlightDataMonitorWindow::UpdateLiveTimeRanges() {
+  if (!telemetryHistoryRange_) {
+    timelineViewRange_ = {0.0, timelineViewWindowSec_};
+    visibleTimeRange_ = {0.0, liveWindowSec_};
+    return;
+  }
+
+  const TimelineRange historyRange =
+      GetEffectiveHistoryRange(*telemetryHistoryRange_);
+  const double historyDuration = std::max(MinimumTimelineWindowSec,
+      historyRange.maxSec - historyRange.minSec);
+  const double visibleDuration = std::min(liveWindowSec_, historyDuration);
+  const double viewDuration =
+      std::min(std::max(timelineViewWindowSec_, visibleDuration),
+          historyDuration);
+  timelineViewRange_.maxSec = historyRange.maxSec;
+  timelineViewRange_.minSec = historyRange.maxSec - viewDuration;
+  visibleTimeRange_.maxSec = historyRange.maxSec;
+  visibleTimeRange_.minSec = historyRange.maxSec - visibleDuration;
+}
+
+void FlightDataMonitorWindow::SetLiveView(bool enabled) {
+  if (liveView_ == enabled) {
+    return;
+  }
+
+  liveView_ = enabled;
+  if (liveView_) {
+    UpdateLiveTimeRanges();
+    if (telemetryHistoryRange_) {
+      selectedTimeSec_ = telemetryHistoryRange_->maxSec;
+      selectedTimeInitialized_ = true;
+    }
+    UpdateSharedXAxisTicks();
+  }
+}
+
+void FlightDataMonitorWindow::SelectTimelineTime(double timeSec,
+    bool disableLive) {
+  if (!telemetryHistoryRange_ || !std::isfinite(timeSec)) {
+    return;
+  }
+
+  if (disableLive) {
+    SetLiveView(false);
+  }
+  selectedTimeSec_ = ClampToOrderedRange(timeSec,
+      telemetryHistoryRange_->minSec,
+      telemetryHistoryRange_->maxSec);
+  selectedTimeInitialized_ = true;
+}
+
+void FlightDataMonitorWindow::ZoomTimelineView(double wheelDelta,
+    double anchorSec) {
+  if (!telemetryHistoryRange_ || !std::isfinite(wheelDelta)
+      || wheelDelta == 0.0) {
+    return;
+  }
+
+  const TimelineRange historyRange =
+      GetEffectiveHistoryRange(*telemetryHistoryRange_);
+  const double historyDuration = std::max(MinimumTimelineWindowSec,
+      historyRange.maxSec - historyRange.minSec);
+  const double visibleDuration =
+      visibleTimeRange_.maxSec - visibleTimeRange_.minSec;
+  const double minimumViewDuration = std::min(historyDuration,
+      std::max(MinimumTimelineWindowSec, visibleDuration));
+  const double currentDuration =
+      ClampToOrderedRange(timelineViewRange_.maxSec - timelineViewRange_.minSec,
+          MinimumTimelineWindowSec,
+          historyDuration);
+  const double zoomMultiplier = std::pow(TimelineZoomFactor, -wheelDelta);
+  const double newDuration =
+      ClampToOrderedRange(currentDuration * zoomMultiplier,
+          minimumViewDuration,
+          historyDuration);
+
+  timelineViewWindowSec_ = newDuration;
+  if (liveView_) {
+    timelineViewRange_.maxSec = historyRange.maxSec;
+    timelineViewRange_.minSec = historyRange.maxSec - newDuration;
+  } else {
+    const double anchorRatio =
+        (anchorSec - timelineViewRange_.minSec) / currentDuration;
+    timelineViewRange_.minSec = anchorSec - newDuration * anchorRatio;
+    timelineViewRange_.maxSec = timelineViewRange_.minSec + newDuration;
+    ClampTimelineViewRangeToHistory();
+  }
+}
+
+void FlightDataMonitorWindow::DrawPlotOverlay(const MonitorPlot &plot,
+    const telemetry::TelemetryRegistry &telemetryRegistry) {
+  const bool isHovered = ImPlot::IsPlotHovered();
+  if (isHovered) {
+    const ImPlotRect limits = ImPlot::GetPlotLimits();
+    SelectTimelineTime(ClampToOrderedRange(ImPlot::GetPlotMousePos().x,
+                           limits.X.Min,
+                           limits.X.Max),
+        false);
+  }
+
+  if (selectedTimeInitialized_) {
+    ImPlotSpec cursorSpec;
+    cursorSpec.LineColor = ImVec4(0.95F, 0.75F, 0.25F, 0.9F);
+    cursorSpec.Flags = ImPlotItemFlags_NoLegend;
+    ImPlot::PlotInfLines("##SharedTimeCursor",
+        &selectedTimeSec_,
+        1,
+        cursorSpec);
+  }
+
+  if (!isHovered) {
+    return;
+  }
+
+  ImGui::BeginTooltip();
+  ImGui::Text("t = %.3f s", selectedTimeSec_);
+  ImGui::Separator();
+  for (const std::string &path : plot.channels) {
+    const telemetry::TelemetryChannel *channel = telemetryRegistry.Find(path);
+    if (channel == nullptr) {
+      continue;
+    }
+    const std::optional<telemetry::TelemetrySample> sample =
+        channel->FindClosestSample(selectedTimeSec_);
+    if (sample) {
+      ImGui::Text("%s: %.6g", path.c_str(), sample->value);
+    }
+  }
+  ImGui::EndTooltip();
+}
 } // namespace gui

@@ -3,8 +3,6 @@
 #include <cmath>
 
 namespace viz {
-constexpr float DegToRad = 0.017453292519943295769F;
-
 struct Vec3 {
   float x = 0.0F;
   float y = 0.0F;

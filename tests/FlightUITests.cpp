@@ -1,8 +1,11 @@
 #include "flightui/FlightUI.hpp"
 
 #include <cassert>
+#include <cmath>
 #include <imgui.h>
 #include <implot.h>
+#include <implot_internal.h>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -71,6 +74,8 @@ static_assert(requires(bool isOpen) {
       .Open(isOpen)
       .DefaultOpen()
       .Flags(ImGuiTreeNodeFlags_Framed)
+      .HeaderLeft(UI::Toggle("##Selected", true), 18.0F)
+      .HeaderRight(UI::Toggle("Enabled", true), 96.0F)
       .Enabled(true)
       .Visible(true)
       .Tooltip("Advanced settings")
@@ -90,6 +95,59 @@ static_assert(requires(bool isOpen) {
 });
 
 int main() {
+  constexpr float ScaleTolerance = 0.0001F;
+  constexpr double RangeTolerance = 1.0e-9;
+
+  const auto constantPositiveRange = UI::ExpandYAxisRange(2.0, 2.0);
+  assert(constantPositiveRange.has_value());
+  assert(std::abs(constantPositiveRange->Min - 1.9) < RangeTolerance);
+  assert(std::abs(constantPositiveRange->Max - 2.1) < RangeTolerance);
+
+  const auto constantZeroRange = UI::ExpandYAxisRange(0.0, 0.0);
+  assert(constantZeroRange.has_value());
+  assert(std::abs(constantZeroRange->Min + 0.1) < RangeTolerance);
+  assert(std::abs(constantZeroRange->Max - 0.1) < RangeTolerance);
+
+  const auto constantNegativeRange = UI::ExpandYAxisRange(-3.0, -3.0);
+  assert(constantNegativeRange.has_value());
+  assert(std::abs(constantNegativeRange->Min + 3.15) < RangeTolerance);
+  assert(std::abs(constantNegativeRange->Max + 2.85) < RangeTolerance);
+
+  const auto nearlyConstantRange = UI::ExpandYAxisRange(1.999999, 2.000001);
+  assert(nearlyConstantRange.has_value());
+  assert(nearlyConstantRange->Min < 1.9);
+  assert(nearlyConstantRange->Max > 2.1);
+
+  const auto normalRange = UI::ExpandYAxisRange(-10.0, 10.0);
+  assert(normalRange.has_value());
+  assert(std::abs(normalRange->Min + 12.0) < RangeTolerance);
+  assert(std::abs(normalRange->Max - 12.0) < RangeTolerance);
+
+  const double nanValue = std::numeric_limits<double>::quiet_NaN();
+  const double infinity = std::numeric_limits<double>::infinity();
+  assert(!UI::ExpandYAxisRange(nanValue, 1.0).has_value());
+  assert(!UI::ExpandYAxisRange(0.0, infinity).has_value());
+
+  assert(
+      std::abs(UI::CalculateUIScale(1280.0F, 720.0F) - 1.0F) < ScaleTolerance);
+  assert(
+      std::abs(UI::CalculateUIScale(1024.0F, 768.0F) - 0.8F) < ScaleTolerance);
+  assert(std::abs(UI::CalculateUIScale(640.0F, 360.0F) - UI::MinimumUIScale)
+         < ScaleTolerance);
+  assert(std::abs(UI::CalculateUIScale(3840.0F, 2160.0F) - UI::MaximumUIScale)
+         < ScaleTolerance);
+
+  UI::SetUIScale(UI::CalculateUIScale(1920.0F, 1080.0F));
+  assert(std::abs(UI::Ui(100.0F) - 150.0F) < ScaleTolerance);
+  UI::SetUIScale(UI::CalculateUIScale(1024.0F, 768.0F));
+  assert(std::abs(UI::Ui(100.0F) - 80.0F) < ScaleTolerance);
+  const UI::Vector2 scaledPlotSize = UI::UiSize({-1.0F, 245.0F});
+  assert(scaledPlotSize.X == -1.0F);
+  assert(std::abs(scaledPlotSize.Y - 196.0F) < ScaleTolerance);
+  UI::SetUIScale(UI::CalculateUIScale(1920.0F, 1080.0F));
+  assert(std::abs(UI::Ui(100.0F) - 150.0F) < ScaleTolerance);
+  UI::SetUIScale(1.0F);
+
   std::vector<double> xValues{0.0, 1.0, 2.0};
   std::vector<double> yValues{0.0, 1.0, 4.0};
   const UI::DataView xView = UI::DataView::From(xValues);
@@ -102,7 +160,17 @@ int main() {
 
   assert(xView.GetData() == xValues.data());
   assert(xView.GetCount() == xValues.size());
+  assert(xView.GetStride() == sizeof(double));
   assert(xView.GetType() == UI::DataType::Double);
+  struct StridedPoint {
+    double x;
+    double y;
+  };
+  const std::vector<StridedPoint> stridedPoints{{0.0, 1.0}, {2.0, 3.0}};
+  const UI::DataView stridedView(&stridedPoints[0].x,
+      stridedPoints.size(),
+      sizeof(StridedPoint));
+  assert(stridedView.GetStride() == sizeof(StridedPoint));
   assert(ringValues.capacity() == 3);
   assert(ringValues.size() == 3);
   assert(ringValues.offset() == 1);
@@ -118,9 +186,53 @@ int main() {
 
   UI::UIElement text = UI::Text(std::string("Temporary text"));
   assert(text.IsValid());
+  UI::UIElement temporaryLatex =
+      UI::Latex(std::string(R"(\dot{x} = Ax + Bu)"));
+  assert(temporaryLatex.IsValid());
+  UI::UIElement scaledLatex = UI::Latex(
+      R"(\frac{\partial f}{\partial x})", {.Scale = 1.25F});
+  assert(scaledLatex.IsValid());
 
   ImGui::CreateContext();
   ImPlot::CreateContext();
+  UI::ApplyDarkEditorTheme();
+  assert(UI::LoadPrimaryUIFont());
+  assert(UI::GetPrimaryUIFontPath().filename() == "Inter-Regular.ttf");
+
+  const ImGuiStyle &darkEditorStyle = ImGui::GetStyle();
+  const ImPlotStyle &darkEditorPlotStyle = ImPlot::GetStyle();
+  assert(std::abs(darkEditorStyle.Colors[ImGuiCol_WindowBg].x - 30.0F / 255.0F)
+         < ScaleTolerance);
+  assert(
+      std::abs(darkEditorStyle.Colors[ImGuiCol_CheckMark].z - 255.0F / 255.0F)
+      < ScaleTolerance);
+  assert(darkEditorStyle.WindowRounding == 5.0F);
+  assert(darkEditorStyle.FrameRounding == 4.0F);
+  assert(darkEditorStyle.FrameBorderSize == 0.0F);
+  assert(darkEditorStyle.WindowPadding.x == 10.0F);
+  assert(darkEditorStyle.FramePadding.y == 5.0F);
+  assert(darkEditorStyle.Colors[ImGuiCol_Button].x
+         < darkEditorStyle.Colors[ImGuiCol_ButtonHovered].x);
+  assert(darkEditorStyle.Colors[ImGuiCol_TabSelected].x
+         > darkEditorStyle.Colors[ImGuiCol_Tab].x);
+  assert(darkEditorPlotStyle.Colors[ImPlotCol_PlotBg].x
+         < darkEditorPlotStyle.Colors[ImPlotCol_FrameBg].x);
+  assert(darkEditorPlotStyle.Colors[ImPlotCol_AxisGrid].w < 0.25F);
+  assert(ImGui::GetIO().Fonts->Fonts.Size == 1);
+  assert(ImGui::GetIO().FontDefault != nullptr);
+  assert(std::abs(ImGui::GetIO().FontDefault->LegacySize - UI::BaseUIFontSize)
+         < ScaleTolerance);
+  assert(std::abs(UI::CalculateUIFontScale(1.0F) - 1.0F) < ScaleTolerance);
+  assert(std::abs(UI::CalculateUIFontScale(0.7F) * UI::BaseUIFontSize
+                  - UI::MinimumUIFontSize)
+         < ScaleTolerance);
+  const float largeFontScale = UI::CalculateUIFontScale(1.5F);
+  const float smallFontScale = UI::CalculateUIFontScale(0.8F);
+  const float restoredFontScale = UI::CalculateUIFontScale(1.5F);
+  assert(std::abs(smallFontScale * UI::BaseUIFontSize - UI::MinimumUIFontSize)
+         < ScaleTolerance);
+  assert(std::abs(restoredFontScale - largeFontScale) < ScaleTolerance);
+  assert(std::abs(UI::CalculateUIFontScale(1.5F) - 1.5F) < ScaleTolerance);
 
   ImGuiIO &io = ImGui::GetIO();
   io.DisplaySize = ImVec2(800.0F, 600.0F);
@@ -129,15 +241,34 @@ int main() {
   int fontWidth = 0;
   int fontHeight = 0;
   io.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontWidth, &fontHeight);
+  ImFontBaked *interRegular = io.FontDefault->GetFontBaked(UI::BaseUIFontSize);
+  assert(interRegular->FindGlyphNoFallback('A') != nullptr);
+  assert(interRegular->FindGlyphNoFallback('0') != nullptr);
+  assert(interRegular->FindGlyphNoFallback('%') != nullptr);
+  assert(interRegular->FindGlyphNoFallback('/') != nullptr);
+  assert(interRegular->FindGlyphNoFallback(0x03B1) != nullptr);
+  assert(interRegular->FindGlyphNoFallback(0x03B2) != nullptr);
+  assert(interRegular->FindGlyphNoFallback(0x03C6) != nullptr);
+  assert(interRegular->FindGlyphNoFallback(0x03B8) != nullptr);
+  assert(interRegular->FindGlyphNoFallback(0x03C8) != nullptr);
+  assert(interRegular->FindGlyphNoFallback(0x0307) != nullptr);
 
   bool isOpen = true;
   bool isTabOpen = true;
   bool isFoldOutOpen = true;
   bool enabled = false;
   double throttle = 0.5;
+  double linkedXAxisMin = 0.0;
+  double linkedXAxisMax = 2.0;
   int clicks = 0;
+  std::vector<int> plotCallbackOrder;
 
   ImGui::NewFrame();
+
+  ImGui::Begin("LaTeX FlightUI Test");
+  temporaryLatex.Render();
+  scaledLatex.Render();
+  ImGui::End();
 
   UI::Window("FlightUI Test")
       .Open(isOpen)
@@ -171,7 +302,8 @@ int main() {
               .Height(120.0F)
               .XAxisFlags(ImPlotAxisFlags_None)
               .YAxisFlags(ImPlotAxisFlags_AutoFit | ImPlotAxisFlags_RangeFit)
-              .XAxisLimits(0.0, 2.0, ImPlotCond_Always)
+              .XAxisLinks(linkedXAxisMin, linkedXAxisMax)
+              .XAxisTicks({0.0, 1.0, 2.0})
               .YAxisLimits(0.0, 4.0)
               .XAxisLabel("X")
               .YAxisLabel("Y")
@@ -210,12 +342,113 @@ int main() {
 
   UI::Window("Second FlightUI Test")[UI::Text("Second window")];
 
+  ImGui::Begin("Plot Callback Order Test");
+  UI::UIElement callbackPlot =
+      UI::Plot("Callback Order")
+          .Height(120.0F)
+          .Underlay([&plotCallbackOrder] { plotCallbackOrder.push_back(1); })
+          .AddLine("Callback Line", xValues, yValues)
+          .Overlay([&plotCallbackOrder] { plotCallbackOrder.push_back(2); });
+  callbackPlot.Render();
+  ImGui::End();
+
   ImGui::Render();
 
   assert(isOpen);
   assert(isTabOpen);
   assert(isFoldOutOpen);
   assert(clicks == 0);
+  assert(plotCallbackOrder == std::vector<int>({1, 2}));
+  assert(std::abs(linkedXAxisMin) < RangeTolerance);
+  assert(std::abs(linkedXAxisMax - 2.0) < RangeTolerance);
+
+  bool controllerOpen = true;
+  bool controllerEnabled = false;
+  ImVec2 controllerHeaderMinimum{};
+  ImVec2 controllerToggleMinimum{};
+  ImVec2 controllerToggleMaximum{};
+  const auto renderControllerHeaderFrame = [&] {
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(20.0F, 20.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(420.0F, 180.0F), ImGuiCond_Always);
+    ImGui::Begin("FoldOut Header Interaction Test",
+        nullptr,
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse);
+    controllerHeaderMinimum = ImGui::GetCursorScreenPos();
+    UI::FoldOut("Roll Hold")
+        .Open(controllerOpen)
+        .DefaultOpen()
+        .Framed()
+        .SpanAvailWidth()
+        .Id("ControllerHeaderInteraction")
+        .HeaderLeft(
+            UI::Custom([&] {
+              ImGui::Checkbox("##Enabled", &controllerEnabled);
+              controllerToggleMinimum = ImGui::GetItemRectMin();
+              controllerToggleMaximum = ImGui::GetItemRectMax();
+            }),
+            18.0F)[UI::Text("Controller settings")]
+        .Render();
+    ImGui::End();
+    ImGui::Render();
+  };
+
+  io.AddMousePosEvent(-1000.0F, -1000.0F);
+  renderControllerHeaderFrame();
+  const ImVec2 toggleCenter{
+      (controllerToggleMinimum.x + controllerToggleMaximum.x) * 0.5F,
+      (controllerToggleMinimum.y + controllerToggleMaximum.y) * 0.5F};
+  io.AddMousePosEvent(toggleCenter.x, toggleCenter.y);
+  renderControllerHeaderFrame();
+  io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+  renderControllerHeaderFrame();
+  io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+  renderControllerHeaderFrame();
+  assert(controllerEnabled);
+  assert(controllerOpen);
+
+  const ImVec2 titlePosition{
+      controllerHeaderMinimum.x + 48.0F, toggleCenter.y};
+  io.AddMousePosEvent(titlePosition.x, titlePosition.y);
+  renderControllerHeaderFrame();
+  io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+  renderControllerHeaderFrame();
+  io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+  renderControllerHeaderFrame();
+  assert(controllerEnabled);
+  assert(!controllerOpen);
+  io.AddMousePosEvent(-1000.0F, -1000.0F);
+
+  const std::vector<double> focusedNearValues{0.0, 1.0, 0.5};
+  const std::vector<double> focusedFarValues{100.0, 200.0, 150.0};
+  ImPlotRange focusedYAxisRange;
+  const auto renderFocusedYAxisFrame = [&] {
+    ImGui::NewFrame();
+    ImGui::Begin("Focused Y Axis Test");
+    UI::UIElement focusedPlot =
+        UI::Plot("Hidden Series Range")
+            .Height(120.0F)
+            .FocusedYAxis()
+            .XAxisLimitsAlways(0.0, 2.0)
+            .AddLine("Near", xValues, focusedNearValues)
+            .AddLine("Far", xValues, focusedFarValues)
+            .Overlay([&focusedYAxisRange] {
+              if (ImPlotItem *farItem = ImPlot::GetItem("Far")) {
+                farItem->Show = false;
+              }
+              focusedYAxisRange = ImPlot::GetPlotLimits().Y;
+            });
+    focusedPlot.Render();
+    ImGui::End();
+    ImGui::Render();
+  };
+
+  renderFocusedYAxisFrame();
+  renderFocusedYAxisFrame();
+  renderFocusedYAxisFrame();
+  assert(focusedYAxisRange.Min < 0.0);
+  assert(focusedYAxisRange.Max > 1.0);
+  assert(focusedYAxisRange.Max < 10.0);
 
   ImPlot::DestroyContext();
   ImGui::DestroyContext();

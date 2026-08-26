@@ -4,22 +4,27 @@
 #include "application/gui/Component.hpp"
 #include "application/gui/GUIConfig.hpp"
 #include "application/gui/Window.hpp"
+#include "application/gui/layout/EditorLayoutManager.hpp"
+#include "application/gui/layout/EditorWindowStateSettings.hpp"
+#include "application/gui/platform/FileDialogService.hpp"
+#include "application/gui/resources/EditorIconRegistry.hpp"
 #include "application/sim/Simulation.hpp"
 #include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <implot.h>
 #include <memory>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
-namespace viz {
-class FlightVisualizer;
-}
-
 namespace gui {
+class FlightVizWindow;
+
 class GUI {
 public:
   // Lifetime and frame loop
-  explicit GUI(sim::Simulation *sim, GUIConfig config = {});
+  GUI(sim::Simulation &primarySimulation, sim::Simulation *baselineSimulation,
+      GUIConfig config = {});
   ~GUI();
 
   GUI(const GUI &other) = delete;
@@ -34,6 +39,14 @@ public:
   void RequestClose();
 
   const GUIConfig &GetConfig() const { return config_; }
+  EditorIconRegistry &GetEditorIcons() { return editorIcons_; }
+  const EditorIconRegistry &GetEditorIcons() const { return editorIcons_; }
+  EditorLayoutManager &GetEditorLayouts() { return editorLayoutManager_; }
+  const EditorLayoutManager &GetEditorLayouts() const {
+    return editorLayoutManager_;
+  }
+  IFileDialog &GetFileDialog() { return fileDialogService_; }
+  void ResetEditorLayoutToDefault();
 
   // Application control
   void SetSimulationExecutionControl(
@@ -49,11 +62,13 @@ public:
   }
 
   // Simulation and visualization
-  sim::Simulation &GetSimulation() { return *sim_; }
-  const sim::Simulation &GetSimulation() const { return *sim_; }
-  viz::FlightVisualizer *GetFlightVisualizer() { return visualizer_.get(); }
-  const viz::FlightVisualizer *GetFlightVisualizer() const {
-    return visualizer_.get();
+  sim::Simulation &GetPrimarySimulation() { return primarySimulation_; }
+  const sim::Simulation &GetPrimarySimulation() const {
+    return primarySimulation_;
+  }
+  sim::Simulation *GetBaselineSimulation() { return baselineSimulation_; }
+  const sim::Simulation *GetBaselineSimulation() const {
+    return baselineSimulation_;
   }
 
   // UI registration
@@ -87,7 +102,9 @@ private:
   void EndFrame();
 
   // Rendering
+  void UpdateUIScale(bool force = false);
   void RenderDockSpace();
+  void InitializeDefaultDockLayout(ImGuiID dockSpaceId, ImVec2 dockSpaceSize);
   void RenderMainMenuBar();
   void RenderSimulationMenu();
   void RenderWindowMenu();
@@ -104,15 +121,29 @@ private:
   bool glfwBackendInitialized_ = false;
   bool openGlBackendInitialized_ = false;
 
+  // Responsive UI state
+  ImGuiStyle baseImGuiStyle_;
+  ImPlotStyle baseImPlotStyle_;
+  float appliedUIScale_ = 0.0F;
+
   // UI ownership
+  EditorIconRegistry editorIcons_;
+  ImGuiEditorLayoutBackend editorLayoutBackend_;
+  EditorLayoutManager editorLayoutManager_;
+  NativeFileDialogService fileDialogService_;
+  std::string workspaceIniPathString_;
   std::vector<std::unique_ptr<Component>> components_;
   std::vector<Window *> windows_;
+  EditorWindowStateSettings windowStateSettings_;
+  FlightVizWindow *primaryFlightVizWindow_ = nullptr;
+  FlightVizWindow *baselineFlightVizWindow_ = nullptr;
+  bool defaultDockLayoutInitialized_ = false;
 
   // Application dependencies
   application::SimulationExecutionControl *simulationExecutionControl_ =
       nullptr;
-  sim::Simulation *sim_;
-  std::unique_ptr<viz::FlightVisualizer> visualizer_;
+  sim::Simulation &primarySimulation_;
+  sim::Simulation *const baselineSimulation_;
 
   // Configuration
   GUIConfig config_;

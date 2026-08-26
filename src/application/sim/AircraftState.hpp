@@ -11,6 +11,7 @@ struct AircraftState {
   double rollDeg = 0.0;
   double pitchDeg = 0.0;
   double headingDeg = 0.0;
+  double courseDeg = 0.0;
   double alphaDeg = 0.0;
   double betaDeg = 0.0;
 

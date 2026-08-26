@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <random>
 
+namespace util {
+
 Rng::Rng(std::uint32_t seed) : engine_(seed) {}
 
 void Rng::Seed(std::uint32_t seed) { engine_.seed(seed); }
@@ -21,3 +23,5 @@ double Rng::Normal(double mean, double stdDev) {
 bool Rng::Bernoulli(double prob) {
   return std::bernoulli_distribution(prob)(engine_);
 }
+
+} // namespace util

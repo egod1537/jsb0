@@ -2,6 +2,10 @@
 
 #include "flightui/FlightUI.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <string>
+
 namespace gui {
 namespace UI = FlightUI;
 
@@ -9,11 +13,13 @@ namespace {
 constexpr float AutopilotTargetInputWidth = 140.0F;
 constexpr float AutopilotParameterIndent = 24.0F;
 constexpr float AutopilotParameterSliderWidth = 240.0F;
+constexpr float AutopilotParameterInputWidth = 88.0F;
 constexpr float HoldCaptureButtonWidth = 96.0F;
-constexpr double MinimumPitchNaturalFrequencyRadPerSec = 4.0;
+constexpr float ControllerHeaderCheckboxWidth = 18.0F;
 
 struct AxisHoldSectionConfig {
   const char *holdLabel = "";
+  const char *sectionId = "";
   const char *targetLabel = "";
   const char *targetInputId = "";
   bool &enabled;
@@ -35,15 +41,15 @@ struct AxisHoldSectionConfig {
   double &naturalFrequencyRadPerSec;
   double minimumNaturalFrequencyRadPerSec = 0.1;
   bool &responseOpen;
+  bool responseEditableWhenDisabled = false;
+  bool responseVisible = true;
 };
 
-UI::UIElement MakeAutopilotHoldRow(const char *holdLabel,
-    const char *targetLabel, const char *inputId, bool &enabled,
-    double &targetValue, double step = 1.0, double fastStep = 10.0) {
+UI::UIElement MakeAutopilotTargetRow(const char *targetLabel,
+    const char *inputId, bool &enabled, double &targetValue, double step = 1.0,
+    double fastStep = 10.0) {
   return UI::HorizontalLayout().Spacing(
-      8.0F)[+UI::Toggle(holdLabel, enabled).OnChanged([&enabled](bool value) {
-    enabled = value;
-  }) + UI::TextDisabled(targetLabel)
+      8.0F)[+UI::TextDisabled(targetLabel)
             + UI::InputDouble(inputId, targetValue)
                 .Width(AutopilotTargetInputWidth)
                 .Step(step)
@@ -54,15 +60,43 @@ UI::UIElement MakeAutopilotHoldRow(const char *holdLabel,
             + UI::Text(enabled ? "Hold" : "Off")];
 }
 
+UI::FoldOutBuilder MakeControllerFoldOut(const char *label,
+    const char *sectionId, bool &enabled, const char *enabledToggleId,
+    bool defaultOpen = true) {
+  UI::FoldOutBuilder foldOut =
+      UI::FoldOut(label).Framed().SpanAvailWidth().Id(sectionId).HeaderLeft(
+          UI::Toggle("##Enabled", enabled)
+              .Id(enabledToggleId)
+              .OnChanged([&enabled](bool value) { enabled = value; }),
+          ControllerHeaderCheckboxWidth);
+  if (defaultOpen) {
+    foldOut.DefaultOpen();
+  }
+  return foldOut;
+}
+
 UI::UIElement MakeAutopilotParameterSlider(const char *label,
     const char *sliderId, double &value, double minimum, double maximum) {
+  const std::string inputId = std::string(sliderId) + "Value";
+  const auto setValue = [&value, minimum, maximum](double newValue) {
+    if (std::isfinite(newValue)) {
+      value = std::clamp(newValue, minimum, maximum);
+    }
+  };
+
   return UI::HorizontalLayout().Spacing(
       8.0F)[+UI::HorizontalSpace(AutopilotParameterIndent)
             + UI::TextDisabled(label)
             + UI::SliderDouble(sliderId, value, minimum, maximum)
                 .Width(AutopilotParameterSliderWidth)
                 .Format("%.2f")
-                .OnChanged([&value](double newValue) { value = newValue; })];
+                .OnChanged(setValue)
+            + UI::InputDouble(inputId, value)
+                .Width(AutopilotParameterInputWidth)
+                .Step(0.01)
+                .FastStep(0.1)
+                .Format("%.2f")
+                .OnChanged(setValue)];
 }
 
 UI::UIElement MakeAxisHoldStatusRow(const AxisHoldSectionConfig &config) {
@@ -102,25 +136,32 @@ UI::UIElement MakeAxisHoldResponseFoldOut(const AxisHoldSectionConfig &config) {
 }
 
 UI::UIElement MakeAxisHoldSection(const AxisHoldSectionConfig &config) {
-  UI::VerticalLayoutBuilder layout = UI::VerticalLayout().Spacing(6.0F)
-                                     + MakeAutopilotHoldRow(config.holdLabel,
-                                         config.targetLabel,
-                                         config.targetInputId,
-                                         config.enabled,
-                                         config.targetValue)
-                                     + MakeAxisHoldStatusRow(config);
+  UI::VerticalLayoutBuilder layout =
+      UI::VerticalLayout().Spacing(6.0F)
+      + MakeAutopilotTargetRow(config.targetLabel,
+          config.targetInputId,
+          config.enabled,
+          config.targetValue);
 
-  if (config.enabled) {
+  layout = layout + MakeAxisHoldStatusRow(config);
+
+  if (config.responseVisible
+      && (config.enabled || config.responseEditableWhenDisabled)) {
     layout = layout + MakeAxisHoldResponseFoldOut(config);
   }
 
-  return layout;
+  const std::string enabledToggleId = std::string(config.sectionId) + "Enabled";
+  return MakeControllerFoldOut(config.holdLabel,
+      config.sectionId,
+      config.enabled,
+      enabledToggleId.c_str())[layout];
 }
 
 UI::UIElement MakeRollHoldSection(const AutopilotPanelProps &props) {
   AutopilotPanelState &state = props.state;
   return MakeAxisHoldSection({
       .holdLabel = "Roll Hold",
+      .sectionId = "RollHoldSection",
       .targetLabel = "Target Roll (deg)",
       .targetInputId = "##RollHoldTarget",
       .enabled = state.rollHold,
@@ -141,36 +182,10 @@ UI::UIElement MakeRollHoldSection(const AutopilotPanelProps &props) {
       .naturalFrequencySliderId = "##RollHoldNaturalFrequency",
       .naturalFrequencyRadPerSec = state.rollHoldNaturalFrequencyRadPerSec,
       .responseOpen = state.rollHoldResponseOpen,
+      .responseEditableWhenDisabled = true,
   });
 }
 
-UI::UIElement MakePitchHoldSection(const AutopilotPanelProps &props) {
-  AutopilotPanelState &state = props.state;
-  return MakeAxisHoldSection({
-      .holdLabel = "Pitch Hold",
-      .targetLabel = "Target Pitch (deg)",
-      .targetInputId = "##PitchHoldTarget",
-      .enabled = state.pitchHold,
-      .targetValue = state.pitchTargetDeg,
-      .currentLabel = "Current Pitch",
-      .currentValue = props.currentPitchDeg,
-      .rateLabel = "Pitch Rate",
-      .rateValue = props.currentPitchRateDegPerSec,
-      .outputLabel = "Elevator",
-      .outputValue = props.currentElevator,
-      .active = props.pitchHoldActive,
-      .preparing = props.pitchHoldPreparing,
-      .captureCurrent = props.captureCurrentPitch,
-      .responseLabel = "Pitch Hold Response",
-      .responseId = "PitchHoldResponse",
-      .dampingRatioSliderId = "##PitchHoldDampingRatio",
-      .dampingRatio = state.pitchHoldDampingRatio,
-      .naturalFrequencySliderId = "##PitchHoldNaturalFrequency",
-      .naturalFrequencyRadPerSec = state.pitchHoldNaturalFrequencyRadPerSec,
-      .minimumNaturalFrequencyRadPerSec = MinimumPitchNaturalFrequencyRadPerSec,
-      .responseOpen = state.pitchHoldResponseOpen,
-  });
-}
 } // namespace
 
 void AutopilotPanel::Draw(AutopilotPanelState &state) {
@@ -178,27 +193,9 @@ void AutopilotPanel::Draw(AutopilotPanelState &state) {
 }
 
 void AutopilotPanel::Draw(const AutopilotPanelProps &props) {
-  AutopilotPanelState &state = props.state;
-  UI::VerticalLayout()
-      .Spacing(8.0F)[+UI::Heading("Autopilot") + MakeRollHoldSection(props)
-                     + MakePitchHoldSection(props)
-                     + MakeAutopilotHoldRow("Yaw Hold",
-                         "Yaw (deg)",
-                         "##YawHoldTarget",
-                         state.yawHold,
-                         state.yawTargetDeg)
-                     + MakeAutopilotHoldRow("Altitude Hold",
-                         "Altitude (ft)",
-                         "##AltitudeHoldTarget",
-                         state.altitudeHold,
-                         state.altitudeTargetFt,
-                         100.0,
-                         1000.0)
-                     + MakeAutopilotHoldRow("Course Hold",
-                         "Course (deg)",
-                         "##CourseHoldTarget",
-                         state.courseHold,
-                         state.courseTargetDeg)]
-      .Render();
+  const UI::UIElement layout = UI::VerticalLayout().Spacing(8.0F)
+                               + UI::Heading("Autopilot Controls")
+                               + MakeRollHoldSection(props);
+  layout.Render();
 }
 } // namespace gui

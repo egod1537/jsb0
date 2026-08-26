@@ -9,9 +9,9 @@ namespace UI = FlightUI;
 FlightConsoleWindow::FlightConsoleWindow() : Window("Flight Console") {}
 
 void FlightConsoleWindow::OnRender(GUI &gui) {
-  const sim::SimulationConfig &config = gui.GetSimulation().GetConfig();
+  const sim::SimulationConfig &config = gui.GetPrimarySimulation().GetConfig();
   const sim::InitialCondition &initialCondition =
-      gui.GetSimulation().GetDefaultInitialCondition();
+      gui.GetPrimarySimulation().GetDefaultInitialCondition();
 
   // clang-format off
   FlightUI::UIElement content =

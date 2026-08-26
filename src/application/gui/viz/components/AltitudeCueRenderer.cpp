@@ -1,13 +1,13 @@
 #include "application/gui/viz/components/AltitudeCueRenderer.hpp"
 
 #include "application/gui/viz/render/LineCanvas.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 
 namespace {
-constexpr float AircraftOriginZ = 0.35F;
 constexpr float MinimumVisualAltitude = 0.35F;
 constexpr int GroundRingSegments = 28;
 
@@ -33,13 +33,11 @@ void DrawGroundRing(viz::LineCanvas &canvas, viz::Vec3 center, float radius,
   constexpr float TwoPi = 6.2831853071795864769F;
 
   for (int segmentIndex = 0; segmentIndex < GroundRingSegments;
-       ++segmentIndex) {
-    const float a0 =
-        TwoPi * static_cast<float>(segmentIndex)
-        / static_cast<float>(GroundRingSegments);
-    const float a1 =
-        TwoPi * static_cast<float>(segmentIndex + 1)
-        / static_cast<float>(GroundRingSegments);
+      ++segmentIndex) {
+    const float a0 = TwoPi * static_cast<float>(segmentIndex)
+                     / static_cast<float>(GroundRingSegments);
+    const float a1 = TwoPi * static_cast<float>(segmentIndex + 1)
+                     / static_cast<float>(GroundRingSegments);
     const viz::Vec3 p0{
         center.x + std::cos(a0) * radius,
         center.y + std::sin(a0) * radius,
@@ -57,10 +55,10 @@ void DrawGroundRing(viz::LineCanvas &canvas, viz::Vec3 center, float radius,
 
 namespace viz {
 void AltitudeCueRenderer::Render(RenderContext &context) const {
-  const float visualAltitude =
-      SanitizeAltitude(context.snapshot.visualAltitude);
-  const Vec3 aircraftPoint{0.0F, 0.0F, AircraftOriginZ};
-  const Vec3 groundPoint{0.0F, 0.0F, AircraftOriginZ - visualAltitude};
+  const AircraftSnapshot &aircraft = context.snapshot.aircraft;
+  const float visualAltitude = SanitizeAltitude(aircraft.visualAltitude);
+  const Vec3 aircraftPoint = aircraft.position;
+  const Vec3 groundPoint = aircraftPoint + Vec3{0.0F, 0.0F, -visualAltitude};
   const float markerRadius = std::clamp(visualAltitude * 0.12F, 0.55F, 3.0F);
 
   context.canvas.Line(aircraftPoint,
@@ -83,11 +81,11 @@ void AltitudeCueRenderer::Render(RenderContext &context) const {
   const float tickSpacing = ChooseTickSpacing(visualAltitude);
   const int tickCount =
       static_cast<int>(std::floor(visualAltitude / tickSpacing));
-  const float tickHalfWidth =
-      std::clamp(visualAltitude * 0.018F, 0.16F, 0.55F);
+  const float tickHalfWidth = std::clamp(visualAltitude * 0.018F, 0.16F, 0.55F);
   for (int tickIndex = 1; tickIndex < tickCount; ++tickIndex) {
-    const float z = AircraftOriginZ - tickSpacing * static_cast<float>(tickIndex);
-    const Vec3 tickCenter{0.0F, 0.0F, z};
+    const float z =
+        aircraftPoint.z - tickSpacing * static_cast<float>(tickIndex);
+    const Vec3 tickCenter{aircraftPoint.x, aircraftPoint.y, z};
     context.canvas.Line(tickCenter + Vec3{-tickHalfWidth, 0.0F, 0.0F},
         tickCenter + Vec3{tickHalfWidth, 0.0F, 0.0F},
         IM_COL32(255, 226, 150, 185),
@@ -95,9 +93,9 @@ void AltitudeCueRenderer::Render(RenderContext &context) const {
   }
 
   const Vec3 labelPoint{
-      markerRadius * 0.75F,
-      0.0F,
-      AircraftOriginZ - visualAltitude * 0.5F,
+      aircraftPoint.x + markerRadius * 0.75F,
+      aircraftPoint.y,
+      aircraftPoint.z - visualAltitude * 0.5F,
   };
   const auto projectedLabel = context.canvas.ProjectPoint(labelPoint);
   if (!projectedLabel.has_value()) {
@@ -108,9 +106,10 @@ void AltitudeCueRenderer::Render(RenderContext &context) const {
   std::snprintf(label,
       sizeof(label),
       "AGL %.0f ft",
-      context.snapshot.aircraftState.altitudeAglFt);
+      aircraft.state.altitudeAglFt);
   context.canvas.GetDrawList().AddText(
-      ImVec2(projectedLabel->x + 8.0F, projectedLabel->y - 8.0F),
+      ImVec2(projectedLabel->x + FlightUI::Ui(8.0F),
+          projectedLabel->y - FlightUI::Ui(8.0F)),
       IM_COL32(255, 226, 150, 255),
       label);
 }

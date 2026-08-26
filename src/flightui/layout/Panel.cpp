@@ -2,6 +2,7 @@
 
 #include "flightui/core/UIElementFactory.hpp"
 #include "flightui/core/UIRenderHelpers.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <imgui.h>
 
@@ -172,14 +173,15 @@ UIElement PanelBuilder::operator[](Children children) const {
     if (state.FlexibleHeight) {
       size.Y = 0.0F;
     }
+    size = UiSize(size);
 
     const std::string childId = state.Id.empty() ? state.Name : state.Id;
     Internal::DisabledScope disabledScope(!state.Enabled);
     const bool isVisible =
         ImGui::BeginChild(childId.c_str(), ToImVec2(size), flags);
 
-    if (!state.Tooltip.empty() &&
-        ImGui::IsWindowHovered(ImGuiHoveredFlags_DelayNormal)) {
+    if (!state.Tooltip.empty()
+        && ImGui::IsWindowHovered(ImGuiHoveredFlags_DelayNormal)) {
       ImGui::SetTooltip("%s", state.Tooltip.c_str());
     }
 

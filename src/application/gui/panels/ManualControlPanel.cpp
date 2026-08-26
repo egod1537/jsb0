@@ -5,6 +5,8 @@
 #include "application/sim/control/ManualFlightControlController.hpp"
 #include "flightui/FlightUI.hpp"
 
+#include <cmath>
+
 namespace gui {
 namespace UI = FlightUI;
 
@@ -14,6 +16,7 @@ constexpr float ManualInputLayoutSpacing = 6.0F;
 constexpr float ManualInputRowSpacing = 8.0F;
 constexpr float ManualInputButtonWidth = 32.0F;
 constexpr float ManualInputSliderWidth = 240.0F;
+constexpr float ManualInputValueWidth = 88.0F;
 
 bool WasShortcutPressed(UI::Key key) { return UI::IsKeyPressed(key, true); }
 
@@ -25,11 +28,11 @@ bool IsManualControlAllowed(const AutopilotPanelState &autopilotState,
     control::ControlAxis axis) {
   switch (axis) {
   case control::ControlAxis::Elevator:
-    return !autopilotState.pitchHold && !autopilotState.altitudeHold;
+    return true;
   case control::ControlAxis::Aileron:
-    return !autopilotState.rollHold && !autopilotState.courseHold;
+    return !autopilotState.rollHold;
   case control::ControlAxis::Rudder:
-    return !autopilotState.yawHold;
+    return true;
   case control::ControlAxis::Throttle:
     return true;
   }
@@ -41,25 +44,13 @@ const char *ManualControlLockTooltip(const AutopilotPanelState &autopilotState,
     control::ControlAxis axis) {
   switch (axis) {
   case control::ControlAxis::Elevator:
-    if (autopilotState.altitudeHold) {
-      return "Altitude Hold is controlling elevator.";
-    }
-    if (autopilotState.pitchHold) {
-      return "Pitch Hold is controlling elevator.";
-    }
     break;
   case control::ControlAxis::Aileron:
-    if (autopilotState.courseHold) {
-      return "Course Hold is controlling aileron.";
-    }
     if (autopilotState.rollHold) {
       return "Roll Hold is controlling aileron.";
     }
     break;
   case control::ControlAxis::Rudder:
-    if (autopilotState.yawHold) {
-      return "Yaw Hold is controlling rudder.";
-    }
     break;
   case control::ControlAxis::Throttle:
     break;
@@ -81,7 +72,7 @@ void AdjustManualInput(control::ManualFlightControlController &manualController,
 void SetManualInput(control::ManualFlightControlController &manualController,
     const AutopilotPanelState &autopilotState, control::ControlAxis axis,
     double value) {
-  if (!IsManualControlAllowed(autopilotState, axis)) {
+  if (!IsManualControlAllowed(autopilotState, axis) || !std::isfinite(value)) {
     return;
   }
 
@@ -179,6 +170,19 @@ UI::UIElement MakeThrottleRow(
                     value);
               })
               .Width(ManualInputSliderWidth)
+        + UI::InputDouble("##ThrottleInputValue", input.throttle)
+              .Enabled(enabled)
+              .Tooltip(tooltip)
+              .Step(0.01)
+              .FastStep(0.1)
+              .Format("%.3f")
+              .OnChanged([&manualController, &autopilotState](double value) {
+                SetManualInput(manualController,
+                    autopilotState,
+                    control::ControlAxis::Throttle,
+                    value);
+              })
+              .Width(ManualInputValueWidth)
         + UI::Button("R")
               .Enabled(enabled)
               .Tooltip(tooltip)
@@ -227,6 +231,19 @@ UI::UIElement MakeElevatorRow(
                     value);
               })
               .Width(ManualInputSliderWidth)
+        + UI::InputDouble("##ElevatorInputValue", input.elevator)
+              .Enabled(enabled)
+              .Tooltip(tooltip)
+              .Step(0.01)
+              .FastStep(0.1)
+              .Format("%.3f")
+              .OnChanged([&manualController, &autopilotState](double value) {
+                SetManualInput(manualController,
+                    autopilotState,
+                    control::ControlAxis::Elevator,
+                    value);
+              })
+              .Width(ManualInputValueWidth)
         + UI::Button("S")
               .Enabled(enabled)
               .Tooltip(tooltip)
@@ -275,6 +292,19 @@ UI::UIElement MakeAileronRow(
                     value);
               })
               .Width(ManualInputSliderWidth)
+        + UI::InputDouble("##AileronInputValue", input.aileron)
+              .Enabled(enabled)
+              .Tooltip(tooltip)
+              .Step(0.01)
+              .FastStep(0.1)
+              .Format("%.3f")
+              .OnChanged([&manualController, &autopilotState](double value) {
+                SetManualInput(manualController,
+                    autopilotState,
+                    control::ControlAxis::Aileron,
+                    value);
+              })
+              .Width(ManualInputValueWidth)
         + UI::Button("D")
               .Enabled(enabled)
               .Tooltip(tooltip)
@@ -323,6 +353,19 @@ UI::UIElement MakeRudderRow(
                     value);
               })
               .Width(ManualInputSliderWidth)
+        + UI::InputDouble("##RudderInputValue", input.rudder)
+              .Enabled(enabled)
+              .Tooltip(tooltip)
+              .Step(0.01)
+              .FastStep(0.1)
+              .Format("%.3f")
+              .OnChanged([&manualController, &autopilotState](double value) {
+                SetManualInput(manualController,
+                    autopilotState,
+                    control::ControlAxis::Rudder,
+                    value);
+              })
+              .Width(ManualInputValueWidth)
         + UI::Button("E")
               .Enabled(enabled)
               .Tooltip(tooltip)

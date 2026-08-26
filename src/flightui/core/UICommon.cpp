@@ -1,5 +1,6 @@
 #include "flightui/core/UICommon.hpp"
 #include "flightui/core/UIRenderHelpers.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <imgui.h>
 
@@ -30,7 +31,7 @@ DisabledScope::~DisabledScope() {
 
 ItemWidthScope::ItemWidthScope(float width) : m_Active(width > 0.0F) {
   if (m_Active) {
-    ImGui::PushItemWidth(width);
+    ImGui::PushItemWidth(Ui(width));
   }
 }
 

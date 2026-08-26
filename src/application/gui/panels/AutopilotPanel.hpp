@@ -4,27 +4,16 @@
 
 namespace gui {
 struct AutopilotPanelState {
-  // Hold selection
+  // Autopilot control selection
   bool rollHold = false;
-  bool pitchHold = false;
-  bool yawHold = false;
-  bool altitudeHold = false;
-  bool courseHold = false;
 
-  // Hold targets
+  // Roll Hold target
   double rollTargetDeg = 0.0;
-  double pitchTargetDeg = 0.0;
-  double yawTargetDeg = 0.0;
-  double altitudeTargetFt = 1000.0;
-  double courseTargetDeg = 0.0;
 
   // Desired response
   double rollHoldDampingRatio = 0.7;
   double rollHoldNaturalFrequencyRadPerSec = 1.0;
   bool rollHoldResponseOpen = true;
-  double pitchHoldDampingRatio = 0.7;
-  double pitchHoldNaturalFrequencyRadPerSec = 5.0;
-  bool pitchHoldResponseOpen = true;
 };
 
 struct AutopilotPanelProps {
@@ -37,14 +26,6 @@ struct AutopilotPanelProps {
   bool rollHoldActive = false;
   bool rollHoldPreparing = false;
   std::function<void()> captureCurrentRoll;
-
-  // Pitch telemetry and actions
-  double currentPitchDeg = 0.0;
-  double currentPitchRateDegPerSec = 0.0;
-  double currentElevator = 0.0;
-  bool pitchHoldActive = false;
-  bool pitchHoldPreparing = false;
-  std::function<void()> captureCurrentPitch;
 };
 
 class AutopilotPanel {

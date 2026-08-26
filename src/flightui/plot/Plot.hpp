@@ -5,11 +5,20 @@
 
 #include <implot.h>
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace FlightUI {
+struct PlotAxisRange {
+  double Min;
+  double Max;
+};
+
+std::optional<PlotAxisRange> ExpandYAxisRange(double minValue, double maxValue);
+
 class PlotBuilder {
 public:
   // Lifetime
@@ -32,6 +41,8 @@ public:
       ImPlotCond cond = ImPlotCond_Once);
   PlotBuilder &SetYAxisLimits(double min, double max,
       ImPlotCond cond = ImPlotCond_Once);
+  PlotBuilder &SetXAxisLinks(double *min, double *max);
+  PlotBuilder &SetXAxisTicks(std::vector<double> ticks);
   PlotBuilder &SetFlags(ImPlotFlags flags);
   PlotBuilder &SetFixedView(bool enabled = true);
   PlotBuilder &SetFocusedYAxis(bool enabled = true);
@@ -39,6 +50,8 @@ public:
   PlotBuilder &SetYAxisLimitsAlways(double min, double max);
   PlotBuilder &SetLegendVisible(bool visible);
   PlotBuilder &SetOffset(int offset);
+  PlotBuilder &SetUnderlay(std::function<void()> underlay);
+  PlotBuilder &SetOverlay(std::function<void()> overlay);
 
   // Fluent configuration
   PlotBuilder &Size(Vector2 size);
@@ -52,6 +65,8 @@ public:
       ImPlotCond cond = ImPlotCond_Once);
   PlotBuilder &YAxisLimits(double min, double max,
       ImPlotCond cond = ImPlotCond_Once);
+  PlotBuilder &XAxisLinks(double &min, double &max);
+  PlotBuilder &XAxisTicks(std::vector<double> ticks);
   PlotBuilder &Flags(ImPlotFlags flags);
   PlotBuilder &FixedView(bool enabled = true);
   PlotBuilder &FocusedYAxis(bool enabled = true);
@@ -59,6 +74,8 @@ public:
   PlotBuilder &YAxisLimitsAlways(double min, double max);
   PlotBuilder &LegendVisible(bool visible);
   PlotBuilder &Offset(int offset);
+  PlotBuilder &Underlay(std::function<void()> underlay);
+  PlotBuilder &Overlay(std::function<void()> overlay);
 
   // Line series
   PlotBuilder &AddLine(std::string label, DataView xValues, DataView yValues);

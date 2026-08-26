@@ -7,7 +7,13 @@ namespace sim {
 class Aircraft;
 class Simulation;
 struct Tick;
+} // namespace sim
 
+namespace telemetry {
+class TelemetryRegistry;
+}
+
+namespace sim {
 class Component {
 public:
   virtual ~Component() = default;
@@ -24,6 +30,8 @@ protected:
   // Owner-provided dependencies
   Aircraft &GetAircraft();
   const Aircraft &GetAircraft() const;
+  telemetry::TelemetryRegistry &GetTelemetryRegistry();
+  const telemetry::TelemetryRegistry &GetTelemetryRegistry() const;
 
   template <typename T> T *GetComponent() {
     static_assert(std::is_base_of_v<Component, T>,

@@ -1,6 +1,6 @@
 #include "application/gui/viz/FlightVisualizer.hpp"
 
-#include "application/sim/Aircraft.hpp"
+#include "application/gui/resources/EditorIcon.hpp"
 #include "application/gui/viz/components/AltitudeCueRenderer.hpp"
 #include "application/gui/viz/components/AircraftWireframeRenderer.hpp"
 #include "application/gui/viz/components/FlightCameraController.hpp"
@@ -8,15 +8,18 @@
 #include "application/gui/viz/components/TelemetryOverlay.hpp"
 #include "application/gui/viz/render/CameraComponent.hpp"
 #include "application/gui/viz/render/LineCanvas.hpp"
+#include "application/sim/Aircraft.hpp"
+#include "application/sim/Simulation.hpp"
+#include "common/math/Math.hpp"
+#include "flightui/core/UIScale.hpp"
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace {
-constexpr float MinCanvasWidth = 360.0F;
-constexpr float MinCanvasHeight = 280.0F;
 constexpr float MinVisualAltitude = 0.35F;
 constexpr float MaxVisualAltitude = 52.0F;
 constexpr float LinearAltitudeBreakFt = 1800.0F;
@@ -24,19 +27,95 @@ constexpr float FeetPerVizUnit = 75.0F;
 constexpr float HighAltitudeLogFt = 450.0F;
 constexpr float HighAltitudeLogScale = 8.0F;
 constexpr float MetersPerVizUnit = FeetPerVizUnit * 0.3048F;
+constexpr float AircraftOriginZ = 0.35F;
+constexpr double EarthRadiusMeters = 6'371'000.0;
 constexpr double MaxMotionTickSec = 0.25;
 constexpr double KnotsToMetersPerSec = 0.5144444444444445;
+constexpr double MinimumMinimapSpanMeters = 100.0;
+constexpr float MinimapHorizontalDirection = -1.0F;
+constexpr float ToolbarHeight = 28.0F;
+constexpr float ToolbarButtonSize = 22.0F;
+constexpr float ToolbarHorizontalPadding = 4.0F;
+constexpr float ToolbarButtonCornerRadius = 3.0F;
+constexpr float ToolbarViewportSpacing = 1.0F;
+
+ImVec2 Offset(ImVec2 point, float x, float y) {
+  return {point.x + x, point.y + y};
+}
+
+bool DrawToolbarIconButton(const char *id, const gui::EditorIconHandle &icon,
+    const char *fallbackLabel, bool active, bool available,
+    const char *tooltip) {
+  const float buttonSize = FlightUI::Ui(ToolbarButtonSize);
+  const ImVec2 minimum = ImGui::GetCursorScreenPos();
+  const ImVec2 size{buttonSize, buttonSize};
+
+  ImGui::PushID(id);
+  const bool clicked = ImGui::InvisibleButton("##Button", size);
+  const bool hovered = ImGui::IsItemHovered();
+  const bool held = ImGui::IsItemActive();
+  ImGui::PopID();
+
+  ImGuiCol backgroundColor = active ? ImGuiCol_ButtonActive : ImGuiCol_Button;
+  if (held) {
+    backgroundColor = ImGuiCol_ButtonActive;
+  } else if (hovered && available) {
+    backgroundColor = ImGuiCol_ButtonHovered;
+  }
+
+  ImDrawList &drawList = *ImGui::GetWindowDrawList();
+  const ImVec2 maximum = Offset(minimum, buttonSize, buttonSize);
+  drawList.AddRectFilled(minimum,
+      maximum,
+      ImGui::GetColorU32(backgroundColor),
+      FlightUI::Ui(ToolbarButtonCornerRadius));
+  drawList.AddRect(minimum,
+      maximum,
+      ImGui::GetColorU32(ImGuiCol_Border),
+      FlightUI::Ui(ToolbarButtonCornerRadius));
+
+  const ImU32 iconColor =
+      ImGui::GetColorU32(available ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+  if (icon.IsValid()) {
+    const float iconExtent = FlightUI::Ui(16.0F);
+    const ImVec2 iconMinimum = Offset(minimum,
+        (buttonSize - iconExtent) * 0.5F,
+        (buttonSize - iconExtent) * 0.5F);
+    drawList.AddImage(ImTextureRef(icon.texture),
+        iconMinimum,
+        Offset(iconMinimum, iconExtent, iconExtent),
+        ImVec2(0.0F, 0.0F),
+        ImVec2(1.0F, 1.0F),
+        iconColor);
+  } else {
+    const ImVec2 textSize = ImGui::CalcTextSize(fallbackLabel);
+    drawList.AddText(Offset(minimum,
+                         (buttonSize - textSize.x) * 0.5F,
+                         (buttonSize - textSize.y) * 0.5F),
+        iconColor,
+        fallbackLabel);
+  }
+
+  if (hovered) {
+    if (available) {
+      ImGui::SetTooltip("%s", tooltip);
+    } else {
+      ImGui::SetTooltip("%s\nSimulation unavailable", tooltip);
+    }
+  }
+  return clicked && available;
+}
 
 float VisualAltitudeFromAglFt(double altitudeAglFt) {
   if (!std::isfinite(altitudeAglFt)) {
     return MinVisualAltitude;
   }
 
-  const float altitudeFt =
-      static_cast<float>(std::max(altitudeAglFt, 0.0));
+  const float altitudeFt = static_cast<float>(std::max(altitudeAglFt, 0.0));
   if (altitudeFt <= LinearAltitudeBreakFt) {
-    return std::clamp(
-        altitudeFt / FeetPerVizUnit, MinVisualAltitude, MaxVisualAltitude);
+    return std::clamp(altitudeFt / FeetPerVizUnit,
+        MinVisualAltitude,
+        MaxVisualAltitude);
   }
 
   const float linearAltitude = LinearAltitudeBreakFt / FeetPerVizUnit;
@@ -44,8 +123,7 @@ float VisualAltitudeFromAglFt(double altitudeAglFt) {
       linearAltitude
       + std::log1p((altitudeFt - LinearAltitudeBreakFt) / HighAltitudeLogFt)
             * HighAltitudeLogScale;
-  return std::clamp(
-      compressedAltitude, MinVisualAltitude, MaxVisualAltitude);
+  return std::clamp(compressedAltitude, MinVisualAltitude, MaxVisualAltitude);
 }
 
 float HorizontalSpeedMps(const sim::AircraftState &state) {
@@ -55,8 +133,8 @@ float HorizontalSpeedMps(const sim::AircraftState &state) {
 
   if (std::isfinite(state.calibratedAirspeedKts)
       && state.calibratedAirspeedKts > 0.1) {
-    return static_cast<float>(state.calibratedAirspeedKts
-                              * KnotsToMetersPerSec);
+    return static_cast<float>(
+        state.calibratedAirspeedKts * KnotsToMetersPerSec);
   }
 
   return 0.0F;
@@ -64,41 +142,76 @@ float HorizontalSpeedMps(const sim::AircraftState &state) {
 } // namespace
 
 namespace viz {
-FlightVisualizer::FlightVisualizer() { BuildScene(); }
+FlightVisualizer::FlightVisualizer(const sim::Simulation *mainSimulation,
+    const sim::Simulation *shadowSimulation)
+    : mainSimulation_(mainSimulation), shadowSimulation_(shadowSimulation) {
+  BuildScene();
+}
 
 FlightVisualizer::~FlightVisualizer() = default;
 
-bool FlightVisualizer::Tick(const sim::Aircraft &aircraft) {
-  snapshot_.aircraftState = aircraft.GetAircraftState();
-  snapshot_.controlInput = aircraft.GetControls().GetInput();
-  snapshot_.pitchTrim = aircraft.GetControls().GetPitchTrim();
-  SyncGroundScroll(snapshot_.aircraftState);
-  snapshot_.viewMode = viewMode_;
-  snapshot_.viewOptions = viewOptions_;
-  snapshot_.groundScroll = groundScroll_;
-  snapshot_.visualAltitude =
-      VisualAltitudeFromAglFt(snapshot_.aircraftState.altitudeAglFt);
-  snapshot_.hasAircraft = true;
+void FlightVisualizer::SetShadowEnabled(bool enabled) {
+  shadowEnabled_ = enabled;
+  UpdateSnapshotViewState();
+}
+
+bool FlightVisualizer::Tick() {
+  if (mainSimulation_ == nullptr || !mainSimulation_->IsInitialized()) {
+    snapshot_.aircraft.available = false;
+    snapshot_.shadowAircraft.available = false;
+    return false;
+  }
+
+  const sim::Aircraft &mainAircraft = mainSimulation_->GetAircraft();
+  const double simulationTimeSec =
+      mainAircraft.GetAircraftState().simulationTimeSec;
+  if (lastMainSimulationTimeSec_.has_value() && std::isfinite(simulationTimeSec)
+      && simulationTimeSec < *lastMainSimulationTimeSec_) {
+    ResetMainState();
+  }
+  if (std::isfinite(simulationTimeSec)) {
+    lastMainSimulationTimeSec_ = simulationTimeSec;
+  }
+
+  UpdateWorldOrigin(mainAircraft);
+  snapshot_.aircraft = CaptureAircraft(mainAircraft);
+  snapshot_.shadowAircraft.available = false;
+  if (shadowSimulation_ != nullptr && shadowSimulation_->IsInitialized()) {
+    snapshot_.shadowAircraft =
+        CaptureAircraft(shadowSimulation_->GetAircraft());
+  }
+
+  SyncFlightPath(mainAircraft);
+  SyncGroundScroll(snapshot_.aircraft.state);
+  UpdateSnapshotViewState();
   scene_.Tick(snapshot_);
   return true;
 }
 
-void FlightVisualizer::RenderScene() {
-  if (!snapshot_.hasAircraft) {
-    ImGui::TextDisabled("No visualization snapshot.");
+void FlightVisualizer::SetViewMode(ViewMode mode) {
+  viewMode_ = mode;
+  UpdateSnapshotViewState();
+}
+
+void FlightVisualizer::RenderScene(const gui::EditorIconHandle &shadowIcon,
+    const gui::EditorIconHandle &viewOptionsIcon,
+    const gui::EditorIconHandle &cameraViewIcon, const char *shadowTooltip,
+    const char *unavailableMessage) {
+  RenderToolbar(shadowIcon, viewOptionsIcon, cameraViewIcon, shadowTooltip);
+
+  if (!snapshot_.aircraft.available) {
+    ImGui::TextDisabled("%s", unavailableMessage);
     return;
   }
 
   HandleInput();
-  snapshot_.viewMode = viewMode_;
-  snapshot_.viewOptions = viewOptions_;
-  snapshot_.groundScroll = groundScroll_;
+  UpdateSnapshotViewState();
   scene_.Tick(snapshot_);
 
   const ImVec2 available = ImGui::GetContentRegionAvail();
   const ImVec2 size{
-      std::max(available.x, MinCanvasWidth),
-      std::max(available.y, MinCanvasHeight),
+      std::max(available.x, 1.0F),
+      std::max(available.y, 1.0F),
   };
 
   ImGui::SetNextItemAllowOverlap();
@@ -117,15 +230,12 @@ void FlightVisualizer::RenderScene() {
 
   RenderContext context{snapshot_, canvas};
   scene_.Render(context);
+  RenderMinimap(min, max);
 
   canvas.Border(IM_COL32(88, 96, 108, 255));
   drawList->PopClipRect();
-
-  RenderViewOptionsMenu(min, max);
   snapshot_.viewOptions = viewOptions_;
 }
-
-void FlightVisualizer::RenderAircraftWireframe() { RenderScene(); }
 
 void FlightVisualizer::HandleInput() {
   const ImGuiIO &io = ImGui::GetIO();
@@ -139,48 +249,406 @@ void FlightVisualizer::HandleInput() {
   }
 }
 
-void FlightVisualizer::RenderViewOptionsMenu(ImVec2 min, ImVec2 max) {
-  constexpr float Padding = 10.0F;
-  constexpr float ButtonWidth = 64.0F;
+void FlightVisualizer::RenderToolbar(const gui::EditorIconHandle &shadowIcon,
+    const gui::EditorIconHandle &viewOptionsIcon,
+    const gui::EditorIconHandle &cameraViewIcon, const char *shadowTooltip) {
+  const float toolbarHeight = FlightUI::Ui(ToolbarHeight);
+  const float toolbarWidth = std::max(ImGui::GetContentRegionAvail().x, 1.0F);
+  const ImVec2 toolbarMinimum = ImGui::GetCursorScreenPos();
+  const ImVec2 toolbarMaximum =
+      Offset(toolbarMinimum, toolbarWidth, toolbarHeight);
 
-  ImGui::PushID("FlightVizViewOptions");
-  ImGui::SetCursorScreenPos(
-      ImVec2(max.x - ButtonWidth - Padding, min.y + Padding));
+  ImGui::Dummy(ImVec2(toolbarWidth, toolbarHeight));
+  const ImVec2 viewportCursor{toolbarMinimum.x,
+      toolbarMaximum.y + FlightUI::Ui(ToolbarViewportSpacing)};
 
-  if (ImGui::Button("View", ImVec2(ButtonWidth, 0.0F))) {
+  ImDrawList &drawList = *ImGui::GetWindowDrawList();
+  drawList.AddRectFilled(toolbarMinimum,
+      toolbarMaximum,
+      ImGui::GetColorU32(ImGuiCol_MenuBarBg));
+  drawList.AddLine(ImVec2(toolbarMinimum.x, toolbarMaximum.y),
+      toolbarMaximum,
+      ImGui::GetColorU32(ImGuiCol_Border));
+
+  const float buttonSize = FlightUI::Ui(ToolbarButtonSize);
+  const float horizontalPadding = FlightUI::Ui(ToolbarHorizontalPadding);
+  const float buttonSpacing = ImGui::GetStyle().ItemSpacing.x;
+  const float actionGroupWidth = buttonSize * 3.0F + buttonSpacing * 2.0F;
+  const float actionGroupStartX = std::max(toolbarMinimum.x + horizontalPadding,
+      toolbarMaximum.x - horizontalPadding - actionGroupWidth);
+  ImGui::SetCursorScreenPos(ImVec2(actionGroupStartX,
+      toolbarMinimum.y + (toolbarHeight - buttonSize) * 0.5F));
+  const bool shadowAvailable =
+      shadowSimulation_ != nullptr && shadowSimulation_->IsInitialized();
+  if (DrawToolbarIconButton("ShadowAircraftButton",
+          shadowIcon,
+          "S",
+          shadowEnabled_,
+          shadowAvailable,
+          shadowTooltip)) {
+    SetShadowEnabled(!shadowEnabled_);
+  }
+  ImGui::SameLine(0.0F, buttonSpacing);
+  if (DrawToolbarIconButton("ViewOptionsButton",
+          viewOptionsIcon,
+          "E",
+          false,
+          true,
+          "View options")) {
     ImGui::OpenPopup("ViewOptions");
   }
+  ImGui::SameLine(0.0F, buttonSpacing);
+  const bool thirdPerson = viewMode_ == ViewMode::ThirdPerson;
+  if (DrawToolbarIconButton("CameraViewButton",
+          cameraViewIcon,
+          "V",
+          thirdPerson,
+          true,
+          thirdPerson ? "Switch to orbit view"
+                      : "Switch to third-person view")) {
+    ToggleViewMode();
+  }
+  RenderViewOptionsPopup();
 
+  ImGui::SetCursorScreenPos(viewportCursor);
+}
+
+void FlightVisualizer::RenderViewOptionsPopup() {
   if (ImGui::BeginPopup("ViewOptions")) {
+    ImGui::TextDisabled("View");
+    ImGui::Separator();
     ImGui::Checkbox("Ground Grid", &viewOptions_.showGroundGrid);
     ImGui::Checkbox("Telemetry", &viewOptions_.showTelemetry);
+    ImGui::Checkbox("Minimap", &viewOptions_.showMinimap);
+    if (viewOptions_.showMinimap && ImGui::Button("Clear Minimap Path")) {
+      flightPath_.Reset();
+    }
+    ImGui::Separator();
+    ImGui::TextDisabled("V: view");
     ImGui::EndPopup();
   }
-
-  ImGui::PopID();
 }
 
 void FlightVisualizer::ToggleViewMode() {
-  viewMode_ = viewMode_ == ViewMode::Orbit ? ViewMode::ThirdPerson
-                                           : ViewMode::Orbit;
+  viewMode_ =
+      viewMode_ == ViewMode::Orbit ? ViewMode::ThirdPerson : ViewMode::Orbit;
+}
+
+void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
+  if (!viewOptions_.showMinimap) {
+    return;
+  }
+
+  const auto current = flightPath_.GetCurrentPoint();
+  if (!snapshot_.aircraft.available || !current.has_value()) {
+    return;
+  }
+  const FlightPathPoint currentPoint = *current;
+
+  const auto toWorldPoint = [currentPoint](const FlightPathPoint &point) {
+    return FlightPathPoint{
+        .northMeters = point.northMeters - currentPoint.northMeters,
+        .eastMeters = point.eastMeters - currentPoint.eastMeters,
+    };
+  };
+
+  const float canvasWidth = std::max(max.x - min.x, 1.0F);
+  const float canvasHeight = std::max(max.y - min.y, 1.0F);
+  const float maximumSize =
+      std::max(std::min(canvasWidth * 0.34F, canvasHeight * 0.38F), 1.0F);
+  const float expandedSize = std::min(FlightUI::Ui(210.0F), maximumSize);
+  const float outerPadding =
+      std::min(FlightUI::Ui(10.0F), expandedSize * 0.08F);
+  const bool wasMinimized = minimapMinimized_;
+  const float minimapWidth =
+      wasMinimized ? std::min(FlightUI::Ui(112.0F),
+                         std::max(canvasWidth - outerPadding, 1.0F))
+                   : expandedSize;
+  const float minimapHeight =
+      wasMinimized ? std::min(FlightUI::Ui(30.0F),
+                         std::max(canvasHeight - outerPadding, 1.0F))
+                   : expandedSize;
+  const ImVec2 mapMin{
+      max.x - outerPadding - minimapWidth,
+      min.y + outerPadding,
+  };
+  const ImVec2 mapMax{
+      max.x - outerPadding,
+      mapMin.y + minimapHeight,
+  };
+
+  ImDrawList &drawList = *ImGui::GetWindowDrawList();
+  drawList.AddRectFilled(mapMin,
+      mapMax,
+      IM_COL32(30, 30, 30, 224),
+      FlightUI::Ui(3.0F));
+  drawList.AddRect(mapMin,
+      mapMax,
+      IM_COL32(76, 82, 90, 255),
+      FlightUI::Ui(3.0F),
+      0,
+      FlightUI::Ui(1.0F));
+
+  const float headerHeight =
+      std::min(FlightUI::Ui(24.0F), minimapHeight * 0.8F);
+  const float contentPadding = std::min(FlightUI::Ui(10.0F),
+      std::min(minimapWidth, minimapHeight) * 0.08F);
+
+  double minimumNorth = 0.0;
+  double maximumNorth = 0.0;
+  double minimumEast = 0.0;
+  double maximumEast = 0.0;
+  bool hasBounds = false;
+  const auto includePoint = [&](const FlightPathPoint &point) {
+    if (!hasBounds) {
+      minimumNorth = maximumNorth = point.northMeters;
+      minimumEast = maximumEast = point.eastMeters;
+      hasBounds = true;
+      return;
+    }
+    minimumNorth = std::min(minimumNorth, point.northMeters);
+    maximumNorth = std::max(maximumNorth, point.northMeters);
+    minimumEast = std::min(minimumEast, point.eastMeters);
+    maximumEast = std::max(maximumEast, point.eastMeters);
+  };
+  for (const FlightPathPoint &point : flightPath_.GetPoints()) {
+    includePoint(toWorldPoint(point));
+  }
+  includePoint({});
+
+  const double centerNorth = (minimumNorth + maximumNorth) * 0.5;
+  const double centerEast = (minimumEast + maximumEast) * 0.5;
+  const double spanMeters = std::max({maximumNorth - minimumNorth,
+      maximumEast - minimumEast,
+      MinimumMinimapSpanMeters});
+
+  char title[64]{};
+  if (wasMinimized) {
+    std::snprintf(title, sizeof(title), "PATH");
+  } else {
+    std::snprintf(title, sizeof(title), "PATH  %.0f m", spanMeters);
+  }
+  drawList.AddText(
+      ImVec2(mapMin.x + contentPadding, mapMin.y + FlightUI::Ui(5.0F)),
+      IM_COL32(214, 214, 214, 255),
+      title);
+
+  const float sizeButtonExtent =
+      std::max(std::min(FlightUI::Ui(18.0F), headerHeight - FlightUI::Ui(4.0F)),
+          1.0F);
+  const ImVec2 sizeButtonPosition{
+      mapMax.x - contentPadding - sizeButtonExtent,
+      mapMin.y + (headerHeight - sizeButtonExtent) * 0.5F,
+  };
+  ImGui::PushID("FlightPathMinimap");
+  ImGui::SetCursorScreenPos(sizeButtonPosition);
+  if (ImGui::Button(wasMinimized ? "+" : "-",
+          ImVec2(sizeButtonExtent, sizeButtonExtent))) {
+    minimapMinimized_ = !wasMinimized;
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(wasMinimized ? "Maximize minimap" : "Minimize minimap");
+  }
+  ImGui::PopID();
+
+  if (wasMinimized) {
+    return;
+  }
+
+  const ImVec2 plotMin{
+      mapMin.x + contentPadding,
+      mapMin.y + headerHeight,
+  };
+  const ImVec2 plotMax{
+      mapMax.x - contentPadding,
+      mapMax.y - contentPadding,
+  };
+  const float plotWidth = std::max(plotMax.x - plotMin.x, 1.0F);
+  const float plotHeight = std::max(plotMax.y - plotMin.y, 1.0F);
+  const float pixelsPerMeter =
+      std::min(plotWidth, plotHeight) / static_cast<float>(spanMeters * 1.15);
+  const ImVec2 plotCenter{
+      (plotMin.x + plotMax.x) * 0.5F,
+      (plotMin.y + plotMax.y) * 0.5F,
+  };
+
+  const auto projectPoint = [&](const FlightPathPoint &point) {
+    return ImVec2(plotCenter.x
+                      + MinimapHorizontalDirection
+                            * static_cast<float>(point.eastMeters - centerEast)
+                            * pixelsPerMeter,
+        plotCenter.y
+            - static_cast<float>(point.northMeters - centerNorth)
+                  * pixelsPerMeter);
+  };
+
+  drawList.AddText(ImVec2(sizeButtonPosition.x - FlightUI::Ui(15.0F),
+                       mapMin.y + FlightUI::Ui(5.0F)),
+      IM_COL32(128, 156, 182, 255),
+      "N");
+
+  drawList.PushClipRect(plotMin, plotMax, true);
+  drawList.AddLine(ImVec2(plotMin.x, plotCenter.y),
+      ImVec2(plotMax.x, plotCenter.y),
+      IM_COL32(63, 63, 63, 180),
+      FlightUI::Ui(1.0F));
+  drawList.AddLine(ImVec2(plotCenter.x, plotMin.y),
+      ImVec2(plotCenter.x, plotMax.y),
+      IM_COL32(63, 63, 63, 180),
+      FlightUI::Ui(1.0F));
+
+  const auto &points = flightPath_.GetPoints();
+  if (!points.empty()) {
+    auto pointIterator = points.begin();
+    ImVec2 previousScreenPoint = projectPoint(toWorldPoint(*pointIterator));
+    const ImVec2 startScreenPoint = previousScreenPoint;
+    ++pointIterator;
+    for (; pointIterator != points.end(); ++pointIterator) {
+      const ImVec2 screenPoint = projectPoint(toWorldPoint(*pointIterator));
+      drawList.AddLine(previousScreenPoint,
+          screenPoint,
+          IM_COL32(83, 151, 211, 230),
+          FlightUI::Ui(2.0F));
+      previousScreenPoint = screenPoint;
+    }
+
+    const ImVec2 currentScreenPoint = projectPoint({});
+    drawList.AddLine(previousScreenPoint,
+        currentScreenPoint,
+        IM_COL32(83, 151, 211, 230),
+        FlightUI::Ui(2.0F));
+    drawList.AddCircleFilled(startScreenPoint,
+        FlightUI::Ui(3.0F),
+        IM_COL32(107, 166, 112, 230));
+
+    const double courseRad = math::DegToRad(snapshot_.aircraft.state.courseDeg);
+    const ImVec2 forward{
+        MinimapHorizontalDirection * static_cast<float>(std::sin(courseRad)),
+        static_cast<float>(-std::cos(courseRad)),
+    };
+    const ImVec2 right{-forward.y, forward.x};
+    const float markerLength = FlightUI::Ui(9.0F);
+    const float markerHalfWidth = FlightUI::Ui(5.0F);
+    const ImVec2 markerTip{
+        currentScreenPoint.x + forward.x * markerLength,
+        currentScreenPoint.y + forward.y * markerLength,
+    };
+    const ImVec2 markerLeft{
+        currentScreenPoint.x - forward.x * markerLength * 0.55F
+            + right.x * markerHalfWidth,
+        currentScreenPoint.y - forward.y * markerLength * 0.55F
+            + right.y * markerHalfWidth,
+    };
+    const ImVec2 markerRight{
+        currentScreenPoint.x - forward.x * markerLength * 0.55F
+            - right.x * markerHalfWidth,
+        currentScreenPoint.y - forward.y * markerLength * 0.55F
+            - right.y * markerHalfWidth,
+    };
+    drawList.AddTriangleFilled(markerTip,
+        markerLeft,
+        markerRight,
+        IM_COL32(230, 235, 240, 255));
+  }
+  drawList.PopClipRect();
+}
+
+AircraftSnapshot FlightVisualizer::CaptureAircraft(
+    const sim::Aircraft &aircraft) const {
+  AircraftSnapshot snapshot;
+  snapshot.state = aircraft.GetAircraftState();
+  snapshot.controlInput = aircraft.GetControls().GetInput();
+  snapshot.pitchTrim = aircraft.GetControls().GetPitchTrim();
+  snapshot.position = ProjectWorldPosition(aircraft);
+  snapshot.visualAltitude =
+      VisualAltitudeFromAglFt(snapshot.state.altitudeAglFt);
+  snapshot.available = true;
+  return snapshot;
+}
+
+void FlightVisualizer::ResetMainState() {
+  snapshot_.aircraft = {};
+  snapshot_.shadowAircraft = {};
+  flightPath_.Reset();
+  motion_ = {};
+  worldOrigin_ = {};
+  lastMainSimulationTimeSec_.reset();
+  UpdateSnapshotViewState();
+}
+
+void FlightVisualizer::UpdateWorldOrigin(const sim::Aircraft &aircraft) {
+  if (worldOrigin_.initialized) {
+    return;
+  }
+
+  const auto &properties = aircraft.GetProperties();
+  const double latitudeRad = properties.Latitude().Rad();
+  const double longitudeRad = properties.Longitude().Rad();
+  const double radiusFt = properties.RadiusToVehicle().Ft();
+  if (!std::isfinite(latitudeRad) || !std::isfinite(longitudeRad)
+      || !std::isfinite(radiusFt)) {
+    return;
+  }
+
+  worldOrigin_ = {
+      .latitudeRad = latitudeRad,
+      .longitudeRad = longitudeRad,
+      .radiusFt = radiusFt,
+      .initialized = true,
+  };
+}
+
+Vec3 FlightVisualizer::ProjectWorldPosition(
+    const sim::Aircraft &aircraft) const {
+  if (!worldOrigin_.initialized) {
+    return {0.0F, 0.0F, AircraftOriginZ};
+  }
+
+  const auto &properties = aircraft.GetProperties();
+  const double latitudeRad = properties.Latitude().Rad();
+  const double longitudeRad = properties.Longitude().Rad();
+  const double radiusFt = properties.RadiusToVehicle().Ft();
+  if (!std::isfinite(latitudeRad) || !std::isfinite(longitudeRad)
+      || !std::isfinite(radiusFt)) {
+    return {0.0F, 0.0F, AircraftOriginZ};
+  }
+
+  const double northMeters =
+      (latitudeRad - worldOrigin_.latitudeRad) * EarthRadiusMeters;
+  const double eastMeters =
+      math::WrapAngleRad(longitudeRad - worldOrigin_.longitudeRad)
+      * std::cos(worldOrigin_.latitudeRad) * EarthRadiusMeters;
+  const double altitudeDeltaFt = radiusFt - worldOrigin_.radiusFt;
+  return {
+      static_cast<float>(northMeters / MetersPerVizUnit),
+      static_cast<float>(eastMeters / MetersPerVizUnit),
+      AircraftOriginZ + static_cast<float>(altitudeDeltaFt / FeetPerVizUnit),
+  };
+}
+
+void FlightVisualizer::SyncFlightPath(const sim::Aircraft &source) {
+  const auto &properties = source.GetProperties();
+  flightPath_.AddSample(source.GetAircraftState().simulationTimeSec,
+      properties.Latitude().Rad(),
+      properties.Longitude().Rad());
 }
 
 void FlightVisualizer::SyncGroundScroll(const sim::AircraftState &state) {
   const double sampleTime = state.simulationTimeSec;
   if (!std::isfinite(sampleTime)) {
-    hasMotionSample_ = false;
+    motion_.hasSample = false;
     return;
   }
 
-  if (!hasMotionSample_ || sampleTime < lastMotionSampleTimeSec_) {
-    lastMotionSampleTimeSec_ = sampleTime;
-    hasMotionSample_ = true;
-    groundScroll_ = {};
+  if (!motion_.hasSample || sampleTime < motion_.lastSampleTimeSec) {
+    motion_.lastSampleTimeSec = sampleTime;
+    motion_.hasSample = true;
+    motion_.groundScroll = {};
     return;
   }
 
-  const double dt = sampleTime - lastMotionSampleTimeSec_;
-  lastMotionSampleTimeSec_ = sampleTime;
+  const double dt = sampleTime - motion_.lastSampleTimeSec;
+  motion_.lastSampleTimeSec = sampleTime;
   if (dt <= 0.0 || dt > MaxMotionTickSec) {
     return;
   }
@@ -192,10 +660,17 @@ void FlightVisualizer::SyncGroundScroll(const sim::AircraftState &state) {
 
   const float distanceViz =
       static_cast<float>(dt) * speedMps / MetersPerVizUnit;
-  const float headingRad = static_cast<float>(state.headingDeg) * DegToRad;
+  const float headingRad = static_cast<float>(math::DegToRad(state.headingDeg));
   const Vec3 forward{std::cos(headingRad), std::sin(headingRad), 0.0F};
 
-  groundScroll_ = groundScroll_ - forward * distanceViz;
+  motion_.groundScroll = motion_.groundScroll - forward * distanceViz;
+}
+
+void FlightVisualizer::UpdateSnapshotViewState() {
+  snapshot_.viewMode = viewMode_;
+  snapshot_.viewOptions = viewOptions_;
+  snapshot_.groundScroll = motion_.groundScroll;
+  snapshot_.shadowEnabled = shadowEnabled_;
 }
 
 void FlightVisualizer::BuildScene() {
@@ -217,8 +692,12 @@ void FlightVisualizer::BuildScene() {
   GameObject &altitudeCue = scene_.CreateGameObject("Altitude Cue");
   altitudeCue.AddComponent<AltitudeCueRenderer>();
 
+  GameObject &shadowAircraft = scene_.CreateGameObject("Shadow Aircraft");
+  shadowAircraft.AddComponent<AircraftWireframeRenderer>(
+      AircraftRenderStyle::Shadow);
+
   GameObject &aircraft = scene_.CreateGameObject("Aircraft");
-  aircraft.AddComponent<AircraftWireframeRenderer>();
+  aircraft.AddComponent<AircraftWireframeRenderer>(AircraftRenderStyle::Main);
 
   GameObject &overlay = scene_.CreateGameObject("Telemetry Overlay");
   overlay.AddComponent<TelemetryOverlay>();

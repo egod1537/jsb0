@@ -17,6 +17,8 @@ public:
   DataView();
   DataView(const double *data, std::size_t count);
   DataView(const float *data, std::size_t count);
+  DataView(const double *data, std::size_t count, std::size_t stride);
+  DataView(const float *data, std::size_t count, std::size_t stride);
 
   // Container views
   static DataView From(const std::vector<double> &values);
@@ -29,12 +31,14 @@ public:
   // View metadata
   const void *GetData() const;
   std::size_t GetCount() const;
+  std::size_t GetStride() const;
   DataType GetType() const;
 
 private:
   // Non-owning view
   const void *m_Data;
   std::size_t m_Count;
+  std::size_t m_Stride;
   DataType m_Type;
 };
 } // namespace FlightUI

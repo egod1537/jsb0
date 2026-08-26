@@ -4,8 +4,10 @@
 #include "application/sim/control/ControlInput.hpp"
 #include "application/sim/control/FlightControlMode.hpp"
 #include "application/sim/control/ManualFlightControlController.hpp"
-#include "application/sim/gnc/Autopilot.hpp"
+#include "application/sim/gnc/autopilot/IAutopilot.hpp"
+#include "application/sim/gnc/TrimTypes.hpp"
 
+#include <memory>
 #include <optional>
 
 namespace sim {
@@ -15,7 +17,7 @@ struct Tick;
 namespace control {
 class FlightControlManager final : public sim::Component {
 public:
-  FlightControlManager();
+  explicit FlightControlManager(std::unique_ptr<gnc::IAutopilot> autopilot);
 
   // Active source
   FlightControlMode GetMode() const;
@@ -24,12 +26,13 @@ public:
   // Owned controllers
   ManualFlightControlController &GetManualController();
   const ManualFlightControlController &GetManualController() const;
-  gnc::Autopilot &GetAutopilot();
-  const gnc::Autopilot &GetAutopilot() const;
+  gnc::IAutopilot &GetAutopilot();
+  const gnc::IAutopilot &GetAutopilot() const;
 
   // Controller state
   void ResetControllers();
-  void SynchronizeWithTrimResult(const gnc::TrimResult &trimResult);
+  void SynchronizeWithTrimResult(sim::Aircraft &aircraft,
+      const gnc::TrimResult &trimResult);
 
 protected:
   bool OnTick(const sim::Tick &tick) override;
@@ -41,7 +44,7 @@ private:
 
   // Control sources
   ManualFlightControlController manualController_;
-  gnc::Autopilot autopilot_;
+  std::unique_ptr<gnc::IAutopilot> autopilot_;
 
   // Routing state
   FlightControlMode mode_ = FlightControlMode::Manual;

@@ -17,11 +17,13 @@ constexpr float InputWidth = 180.0F;
 constexpr float LayoutSpacing = 8.0F;
 } // namespace
 
-SimulationWindow::SimulationWindow() : Window("Simulation") {}
+SimulationWindow::SimulationWindow()
+    : Window("Simulation", EditorIconAliases::Simulation) {}
 
 void SimulationWindow::OnRender(gui::GUI &gui) {
   if (!initialConditionLoaded_) {
-    initialCondition_ = gui.GetSimulation().GetDefaultInitialCondition();
+    initialCondition_ =
+        gui.GetPrimarySimulation().GetDefaultInitialCondition();
     initialConditionLoaded_ = true;
   }
 
@@ -45,7 +47,7 @@ void SimulationWindow::DrawInitialConditionTab(gui::GUI &gui) {
 }
 
 void SimulationWindow::DrawDiagnosticsTab(gui::GUI &gui) {
-  auto &simulation = gui.GetSimulation();
+  auto &simulation = gui.GetPrimarySimulation();
   const auto &executionControl = gui.GetSimulationExecutionControl();
   const sim::AircraftState aircraftState =
       simulation.GetAircraft().GetAircraftState();
@@ -73,7 +75,7 @@ void SimulationWindow::DrawEnvironmentTab() {
 
 void SimulationWindow::DrawAircraftTab(gui::GUI &gui) {
   const auto engineStates =
-      gui.GetSimulation().GetAircraft().GetEngines().GetEngineStates();
+      gui.GetPrimarySimulation().GetAircraft().GetEngines().GetEngineStates();
 
   UI::VerticalLayoutBuilder layout = UI::VerticalLayout().Spacing(LayoutSpacing)
                                      + UI::Heading("Aircraft")
@@ -145,7 +147,7 @@ UI::UIElement SimulationWindow::DrawInitialConditionFields() {
 }
 
 UI::UIElement SimulationWindow::DrawInitialConditionActions(gui::GUI &gui) {
-  auto &simulation = gui.GetSimulation();
+  auto &simulation = gui.GetPrimarySimulation();
   auto &executionControl = gui.GetSimulationExecutionControl();
 
   return UI::HorizontalLayout().Spacing(LayoutSpacing)
@@ -170,7 +172,8 @@ UI::UIElement SimulationWindow::DrawInitialConditionActions(gui::GUI &gui) {
 }
 
 UI::UIElement SimulationWindow::DrawLastError(gui::GUI &gui) const {
-  const auto &lastError = gui.GetSimulation().GetErrorTracker().GetLastError();
+  const auto &lastError =
+      gui.GetPrimarySimulation().GetErrorTracker().GetLastError();
   if (!lastError.has_value()) {
     return {};
   }

@@ -2,6 +2,9 @@
 #include "application/gui/GUI.hpp"
 #include "application/input/Input.hpp"
 #include "application/sim/Simulation.hpp"
+#include "application/sim/control/FlightControlManager.hpp"
+#include "application/sim/gnc/autopilot/IRollHoldAutopilot.hpp"
+#include "common/math/Math.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -32,14 +35,81 @@ double ClampAutomaticSimulationHz(double hz) {
 Clock::duration ToSimulationInterval(double hz) {
   return ToClockDuration(1.0 / ClampAutomaticSimulationHz(hz));
 }
+
+sim::InitialCondition MakeScenarioInitialCondition(
+    const sim::SimulationScenario &scenario,
+    const sim::InitialCondition &reference) {
+  sim::InitialCondition initialCondition = reference;
+  initialCondition.altitudeFt = scenario.altitudeFt;
+  initialCondition.airspeedKts = scenario.airspeedKts;
+  initialCondition.rollDeg = scenario.initialRollDeg;
+  initialCondition.pitchDeg = scenario.initialPitchDeg;
+  initialCondition.headingDeg = scenario.initialHeadingDeg;
+  initialCondition.pRadPerSec = 0.0;
+  initialCondition.qRadPerSec = 0.0;
+  initialCondition.rRadPerSec = 0.0;
+  return initialCondition;
+}
+
+sim::FDMEnvironmentState MakeScenarioEnvironment(
+    const sim::Simulation &reference, bool windEnabled) {
+  sim::FDMEnvironmentState environment =
+      reference.GetAircraft()
+          .ExtractFDMState(sim::FDMStateFlags::Environment)
+          .environment;
+  if (!windEnabled) {
+    environment.windNedFps.fill(0.0);
+    environment.gustNedFps.fill(0.0);
+    environment.turbulenceNedFps.fill(0.0);
+    environment.turbulenceType = 0;
+    environment.turbulenceGain = 0.0;
+    environment.turbulenceRate = 0.0;
+    environment.turbulenceRhythmicity = 0.0;
+    environment.windSpeedAt20FtFps = 0.0;
+  }
+  return environment;
+}
+
+gnc::IRollHoldAutopilot *FindScenarioRollHold(sim::Simulation &simulation) {
+  auto *manager = simulation.GetComponent<control::FlightControlManager>();
+  if (manager == nullptr) {
+    return nullptr;
+  }
+
+  return dynamic_cast<gnc::IRollHoldAutopilot *>(&manager->GetAutopilot());
+}
+
+bool ConfigureScenarioRollHold(sim::Simulation &simulation,
+    double targetRollRad, bool enabled) {
+  auto *rollHold = FindScenarioRollHold(simulation);
+  if (rollHold == nullptr) {
+    return false;
+  }
+
+  auto *manager = simulation.GetComponent<control::FlightControlManager>();
+  rollHold->SetTargetRollRad(targetRollRad);
+  rollHold->SetRollHoldEnabled(enabled);
+  manager->SetMode(enabled ? control::FlightControlMode::Autopilot
+                           : control::FlightControlMode::Manual);
+  return true;
+}
+
+bool SupportsScenarioRollHold(sim::Simulation &simulation) {
+  return FindScenarioRollHold(simulation) != nullptr;
+}
 } // namespace
 
 Application::Application(std::unique_ptr<gui::GUI> gui,
-    std::unique_ptr<sim::Simulation> sim, sim::SimulationConfig simConfig)
-    : sim_(std::move(sim)), gui_(std::move(gui)),
+    std::unique_ptr<sim::Simulation> primarySimulation,
+    sim::SimulationConfig simConfig,
+    std::unique_ptr<sim::Simulation> baselineSimulation)
+    : primarySimulation_(std::move(primarySimulation)),
+      baselineSimulation_(std::move(baselineSimulation)), gui_(std::move(gui)),
       simConfig_(std::move(simConfig)),
       automaticSimulationHz_(
           ClampAutomaticSimulationHz(simConfig_.simulationHz)) {}
+
+Application::Application() = default;
 
 Application::~Application() = default;
 
@@ -51,6 +121,7 @@ bool Application::Run(const volatile std::sig_atomic_t &running) {
 
   bool succeeded = true;
   double scheduledSimulationHz = automaticSimulationHz_;
+  bool scheduledMaximumSimulationSpeed = maximumSimulationSpeedEnabled_;
   Clock::duration simulationInterval =
       ToSimulationInterval(scheduledSimulationHz);
   const double guiDt = gui_->GetConfig().GetRenderDT();
@@ -63,10 +134,17 @@ bool Application::Run(const volatile std::sig_atomic_t &running) {
   while (succeeded && running && !gui_->ShouldClose()) {
     auto now = Clock::now();
 
+    if (maximumSimulationSpeedEnabled_ != scheduledMaximumSimulationSpeed) {
+      scheduledMaximumSimulationSpeed = maximumSimulationSpeedEnabled_;
+      nextSimulationTick = now + simulationInterval;
+    }
+
     if (automaticSimulationHz_ != scheduledSimulationHz) {
       scheduledSimulationHz = automaticSimulationHz_;
       simulationInterval = ToSimulationInterval(scheduledSimulationHz);
-      nextSimulationTick = now + simulationInterval;
+      if (!maximumSimulationSpeedEnabled_) {
+        nextSimulationTick = now + simulationInterval;
+      }
     }
 
     const bool hasPendingManualTick =
@@ -74,10 +152,26 @@ bool Application::Run(const volatile std::sig_atomic_t &running) {
             == application::SimulationExecutionState::Paused
         && pendingSimulationTicks_ > 0;
 
+    const bool runAtMaximumSpeed =
+        maximumSimulationSpeedEnabled_
+        && simulationExecutionState_
+               == application::SimulationExecutionState::Running;
+
     if (hasPendingManualTick) {
       if (!TickSimulation()) {
         succeeded = false;
       }
+    } else if (runAtMaximumSpeed) {
+      do {
+        if (!TickSimulation()) {
+          succeeded = false;
+          break;
+        }
+        now = Clock::now();
+      } while (running && now < nextGUITick);
+    } else if (simulationExecutionState_
+               == application::SimulationExecutionState::Paused) {
+      nextSimulationTick = now + simulationInterval;
     } else {
       while (now >= nextSimulationTick) {
         if (!TickSimulation()) {
@@ -96,12 +190,15 @@ bool Application::Run(const volatile std::sig_atomic_t &running) {
 
     if (now >= nextGUITick) {
       TickGUI();
+      now = Clock::now();
       do {
         nextGUITick += guiInterval;
       } while (nextGUITick <= now);
     }
 
-    std::this_thread::sleep_until(std::min(nextSimulationTick, nextGUITick));
+    if (!runAtMaximumSpeed) {
+      std::this_thread::sleep_until(std::min(nextSimulationTick, nextGUITick));
+    }
   }
 
   Exit();
@@ -109,7 +206,7 @@ bool Application::Run(const volatile std::sig_atomic_t &running) {
 }
 
 bool Application::Start() {
-  if (gui_ == nullptr || sim_ == nullptr) {
+  if (gui_ == nullptr || primarySimulation_ == nullptr) {
     std::cerr << "Application requires GUI and simulation instances\n";
     return false;
   }
@@ -121,11 +218,16 @@ bool Application::Start() {
     return false;
   }
 
-  if (!sim_->Initialize(simConfig_)) {
+  if (!primarySimulation_->Initialize(simConfig_)) {
     std::cerr << "Failed to initialize simulation\n";
     return false;
   }
 
+  if (baselineSimulation_ != nullptr
+      && !baselineSimulation_->Initialize(simConfig_)) {
+    std::cerr << "Failed to initialize baseline simulation\n";
+    return false;
+  }
   if (!flightGear_.Initialize()) {
     return false;
   }
@@ -135,7 +237,7 @@ bool Application::Start() {
     return false;
   }
 
-  simulationExecutionState_ = application::SimulationExecutionState::Running;
+  simulationExecutionState_ = application::SimulationExecutionState::Stopped;
   pendingSimulationTicks_ = 0;
   return true;
 }
@@ -155,17 +257,110 @@ bool Application::TickSimulation() {
 
   application::Input::Update();
 
-  if (!sim_->Tick()) {
+  if (activeScenario_.has_value() ? !ApplyScenarioControlState()
+                                  : !SynchronizeBaselineControlState()) {
     return false;
   }
 
-  flightGear_.Update(sim_->GetAircraft());
+  const double sharedDtSec = primarySimulation_->GetTickSizeSec();
+  if (!primarySimulation_->Step(sharedDtSec)) {
+    return false;
+  }
+
+  if (baselineSimulation_ != nullptr) {
+    if (std::abs(baselineSimulation_->GetTickSizeSec() - sharedDtSec)
+        > 1.0e-12) {
+      std::cerr << "Primary and Baseline simulation dt do not match\n";
+      return false;
+    }
+    if (!baselineSimulation_->Step(sharedDtSec)) {
+      return false;
+    }
+  }
+
+  flightGear_.Update(primarySimulation_->GetAircraft());
+
+  if (activeScenario_.has_value()) {
+    AdvanceScenarioClock(sharedDtSec);
+    if (activeScenario_->status.elapsedSec
+        >= activeScenario_->scenario.durationSec) {
+      FinishScenario();
+    }
+  }
 
   if (isPaused) {
     --pendingSimulationTicks_;
   }
 
   return true;
+}
+
+bool Application::RunScenario(const sim::SimulationScenario &scenario) {
+  if (simulationExecutionState_
+          != application::SimulationExecutionState::Stopped
+      || primarySimulation_ == nullptr || !primarySimulation_->IsInitialized()
+      || !sim::ValidateSimulationScenario(scenario)
+      || !SupportsScenarioRollHold(*primarySimulation_)
+      || (baselineSimulation_ != nullptr
+          && (!baselineSimulation_->IsInitialized()
+              || !SupportsScenarioRollHold(*baselineSimulation_)))) {
+    return false;
+  }
+
+  const sim::InitialCondition initialCondition =
+      MakeScenarioInitialCondition(scenario,
+          primarySimulation_->GetDefaultInitialCondition());
+  const sim::FDMEnvironmentState environment =
+      MakeScenarioEnvironment(*primarySimulation_, scenario.windEnabled);
+  const sim::SimulationResetOptions resetOptions{
+      .runTrim = scenario.runTrim,
+      .trimMode = scenario.trimMode,
+      .environment = environment,
+  };
+  if (!primarySimulation_->Reset(initialCondition, resetOptions)) {
+    return false;
+  }
+  if (baselineSimulation_ != nullptr
+      && !baselineSimulation_->Reset(initialCondition, resetOptions)) {
+    return false;
+  }
+
+  activeScenario_ = ActiveScenarioExecution{
+      .scenario = scenario,
+      .status =
+          application::ScenarioExecutionStatus{
+              .name = scenario.name,
+              .elapsedSec = 0.0,
+              .durationSec = scenario.durationSec,
+          },
+  };
+  pendingSimulationTicks_ = 0;
+  if (!ApplyScenarioControlState()) {
+    activeScenario_.reset();
+    return false;
+  }
+
+  flightGear_.Update(primarySimulation_->GetAircraft());
+  simulationExecutionState_ = application::SimulationExecutionState::Running;
+  return true;
+}
+
+void Application::StartSimulation() {
+  if (simulationExecutionState_
+      == application::SimulationExecutionState::Stopped) {
+    pendingSimulationTicks_ = 0;
+    simulationExecutionState_ = application::SimulationExecutionState::Running;
+  }
+}
+
+void Application::StopSimulation() {
+  if (activeScenario_.has_value()) {
+    FinishScenario();
+    return;
+  }
+
+  pendingSimulationTicks_ = 0;
+  simulationExecutionState_ = application::SimulationExecutionState::Stopped;
 }
 
 void Application::PauseSimulation() {
@@ -196,30 +391,112 @@ void Application::SetAutomaticSimulationHz(double hz) {
   }
 
   automaticSimulationHz_ = ClampAutomaticSimulationHz(hz);
+  maximumSimulationSpeedEnabled_ = false;
+}
+
+void Application::SetMaximumSimulationSpeedEnabled(bool enabled) {
+  maximumSimulationSpeedEnabled_ = enabled;
 }
 
 bool Application::ResetSimulation() {
-  if (!sim_->Reset()) {
-    return false;
-  }
-
-  flightGear_.Update(sim_->GetAircraft());
-  return true;
+  return !activeScenario_.has_value() && ResetSimulations(nullptr);
 }
 
 bool Application::ResetSimulation(
     const sim::InitialCondition &initialCondition) {
-  if (!sim_->Reset(initialCondition)) {
+  return !activeScenario_.has_value() && ResetSimulations(&initialCondition);
+}
+
+bool Application::SynchronizeBaselineControlState() {
+  if (baselineSimulation_ == nullptr) {
+    return true;
+  }
+
+  auto *primaryManager =
+      primarySimulation_->GetComponent<control::FlightControlManager>();
+  auto *baselineManager =
+      baselineSimulation_->GetComponent<control::FlightControlManager>();
+  if (primaryManager == nullptr || baselineManager == nullptr) {
+    std::cerr << "Failed to synchronize baseline flight controls\n";
     return false;
   }
 
-  flightGear_.Update(sim_->GetAircraft());
+  baselineManager->GetManualController().SetCommandedInput(
+      primaryManager->GetManualController().GetCommandedInput());
+  return true;
+}
+
+bool Application::ApplyScenarioControlState() {
+  if (!activeScenario_.has_value() || primarySimulation_ == nullptr) {
+    return false;
+  }
+
+  const bool commandActive = activeScenario_->status.elapsedSec
+                             >= activeScenario_->scenario.commandStartSec;
+  const double targetRollRad =
+      math::DegToRad(activeScenario_->scenario.commandedRollDeg);
+  if (!ConfigureScenarioRollHold(*primarySimulation_,
+          targetRollRad,
+          commandActive)) {
+    return false;
+  }
+  return baselineSimulation_ == nullptr
+         || ConfigureScenarioRollHold(*baselineSimulation_,
+             targetRollRad,
+             commandActive);
+}
+
+void Application::AdvanceScenarioClock(double dtSec) {
+  if (!activeScenario_.has_value()) {
+    return;
+  }
+
+  activeScenario_->status.elapsedSec =
+      std::clamp(activeScenario_->status.elapsedSec + dtSec,
+          0.0,
+          activeScenario_->scenario.durationSec);
+}
+
+void Application::FinishScenario() {
+  if (activeScenario_.has_value()) {
+    const double targetRollRad =
+        math::DegToRad(activeScenario_->scenario.commandedRollDeg);
+    ConfigureScenarioRollHold(*primarySimulation_, targetRollRad, false);
+    if (baselineSimulation_ != nullptr) {
+      ConfigureScenarioRollHold(*baselineSimulation_, targetRollRad, false);
+    }
+  }
+
+  activeScenario_.reset();
+  pendingSimulationTicks_ = 0;
+  simulationExecutionState_ = application::SimulationExecutionState::Stopped;
+}
+
+bool Application::ResetSimulations(
+    const sim::InitialCondition *initialCondition) {
+  const auto reset = [initialCondition](sim::Simulation &simulation) {
+    return initialCondition != nullptr ? simulation.Reset(*initialCondition)
+                                       : simulation.Reset();
+  };
+
+  if (!reset(*primarySimulation_)) {
+    return false;
+  }
+  if (baselineSimulation_ != nullptr && !reset(*baselineSimulation_)) {
+    return false;
+  }
+
+  flightGear_.Update(primarySimulation_->GetAircraft());
   return true;
 }
 
 void Application::TickGUI() { gui_->Tick(); }
 
 void Application::Exit() {
+  if (activeScenario_.has_value()) {
+    FinishScenario();
+  }
+
   simulationExecutionState_ = application::SimulationExecutionState::Stopped;
   pendingSimulationTicks_ = 0;
 
@@ -229,8 +506,12 @@ void Application::Exit() {
 
   flightGear_.Shutdown();
 
-  if (sim_ != nullptr) {
-    sim_->Shutdown();
+  if (baselineSimulation_ != nullptr) {
+    baselineSimulation_->Shutdown();
+  }
+
+  if (primarySimulation_ != nullptr) {
+    primarySimulation_->Shutdown();
   }
 
   application::Input::Shutdown();

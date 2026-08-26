@@ -1,6 +1,7 @@
 #pragma once
 
 #include <random>
+namespace util {
 class Rng {
 public:
   explicit Rng(std::uint32_t seed = std::random_device{}());
@@ -15,3 +16,4 @@ public:
 private:
   std::mt19937 engine_;
 };
+} // namespace util
