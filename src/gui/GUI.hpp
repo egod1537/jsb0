@@ -22,6 +22,7 @@ class EditorPlatformController;
 class GNCController;
 class LinearizationController;
 class MonitorController;
+class ScenarioController;
 class SimulationController;
 
 } // namespace gui
@@ -127,6 +128,7 @@ private:
   // Application dependencies
   application::SimulationMessageClient *simulationMessageClient_ = nullptr;
   std::unique_ptr<SimulationController> simulationController_;
+  std::unique_ptr<ScenarioController> scenarioController_;
   std::unique_ptr<EditorPlatformController> editorPlatformController_;
   std::unique_ptr<GNCController> gncController_;
   std::unique_ptr<LinearizationController> linearizationController_;

@@ -2,7 +2,6 @@
 
 #include "sim/InitialCondition.hpp"
 #include "sim/gnc/TrimTypes.hpp"
-#include "sim/gnc/autopilot/AutopilotFactory.hpp"
 
 #include <string>
 #include <vector>
@@ -25,16 +24,13 @@ struct ScenarioEventDefinition {
 };
 
 struct SimulationScenario {
-  // Contract identity and runtime capability
+  // Contract identity
   int schemaVersion = SupportedScenarioSchemaVersion;
   std::string scenarioType = "roll_hold";
-  std::string name = "C172 Roll Hold 5deg";
+  std::string name = "Roll Hold 5deg 30s";
   std::string aircraft = "c172x";
-  gnc::AutopilotKind autopilot = gnc::AutopilotKind::Primary;
-  std::string sourceFile;
-  std::string sourceDigestSha256;
 
-  // Complete execution input
+  // Experiment conditions
   InitialCondition initialCondition{
       .latitudeDeg = 0.0,
       .longitudeDeg = 0.0,

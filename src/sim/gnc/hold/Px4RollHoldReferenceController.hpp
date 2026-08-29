@@ -1,6 +1,8 @@
 #pragma once
 
+#include "common/math/Math.hpp"
 #include "sim/gnc/Controller.hpp"
+#include "sim/gnc/hold/Px4RollHoldParameterMetadata.hpp"
 
 #include <optional>
 
@@ -11,13 +13,27 @@ struct Tick;
 
 namespace gnc {
 struct Px4RollHoldReferenceSettings {
-  double timeConstantSec = 0.35;
-  double maximumRollRateRadPerSec = 1.2217304763960306;
-  double rateProportionalGain = 0.160;
-  double rateIntegralGain = 0.080;
-  double rateDerivativeGain = 0.0;
-  double rateFeedForwardGain = 0.80;
-  double integratorLimit = 0.15;
+  double timeConstantSec =
+      GetPx4RollHoldParameterMetadata(Px4RollHoldParameter::TimeConstant)
+          .defaultValue;
+  double maximumRollRateRadPerSec = math::DegToRad(
+      GetPx4RollHoldParameterMetadata(Px4RollHoldParameter::MaximumRollRate)
+          .defaultValue);
+  double rateProportionalGain = GetPx4RollHoldParameterMetadata(
+      Px4RollHoldParameter::RateProportionalGain)
+                                    .defaultValue;
+  double rateIntegralGain =
+      GetPx4RollHoldParameterMetadata(Px4RollHoldParameter::RateIntegralGain)
+          .defaultValue;
+  double rateDerivativeGain =
+      GetPx4RollHoldParameterMetadata(Px4RollHoldParameter::RateDerivativeGain)
+          .defaultValue;
+  double rateFeedForwardGain =
+      GetPx4RollHoldParameterMetadata(Px4RollHoldParameter::RateFeedForwardGain)
+          .defaultValue;
+  double integratorLimit =
+      GetPx4RollHoldParameterMetadata(Px4RollHoldParameter::IntegratorLimit)
+          .defaultValue;
   double trimAirspeedMps = 15.0;
   double stallAirspeedMps = 7.0;
   double trimRollCommand = 0.0;

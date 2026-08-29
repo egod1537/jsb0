@@ -3,10 +3,10 @@
 #include "sim/Aircraft.hpp"
 #include "sim/Simulation.hpp"
 #include "sim/control/FlightControlManager.hpp"
+#include "sim/execution/ExecutionVariantResolver.hpp"
 #include "sim/gnc/autopilot/IAutopilotAnalysis.hpp"
 #include "sim/gnc/autopilot/MyAutopilot.hpp"
 #include "sim/gnc/autopilot/PX4Autopilot.hpp"
-#include "sim/gnc/autopilot/AutopilotFactory.hpp"
 #include "sim/scenario/ScenarioExecutor.hpp"
 #include "sim/scenario/SimulationScenario.hpp"
 
@@ -45,17 +45,19 @@ SimulationRuntime::SimulationRuntime(
 
 SimulationRuntime::~SimulationRuntime() { Shutdown(); }
 
-std::unique_ptr<SimulationRuntime> SimulationRuntime::CreateForScenario(
-    const SimulationScenario &scenario, std::string &error) {
+std::unique_ptr<SimulationRuntime> SimulationRuntime::CreateForExecution(
+    const ResolvedExecutionSpec &execution, std::string &error) {
+  const SimulationScenario &scenario = execution.scenario;
   ScenarioValidationError validationError;
   if (!ValidateSimulationScenario(scenario, &validationError)) {
     error = validationError.ToString();
     return nullptr;
   }
   std::unique_ptr<gnc::IAutopilot> autopilot =
-      gnc::CreateAutopilot(scenario.autopilot);
+      ExecutionVariantResolver::CreateAutopilot(execution.variant);
   if (autopilot == nullptr) {
-    error = "autopilot.type: failed to construct supported autopilot";
+    error = "failed to construct execution variant '"
+            + std::string(ToString(execution.variant)) + "'";
     return nullptr;
   }
   auto runtime = std::make_unique<SimulationRuntime>(
@@ -219,7 +221,8 @@ bool SimulationRuntime::Tick() {
   return true;
 }
 
-bool SimulationRuntime::RunScenario(const SimulationScenario &scenario) {
+bool SimulationRuntime::RunExecution(const ResolvedExecutionSpec &execution) {
+  const SimulationScenario &scenario = execution.scenario;
   if (!initialized_ || executionState_ != SimulationExecutionState::Stopped
       || primarySimulation_ == nullptr || !primarySimulation_->IsInitialized()
       || (baselineSimulation_ != nullptr
@@ -238,7 +241,7 @@ bool SimulationRuntime::RunScenario(const SimulationScenario &scenario) {
       return false;
     }
   }
-  if (!SelectScenarioAutopilot(scenario)) {
+  if (!SelectExecutionVariant(execution.variant)) {
     return false;
   }
   auto executor = std::make_unique<ScenarioExecutor>(*primarySimulation_);
@@ -248,11 +251,15 @@ bool SimulationRuntime::RunScenario(const SimulationScenario &scenario) {
     return false;
   }
   scenarioExecutor_ = std::move(executor);
-  telemetryRecording_.RecordScenarioEvent({
+  resolvedExecution_ = execution;
+  pendingScenarioEvents_.clear();
+  const telemetry::recording::ScenarioEvent startEvent{
       .simulationTimeSec = primarySimulation_->GetTime(),
       .type = "scenario_start",
       .targetRollRad = std::nullopt,
-  });
+  };
+  telemetryRecording_.RecordScenarioEvent(startEvent);
+  pendingScenarioEvents_.push_back(startEvent);
   RecordPendingScenarioCommandEvent();
   pendingTicks_ = 0;
   executionState_ = SimulationExecutionState::Running;
@@ -312,6 +319,7 @@ SimulationSnapshot SimulationRuntime::GetSnapshot() const {
   SimulationSnapshot snapshot{
       .status = GetStatus(),
       .config = config_,
+      .appliedExecution = resolvedExecution_,
       .telemetryRecording = GetTelemetryRecordingStatus(),
   };
   if (primarySimulation_ != nullptr && primarySimulation_->IsInitialized()) {
@@ -354,6 +362,27 @@ telemetry::TelemetrySnapshot SimulationRuntime::GetTelemetrySnapshot(
   return simulation != nullptr && simulation->IsInitialized()
              ? simulation->GetTelemetryRegistry().CaptureSnapshot()
              : telemetry::TelemetrySnapshot{};
+}
+
+double SimulationRuntime::GetSimulationTimeSec() const {
+  return primarySimulation_ != nullptr && primarySimulation_->IsInitialized()
+             ? primarySimulation_->GetTime()
+             : 0.0;
+}
+
+std::optional<telemetry::recording::TelemetrySourceFrame>
+SimulationRuntime::CaptureRecordingSource() const {
+  if (primarySimulation_ == nullptr || !primarySimulation_->IsInitialized()) {
+    return std::nullopt;
+  }
+  return telemetry::recording::TelemetryRecordingService::CaptureSource(
+      primarySimulation_->GetTelemetryRegistry(),
+      primarySimulation_->GetTime());
+}
+
+std::vector<telemetry::recording::ScenarioEvent>
+SimulationRuntime::TakeScenarioEvents() {
+  return std::exchange(pendingScenarioEvents_, {});
 }
 
 bool SimulationRuntime::SetManualControl(const control::ControlInput &input) {
@@ -519,12 +548,18 @@ bool SimulationRuntime::StartTelemetryRecording() {
       && scenarioExecutor_->GetScenario() != nullptr) {
     const SimulationScenario &scenario = *scenarioExecutor_->GetScenario();
     metadata.scenarioName = scenario.name;
-    metadata.scenarioFile = scenario.sourceFile;
-    metadata.scenarioDigest = scenario.sourceDigestSha256;
+    if (resolvedExecution_) {
+      metadata.scenarioFile = resolvedExecution_->source.file;
+      metadata.scenarioDigest = resolvedExecution_->source.digestSha256;
+      metadata.executionVariant =
+          std::string(ToString(resolvedExecution_->variant));
+      metadata.primaryAutopilot = metadata.executionVariant;
+    }
     metadata.scenarioDurationSec = scenario.durationSec;
   } else {
     metadata.scenarioName = "interactive";
   }
+  metadata.executionMode = "single";
   if (!telemetryRecording_.StartDefault(metadata, metadata.scenarioName)) {
     return false;
   }
@@ -635,10 +670,12 @@ bool SimulationRuntime::SynchronizeBaselineControlState() {
 
 void SimulationRuntime::FinishScenario() {
   if (scenarioExecutor_ != nullptr) {
-    telemetryRecording_.RecordScenarioEvent({
+    const telemetry::recording::ScenarioEvent endEvent{
         .simulationTimeSec = primarySimulation_->GetTime(),
         .type = "scenario_end",
-    });
+    };
+    telemetryRecording_.RecordScenarioEvent(endEvent);
+    pendingScenarioEvents_.push_back(endEvent);
     scenarioExecutor_->Stop();
     scenarioExecutor_.reset();
   }
@@ -652,35 +689,36 @@ void SimulationRuntime::RecordPendingScenarioCommandEvent() {
     return;
   }
   for (const auto &activation : scenarioExecutor_->TakeCommandActivations()) {
-    telemetryRecording_.RecordScenarioEvent({
+    const telemetry::recording::ScenarioEvent event{
         .simulationTimeSec = activation.simulationTimeSec,
         .type = "roll_command_changed",
         .targetRollRad = activation.targetRollRad,
-    });
+    };
+    telemetryRecording_.RecordScenarioEvent(event);
+    pendingScenarioEvents_.push_back(event);
   }
 }
 
-bool SimulationRuntime::SelectScenarioAutopilot(
-    const SimulationScenario &scenario) {
+bool SimulationRuntime::SelectExecutionVariant(ExecutionVariant variant) {
   const auto identify = [](Simulation *simulation) {
     if (simulation == nullptr) {
-      return std::optional<gnc::AutopilotKind>{};
+      return std::optional<ExecutionVariant>{};
     }
     auto *manager = simulation->GetComponent<control::FlightControlManager>();
-    return manager == nullptr
-               ? std::optional<gnc::AutopilotKind>{}
-               : gnc::IdentifyAutopilotKind(manager->GetAutopilot());
+    return manager == nullptr ? std::optional<ExecutionVariant>{}
+                              : ExecutionVariantResolver::IdentifyVariant(
+                                    manager->GetAutopilot());
   };
-  if (identify(primarySimulation_.get()) == scenario.autopilot) {
+  if (identify(primarySimulation_.get()) == variant) {
     return true;
   }
-  if (identify(baselineSimulation_.get()) == scenario.autopilot) {
+  if (identify(baselineSimulation_.get()) == variant) {
     std::swap(primarySimulation_, baselineSimulation_);
     scenarioSimulationSwapped_ = true;
     return true;
   }
-  lastError_ = "initialized runtime does not contain scenario autopilot '"
-               + std::string(gnc::ToString(scenario.autopilot)) + "'";
+  lastError_ = "initialized runtime does not contain execution variant '"
+               + std::string(ToString(variant)) + "'";
   return false;
 }
 

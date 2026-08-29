@@ -1,11 +1,12 @@
 #pragma once
 
 #include "sim/InitialCondition.hpp"
-#include "sim/scenario/SimulationScenario.hpp"
+#include "sim/execution/ExecutionRequest.hpp"
 
 namespace gui {
 struct SimulationStartRequested {};
 struct SimulationStopRequested {};
+struct SimulationPlaybackToggled {};
 struct SimulationPauseRequested {};
 struct SimulationResumeRequested {};
 struct SimulationResetRequested {};
@@ -23,7 +24,7 @@ struct TelemetryRecordingToggled {};
 struct OpenTelemetryFolderRequested {};
 
 struct ScenarioLaunchRequested {
-  sim::SimulationScenario scenario;
+  sim::ExecutionRequest request;
 };
 
 enum class InitialConditionField {

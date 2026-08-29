@@ -5,6 +5,7 @@
 #include "sim/gnc/autopilot/MyAutopilot.hpp"
 #include "sim/gnc/autopilot/PX4Autopilot.hpp"
 #include "sim/runtime/SimulationRuntime.hpp"
+#include "sim/execution/ExecutionVariantResolver.hpp"
 #include "sim/scenario/SimulationScenario.hpp"
 #include "common/math/Math.hpp"
 
@@ -27,6 +28,21 @@ std::unique_ptr<sim::Simulation> MakeBaselineSimulation() {
       std::make_unique<gnc::PX4Autopilot>());
 }
 
+sim::ExecutionRequest MakeRequest(const sim::SimulationScenario &scenario,
+    sim::ExecutionVariant variant = sim::ExecutionVariant::Primary) {
+  return {.scenario = scenario, .variant = variant};
+}
+
+sim::ResolvedExecutionSpec Resolve(const sim::SimulationScenario &scenario,
+    sim::ExecutionVariant variant) {
+  sim::ResolvedExecutionSpec resolved;
+  std::string error;
+  assert(sim::ExecutionVariantResolver::Resolve(MakeRequest(scenario, variant),
+      resolved,
+      error));
+  return resolved;
+}
+
 void TestInteractiveRuntimeExecution() {
   application::messaging::MessageBus bus;
   sim::SimulationRuntime runtime(MakePrimarySimulation());
@@ -36,7 +52,8 @@ void TestInteractiveRuntimeExecution() {
   assert(control.GetSimulationExecutionState()
          == application::SimulationExecutionState::Stopped);
   assert(!control.GetScenarioExecutionStatus().has_value());
-  assert(!control.RunScenario(sim::SimulationScenario{}));
+  assert(!control.GetSimulationSnapshot().appliedExecution.has_value());
+  assert(!control.RunExecution(MakeRequest(sim::SimulationScenario{})));
   assert(runtime.Initialize(sim::SimulationConfig{}));
   adapter.PublishState();
 
@@ -90,12 +107,12 @@ void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
 
   sim::SimulationScenario invalidScenario = scenario;
   invalidScenario.settlingBandDeg = -1.0;
-  assert(!control.RunScenario(invalidScenario));
+  assert(!control.RunExecution(MakeRequest(invalidScenario)));
   assert(control.GetSimulationExecutionState()
          == application::SimulationExecutionState::Stopped);
   assert(!control.GetScenarioExecutionStatus().has_value());
 
-  assert(control.RunScenario(scenario));
+  assert(control.RunExecution(MakeRequest(scenario)));
   assert(control.GetSimulationExecutionState()
          == application::SimulationExecutionState::Running);
   const auto status = control.GetScenarioExecutionStatus();
@@ -105,6 +122,9 @@ void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
   assert(status->durationSec == scenario.durationSec);
 
   const sim::SimulationSnapshot snapshot = control.GetSimulationSnapshot();
+  assert(snapshot.appliedExecution.has_value());
+  assert(snapshot.appliedExecution->scenario == scenario);
+  assert(snapshot.appliedExecution->variant == sim::ExecutionVariant::Primary);
   assert(snapshot.baseline.has_value());
   assert(snapshot.baselineAutopilot.has_value());
   const sim::InitialCondition &primaryCondition =
@@ -137,9 +157,17 @@ void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
   assert(
       stopped.status.executionState == sim::SimulationExecutionState::Stopped);
   assert(!stopped.status.scenario.has_value());
+  assert(stopped.appliedExecution.has_value());
+  assert(stopped.appliedExecution->scenario == scenario);
   assert(!stopped.primaryAutopilot.primaryRollHold.enabled);
   assert(stopped.baselineAutopilot.has_value());
   assert(!stopped.baselineAutopilot->baselineRollHold.enabled);
+
+  assert(!control.RunExecution(MakeRequest(invalidScenario)));
+  const sim::SimulationSnapshot afterRejectedApply =
+      control.GetSimulationSnapshot();
+  assert(afterRejectedApply.appliedExecution.has_value());
+  assert(afterRejectedApply.appliedExecution->scenario == scenario);
 }
 
 void TestBaselineScenarioSelectsBaselineWithoutRebuild() {
@@ -147,11 +175,11 @@ void TestBaselineScenarioSelectsBaselineWithoutRebuild() {
       MakeBaselineSimulation());
   assert(runtime.Initialize(sim::SimulationConfig{}));
   sim::SimulationScenario scenario;
-  scenario.autopilot = gnc::AutopilotKind::Baseline;
   scenario.runTrim = false;
   scenario.events.front().timeSec = 0.0;
   scenario.durationSec = 0.1;
-  assert(runtime.RunScenario(scenario));
+  assert(
+      runtime.RunExecution(Resolve(scenario, sim::ExecutionVariant::Baseline)));
   const sim::SimulationSnapshot running = runtime.GetSnapshot();
   assert(running.primaryAutopilot.strategyName == "PX4Autopilot");
   assert(running.primaryAutopilot.baselineRollHold.enabled);

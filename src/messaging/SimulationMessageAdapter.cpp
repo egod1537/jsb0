@@ -1,6 +1,7 @@
 #include "messaging/SimulationMessageAdapter.hpp"
 
 #include "messaging/SimulationMessages.hpp"
+#include "sim/execution/ExecutionVariantResolver.hpp"
 #include "sim/runtime/SimulationRuntime.hpp"
 
 #include <utility>
@@ -123,13 +124,19 @@ SimulationMessageAdapter::SimulationMessageAdapter(MessageBus &bus,
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<ScenarioRunCommand>([this](const auto &command) {
-        const bool succeeded = runtime_.RunScenario(command.scenario);
+      bus_.Subscribe<ExecutionRunCommand>([this](const auto &command) {
+        sim::ResolvedExecutionSpec execution;
+        std::string resolutionError;
+        const bool resolved = sim::ExecutionVariantResolver::Resolve(
+            command.request, execution, resolutionError);
+        const bool succeeded = resolved && runtime_.RunExecution(execution);
         bus_.Publish(ScenarioRunResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
-            .error = succeeded ? std::string{}
-                               : GetRuntimeError("Scenario start failed."),
+            .error = succeeded
+                         ? std::string{}
+                         : (resolved ? GetRuntimeError("Scenario start failed.")
+                                     : std::move(resolutionError)),
         });
         PublishState();
       }));

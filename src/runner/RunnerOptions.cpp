@@ -23,6 +23,8 @@ RunnerParseResult ParseRunnerOptions(
   RunnerOptions options;
   bool scenarioSet = false;
   bool outputSet = false;
+  bool modeSet = false;
+  bool variantSet = false;
   for (std::size_t index = 0; index < arguments.size(); ++index) {
     const std::string_view argument = arguments[index];
     if (argument == "--help" || argument == "-h") {
@@ -40,6 +42,34 @@ RunnerParseResult ParseRunnerOptions(
       }
       options.scenarioPath = value;
       scenarioSet = true;
+    } else if (argument == "--mode") {
+      if (!TakeValue(arguments, index, argument, value, result.error)) {
+        return result;
+      }
+      if (modeSet) {
+        result.error = "--mode may only be specified once";
+        return result;
+      }
+      if (!TryParseExecutionMode(value, options.mode)) {
+        result.error = "Unsupported execution mode: " + std::string(value);
+        return result;
+      }
+      modeSet = true;
+    } else if (argument == "--variant") {
+      if (!TakeValue(arguments, index, argument, value, result.error)) {
+        return result;
+      }
+      if (variantSet) {
+        result.error = "--variant may only be specified once";
+        return result;
+      }
+      sim::ExecutionVariant variant;
+      if (!sim::TryParseExecutionVariant(value, variant)) {
+        result.error = "Unsupported execution variant: " + std::string(value);
+        return result;
+      }
+      options.variant = variant;
+      variantSet = true;
     } else if (argument == "--output") {
       if (!TakeValue(arguments, index, argument, value, result.error)) {
         return result;
@@ -74,15 +104,30 @@ RunnerParseResult ParseRunnerOptions(
     result.error = "--output is required";
     return result;
   }
+  if (options.mode == ExecutionMode::Single && !variantSet) {
+    result.error = "--variant is required in single mode";
+    return result;
+  }
+  if (options.mode == ExecutionMode::Compare && variantSet) {
+    result.error = "--variant must not be specified in compare mode";
+    return result;
+  }
   result.options = std::move(options);
   return result;
 }
 
 void PrintRunnerHelp() {
   std::cout << "Usage:\n"
-               "  jsb0-runner --scenario <file> --output <directory>\n\n"
+               "  jsb0-runner --scenario <file> --mode single "
+               "--variant <name> --output <directory>\n"
+               "  jsb0-runner --scenario <file> --mode compare "
+               "--output <directory>\n\n"
                "Options:\n"
                "  --scenario <path>          Scenario YAML file\n"
+               "  --mode <name>              Execution mode: single or "
+               "compare (default: single)\n"
+               "  --variant <name>           Execution variant: baseline or "
+               "primary (required for single, forbidden for compare)\n"
                "  --output <path>            Output directory\n"
                "  --help                     Show this help\n";
 }

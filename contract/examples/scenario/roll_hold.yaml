@@ -2,8 +2,6 @@ schema_version: 1
 scenario_type: roll_hold
 name: Contract Roll Hold 5deg
 aircraft: c172x
-autopilot:
-  type: baseline
 
 initial_condition:
   latitude_deg: 0

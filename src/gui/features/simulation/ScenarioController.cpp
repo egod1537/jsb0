@@ -10,7 +10,7 @@
 
 namespace gui {
 namespace {
-constexpr const char *DefaultScenarioFileName = "c172_roll_hold_5deg.yaml";
+constexpr const char *DefaultScenarioFileName = "roll_hold_5deg_30s.yaml";
 
 std::filesystem::path FindDefaultScenarioDirectory() {
   std::error_code error;
@@ -51,6 +51,13 @@ ScenarioController::ScenarioController(std::filesystem::path scenarioDirectory,
   model_.directory = scenarioDirectory.empty() ? FindDefaultScenarioDirectory()
                                                : std::move(scenarioDirectory);
   model_.suggestedFileName = DefaultScenarioFileName;
+  RefreshAvailableScenarios();
+  const std::filesystem::path defaultScenario =
+      model_.directory / DefaultScenarioFileName;
+  std::error_code error;
+  if (std::filesystem::is_regular_file(defaultScenario, error) && !error) {
+    Load(defaultScenario);
+  }
 }
 
 bool ScenarioController::IsDirty() const {
@@ -61,10 +68,16 @@ void ScenarioController::Handle(const ScenarioDraftChanged &event) {
   model_.draft = event.draft;
 }
 
+void ScenarioController::Handle(const ExecutionVariantChanged &event) {
+  model_.executionVariant = event.variant;
+}
+
 void ScenarioController::NewScenario() {
   model_.draft = sim::SimulationScenario{};
   model_.cleanScenario = model_.draft;
   model_.currentFilePath.clear();
+  model_.source = {};
+  model_.executionVariant = sim::ExecutionVariant::Primary;
   model_.suggestedFileName = "untitled.yaml";
   SetStatus("Created a new scenario. Use Save As to persist it.", false);
 }
@@ -73,23 +86,57 @@ void ScenarioController::ResetDefaults() {
   model_.draft = sim::SimulationScenario{};
 }
 
+void ScenarioController::RefreshAvailableScenarios() {
+  model_.availableScenarioFiles.clear();
+  std::error_code error;
+  for (std::filesystem::directory_iterator iterator(model_.directory, error),
+      end;
+      !error && iterator != end;
+      iterator.increment(error)) {
+    if (iterator->is_regular_file(error)
+        && HasYamlExtension(iterator->path())) {
+      model_.availableScenarioFiles.push_back(iterator->path());
+    }
+  }
+  std::sort(model_.availableScenarioFiles.begin(),
+      model_.availableScenarioFiles.end(),
+      [](const std::filesystem::path &left,
+          const std::filesystem::path &right) {
+        return left.filename().string() < right.filename().string();
+      });
+}
+
 bool ScenarioController::Load(const std::filesystem::path &path) {
   const std::filesystem::path resolvedPath = ResolvePath(path);
   sim::SimulationScenario loadedScenario;
+  sim::ScenarioLoadMetadata loadMetadata;
   std::string error;
   if (!sim::SimulationScenarioSerializer::Load(resolvedPath,
           loadedScenario,
-          error)) {
+          error,
+          &loadMetadata)) {
     SetStatus(std::move(error), true);
     return false;
   }
 
-  loadedScenario.sourceFile = resolvedPath.string();
   model_.draft = std::move(loadedScenario);
   model_.cleanScenario = model_.draft;
   model_.currentFilePath = resolvedPath;
   model_.suggestedFileName = resolvedPath.filename().string();
-  SetStatus("Loaded " + resolvedPath.filename().string(), false);
+  model_.source = {
+      .file = resolvedPath.string(),
+      .digestSha256 = loadMetadata.sourceDigestSha256,
+  };
+  RefreshAvailableScenarios();
+  model_.executionVariant =
+      loadMetadata.legacyVariant.value_or(sim::ExecutionVariant::Primary);
+  if (loadMetadata.warnings.empty()) {
+    SetStatus("Loaded " + resolvedPath.filename().string(), false);
+  } else {
+    SetStatus("Loaded " + resolvedPath.filename().string() + ". "
+                  + loadMetadata.warnings.front(),
+        false);
+  }
   return true;
 }
 
@@ -111,12 +158,13 @@ bool ScenarioController::SaveAs(const std::filesystem::path &path) {
     return false;
   }
 
-  model_.draft.sourceFile = resolvedPath.string();
-  model_.draft.sourceDigestSha256 = common::crypto::Sha256Hex(
+  model_.source.file = resolvedPath.string();
+  model_.source.digestSha256 = common::crypto::Sha256Hex(
       sim::SimulationScenarioSerializer::Serialize(model_.draft));
   model_.cleanScenario = model_.draft;
   model_.currentFilePath = resolvedPath;
   model_.suggestedFileName = resolvedPath.filename().string();
+  RefreshAvailableScenarios();
   SetStatus("Saved " + resolvedPath.filename().string(), false);
   return true;
 }
@@ -142,8 +190,44 @@ bool ScenarioController::ResolveFileName(std::string_view input,
   return true;
 }
 
-void ScenarioController::Handle(const ScenarioLaunchRequested &event) const {
-  parentEvents_.Emit(event);
+bool ScenarioController::Apply() {
+  std::string validationError;
+  if (!sim::ValidateSimulationScenario(model_.draft, &validationError)) {
+    model_.lastApplySucceeded = false;
+    SetStatus(std::move(validationError), true);
+    return false;
+  }
+  if (!parentEvents_.IsConnected()) {
+    model_.lastApplySucceeded = false;
+    SetStatus("Scenario runtime connection is unavailable.", true);
+    return false;
+  }
+
+  model_.applyPending = true;
+  model_.lastApplySucceeded = false;
+  parentEvents_.Emit(ScenarioLaunchRequested{sim::ExecutionRequest{
+      .scenario = model_.draft,
+      .variant = model_.executionVariant,
+      .source = model_.source,
+  }});
+  if (model_.applyPending) {
+    model_.applyPending = false;
+    SetStatus("Scenario runtime did not report an apply result.", true);
+  }
+  return model_.lastApplySucceeded;
+}
+
+void ScenarioController::Handle(const ScenarioApplyCompleted &event) {
+  model_.applyPending = false;
+  model_.lastApplySucceeded = event.succeeded;
+  if (event.succeeded) {
+    SetStatus("Applied "
+                  + (model_.draft.name.empty() ? std::string("Scenario")
+                                               : model_.draft.name),
+        false);
+    return;
+  }
+  SetStatus(event.error.empty() ? "Scenario apply failed." : event.error, true);
 }
 
 std::filesystem::path ScenarioController::ResolvePath(

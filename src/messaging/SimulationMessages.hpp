@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sim/runtime/SimulationContracts.hpp"
-#include "sim/scenario/SimulationScenario.hpp"
+#include "sim/execution/ExecutionRequest.hpp"
 #include "sim/telemetry/TelemetryContracts.hpp"
 #include "contract/telemetry/RecordingTypes.hpp"
 
@@ -59,9 +59,9 @@ struct TrimCommand {
   bool fromCurrentState = false;
 };
 
-struct ScenarioRunCommand {
+struct ExecutionRunCommand {
   RequestId requestId = 0;
-  sim::SimulationScenario scenario;
+  sim::ExecutionRequest request;
 };
 
 struct TelemetryRecordingCommand {

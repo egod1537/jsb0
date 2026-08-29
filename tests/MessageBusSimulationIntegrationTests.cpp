@@ -134,7 +134,10 @@ void TestTrimAndScenarioRequestResults() {
   scenario.runTrim = false;
   scenario.durationSec = 0.2;
   scenario.events.front().timeSec = 0.1;
-  assert(harness.client.RunScenario(scenario));
+  assert(harness.client.RunExecution({
+      .scenario = scenario,
+      .variant = sim::ExecutionVariant::Primary,
+  }));
   assert(harness.client.GetScenarioExecutionStatus().has_value());
   while (harness.client.GetSimulationExecutionState()
          == sim::SimulationExecutionState::Running) {
@@ -146,6 +149,9 @@ void TestTrimAndScenarioRequestResults() {
   assert(completed.status.executionState
          == sim::SimulationExecutionState::Stopped);
   assert(!completed.status.scenario.has_value());
+  assert(completed.appliedExecution.has_value());
+  assert(completed.appliedExecution->scenario == scenario);
+  assert(completed.appliedExecution->variant == sim::ExecutionVariant::Primary);
   assert(completed.primary.available);
   assert(completed.baseline.has_value() && completed.baseline->available);
   assert(harness.client.GetTelemetrySnapshot(sim::SimulationSlot::Primary)

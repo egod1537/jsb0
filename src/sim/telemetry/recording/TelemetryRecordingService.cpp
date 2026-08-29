@@ -33,7 +33,7 @@ std::optional<double> LatestValue(const TelemetryRegistry &registry,
   return sample->value;
 }
 
-std::optional<TelemetrySourceFrame> CaptureSource(
+std::optional<TelemetrySourceFrame> CaptureTelemetrySource(
     const TelemetryRegistry &registry, double simulationTimeSec) {
   TelemetrySourceFrame source;
 
@@ -160,11 +160,17 @@ void TelemetryRecordingService::Consume(double simulationTimeSec,
   }
   TelemetryFrame frame;
   frame.simulationTimeSec = simulationTimeSec;
-  frame.primary = CaptureSource(primary, simulationTimeSec);
+  frame.primary = CaptureTelemetrySource(primary, simulationTimeSec);
   if (baseline != nullptr) {
-    frame.baseline = CaptureSource(*baseline, simulationTimeSec);
+    frame.baseline = CaptureTelemetrySource(*baseline, simulationTimeSec);
   }
-  recorder_->Record(frame);
+  Consume(frame);
+}
+
+void TelemetryRecordingService::Consume(const TelemetryFrame &frame) noexcept {
+  if (recorder_ && recorder_->GetStatus().state == RecordingState::Recording) {
+    recorder_->Record(frame);
+  }
 }
 
 void TelemetryRecordingService::RecordScenarioEvent(
@@ -186,6 +192,11 @@ void TelemetryRecordingService::RecordBaselineSettings(
   if (recorder_) {
     recorder_->RecordBaselineSettings(settings);
   }
+}
+
+std::optional<TelemetrySourceFrame> TelemetryRecordingService::CaptureSource(
+    const TelemetryRegistry &registry, double simulationTimeSec) {
+  return CaptureTelemetrySource(registry, simulationTimeSec);
 }
 
 std::filesystem::path

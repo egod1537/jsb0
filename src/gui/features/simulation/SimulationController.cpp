@@ -35,6 +35,15 @@ void SimulationController::Handle(const SimulationStopRequested &) {
   client_.StopSimulation();
 }
 
+void SimulationController::Handle(const SimulationPlaybackToggled &) {
+  if (client_.GetSimulationExecutionState()
+      == sim::SimulationExecutionState::Stopped) {
+    client_.StartSimulation();
+  } else {
+    client_.StopSimulation();
+  }
+}
+
 void SimulationController::Handle(const SimulationPauseRequested &) {
   client_.PauseSimulation();
 }
@@ -72,8 +81,12 @@ void SimulationController::Handle(const OpenTelemetryFolderRequested &) {
   client_.OpenTelemetryRecordingsFolder();
 }
 
-void SimulationController::Handle(const ScenarioLaunchRequested &event) {
-  client_.RunScenario(event.scenario);
+bool SimulationController::Handle(const ScenarioLaunchRequested &event) {
+  return client_.RunExecution(event.request);
+}
+
+std::optional<std::string> SimulationController::GetLastCommandError() const {
+  return client_.GetLastCommandError();
 }
 
 void SimulationController::Handle(const InitialConditionFieldChanged &event) {

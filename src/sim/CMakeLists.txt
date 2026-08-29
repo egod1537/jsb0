@@ -13,6 +13,8 @@ add_library(jsb_sim_core STATIC
   linearization/LinearizationStateVector.cpp
   Component.cpp
   ErrorTracker.cpp
+  execution/ExecutionVariant.cpp
+  execution/ExecutionVariantResolver.cpp
   InitialCondition.cpp
   StateLogger.cpp
   scenario/SimulationScenario.cpp
@@ -67,6 +69,7 @@ target_link_libraries(jsb_sim_core
 )
 
 add_library(jsb_sim_runtime STATIC
+  runtime/SimulationComparison.cpp
   runtime/SimulationRuntime.cpp
 )
 target_compile_features(jsb_sim_runtime PUBLIC cxx_std_20)

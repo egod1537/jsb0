@@ -114,53 +114,32 @@ void GNCController::Handle(const PrimaryRollHoldValueChanged &event) {
 }
 
 void GNCController::Handle(const BaselineRollHoldValueChanged &event) {
-  double value = event.value;
+  if (SetBaselinePx4RollHoldParameter(model_.baselineAutopilot,
+          event.field,
+          event.value)) {
+    return;
+  }
+
   switch (event.field) {
   case BaselineRollHoldField::Enabled:
-    model_.baselineAutopilot.rollHold = value != 0.0;
+    model_.baselineAutopilot.rollHold = event.value != 0.0;
     return;
   case BaselineRollHoldField::TargetDeg:
-    model_.baselineAutopilot.rollTargetDeg = value;
+    model_.baselineAutopilot.rollTargetDeg = event.value;
     return;
   case BaselineRollHoldField::TimeConstantSec:
-    value = std::clamp(value, 0.01, 1.0);
-    model_.baselineAutopilot.px4RollTimeConstantSec = value;
-    return;
   case BaselineRollHoldField::MaximumRateDegPerSec:
-    value = std::clamp(value, 10.0, 180.0);
-    model_.baselineAutopilot.px4RollMaximumRateDegPerSec = value;
-    return;
   case BaselineRollHoldField::RateProportionalGain:
-    value = std::clamp(value, 0.005, 0.5);
-    model_.baselineAutopilot.px4RollRateProportionalGain = value;
-    return;
   case BaselineRollHoldField::RateIntegralGain:
-    value = std::clamp(value, 0.005, 0.5);
-    model_.baselineAutopilot.px4RollRateIntegralGain = value;
-    return;
   case BaselineRollHoldField::RateDerivativeGain:
-    value = std::clamp(value, 0.0, 0.5);
-    model_.baselineAutopilot.px4RollRateDerivativeGain = value;
-    return;
   case BaselineRollHoldField::RateFeedForwardGain:
-    value = std::clamp(value, 0.0, 6.0);
-    model_.baselineAutopilot.px4RollRateFeedForwardGain = value;
-    return;
   case BaselineRollHoldField::IntegratorLimit:
-    value = std::clamp(value, 0.0, 1.0);
-    model_.baselineAutopilot.px4RollIntegratorLimit = value;
     return;
   }
 }
 
 void GNCController::Handle(const BaselineRollHoldTuningResetRequested &) {
-  model_.baselineAutopilot.px4RollTimeConstantSec = 0.35;
-  model_.baselineAutopilot.px4RollMaximumRateDegPerSec = 70.0;
-  model_.baselineAutopilot.px4RollRateProportionalGain = 0.160;
-  model_.baselineAutopilot.px4RollRateIntegralGain = 0.080;
-  model_.baselineAutopilot.px4RollRateDerivativeGain = 0.0;
-  model_.baselineAutopilot.px4RollRateFeedForwardGain = 0.80;
-  model_.baselineAutopilot.px4RollIntegratorLimit = 0.15;
+  ResetBaselinePx4RollHoldTuning(model_.baselineAutopilot);
 }
 
 void GNCController::Handle(const TrimRequestValueChanged &event) {

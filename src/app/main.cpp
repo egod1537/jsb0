@@ -3,7 +3,7 @@
 #include "gui/GUIConfig.hpp"
 #include "sim/Simulation.hpp"
 #include "sim/SimulationConfig.h"
-#include "sim/gnc/autopilot/AutopilotFactory.hpp"
+#include "sim/execution/ExecutionVariantResolver.hpp"
 #include "sim/runtime/SimulationRuntime.hpp"
 
 #include <csignal>
@@ -24,10 +24,12 @@ int main() {
 
   std::unique_ptr<sim::Simulation> primarySimulation =
       std::make_unique<sim::Simulation>(
-          gnc::CreateAutopilot(gnc::AutopilotKind::Primary));
+          sim::ExecutionVariantResolver::CreateAutopilot(
+              sim::ExecutionVariant::Primary));
   std::unique_ptr<sim::Simulation> baselineSimulation =
       std::make_unique<sim::Simulation>(
-          gnc::CreateAutopilot(gnc::AutopilotKind::Baseline));
+          sim::ExecutionVariantResolver::CreateAutopilot(
+              sim::ExecutionVariant::Baseline));
   std::unique_ptr<gui::GUI> gui = std::make_unique<gui::GUI>(guiConfig);
   auto simulationRuntime =
       std::make_unique<sim::SimulationRuntime>(std::move(primarySimulation),

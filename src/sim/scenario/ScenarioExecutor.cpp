@@ -84,6 +84,12 @@ bool ScenarioExecutor::Start(const SimulationScenario &scenario, double dtSec) {
   scenario_ = scenario;
   dtSec_ = dtSec;
   targetStepCount_ = *targetSteps;
+  eventStepIndices_.clear();
+  eventStepIndices_.reserve(scenario.events.size());
+  for (const ScenarioEventDefinition &event : scenario.events) {
+    eventStepIndices_.push_back(
+        static_cast<std::uint64_t>(std::llround(event.timeSec / dtSec)));
+  }
   stepCount_ = 0;
   nextEventIndex_ = 0;
   commandActive_ = false;
@@ -200,7 +206,7 @@ bool ScenarioExecutor::ResetSimulations() {
 
 bool ScenarioExecutor::ApplyControlState() {
   while (nextEventIndex_ < scenario_.events.size()
-         && GetElapsedSec() >= scenario_.events[nextEventIndex_].timeSec) {
+         && stepCount_ >= eventStepIndices_[nextEventIndex_]) {
     targetRollRad_ =
         math::DegToRad(scenario_.events[nextEventIndex_].command.rollDeg);
     commandActive_ = true;

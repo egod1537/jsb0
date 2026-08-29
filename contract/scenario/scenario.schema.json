@@ -2,23 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://jsb0.dev/contract/v1/scenario.schema.json",
   "title": "JSB0 Reproducible Simulation Scenario v1",
-  "description": "Authoritative execution input owned and interpreted by JSB0.",
+  "description": "Authoritative experiment conditions owned and interpreted by JSB0. Execution variant is supplied separately.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "scenario_type", "name", "aircraft", "autopilot", "initial_condition", "environment", "trim", "simulation", "events", "acceptance"],
+  "required": ["schema_version", "scenario_type", "name", "aircraft", "initial_condition", "environment", "trim", "simulation", "events", "acceptance"],
   "properties": {
     "schema_version": {"const": 1},
     "scenario_type": {"const": "roll_hold"},
     "name": {"type": "string", "minLength": 1},
     "aircraft": {"type": "string", "enum": ["c172x"]},
-    "autopilot": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type"],
-      "properties": {
-        "type": {"type": "string", "enum": ["primary", "baseline"]}
-      }
-    },
     "initial_condition": {
       "type": "object",
       "additionalProperties": false,

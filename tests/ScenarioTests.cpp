@@ -1,3 +1,5 @@
+#include "gui/features/simulation/ScenarioController.hpp"
+#include "gui/features/simulation/ScenarioSetupPopup.hpp"
 #include "gui/windows/ScenarioWindow.hpp"
 #include "sim/scenario/SimulationScenario.hpp"
 #include "sim/scenario/SimulationScenarioSerializer.hpp"
@@ -12,12 +14,17 @@
 namespace {
 constexpr double Tolerance = 1.0e-12;
 
+template <typename T>
+concept HasEditableScenario = requires(T &window) { window.GetScenario(); };
+
+static_assert(!HasEditableScenario<gui::ScenarioWindow>);
+
 void RequireNear(double actual, double expected) {
   assert(std::abs(actual - expected) <= Tolerance);
 }
 
 void RequireDefaultScenario(const sim::SimulationScenario &scenario) {
-  assert(scenario.name == "C172 Roll Hold 5deg");
+  assert(scenario.name == "Roll Hold 5deg 30s");
   RequireNear(scenario.initialCondition.altitudeFt, 3000.0);
   RequireNear(scenario.initialCondition.airspeedKts, 100.0);
   RequireNear(scenario.initialCondition.rollDeg, 0.0);
@@ -116,8 +123,6 @@ schema_version: 1
 scenario_type: roll_hold
 name: Missing Acceptance
 aircraft: c172x
-autopilot:
-  type: primary
 initial_condition:
   latitude_deg: 0
   longitude_deg: 0
@@ -170,51 +175,52 @@ events:
   assert(destination == before);
 }
 
-void TestScenarioWindowFileLifecycle() {
+void TestScenarioControllerFileLifecycle() {
   const std::filesystem::path directory = MakeTemporaryScenarioDirectory();
   const std::filesystem::path validFile = directory / "edited.yaml";
   const std::filesystem::path invalidFile = directory / "invalid.yaml";
 
-  gui::ScenarioWindow window(directory);
-  assert(window.GetScenarioDirectory() == directory);
-  assert(window.GetCurrentFilePath().empty());
-  assert(!window.IsDirty());
+  gui::ScenarioController controller(directory);
+  assert(controller.GetModel().directory == directory);
+  assert(controller.GetModel().currentFilePath.empty());
+  assert(!controller.IsDirty());
 
-  window.GetScenario().name = "Saved Scenario";
-  assert(window.IsDirty());
-  assert(!window.SaveScenarioFile());
-  assert(window.GetFileStatusMessage().find("Save As") != std::string::npos);
+  controller.EditDraftForCompatibility().name = "Saved Scenario";
+  assert(controller.IsDirty());
+  assert(!controller.Save());
+  assert(
+      controller.GetModel().statusMessage.find("Save As") != std::string::npos);
 
-  assert(window.SaveScenarioFileAs("edited.yaml"));
-  assert(window.GetCurrentFilePath() == validFile);
+  assert(controller.SaveAs("edited.yaml"));
+  assert(controller.GetModel().currentFilePath == validFile);
   assert(std::filesystem::is_regular_file(validFile));
-  assert(!window.IsDirty());
+  assert(!controller.IsDirty());
 
-  window.GetScenario().events.front().command.rollDeg = 9.0;
-  assert(window.IsDirty());
-  assert(window.SaveScenarioFile());
-  assert(!window.IsDirty());
+  controller.EditDraftForCompatibility().events.front().command.rollDeg = 9.0;
+  assert(controller.IsDirty());
+  assert(controller.Save());
+  assert(!controller.IsDirty());
 
   {
     std::ofstream invalidOutput(invalidFile, std::ios::binary);
     invalidOutput << "name: [invalid";
   }
-  const sim::SimulationScenario beforeInvalidLoad = window.GetScenario();
+  const sim::SimulationScenario beforeInvalidLoad = controller.GetModel().draft;
   const std::filesystem::path connectedBeforeInvalidLoad =
-      window.GetCurrentFilePath();
-  assert(!window.LoadScenarioFile(invalidFile));
-  assert(window.GetScenario() == beforeInvalidLoad);
-  assert(window.GetCurrentFilePath() == connectedBeforeInvalidLoad);
+      controller.GetModel().currentFilePath;
+  assert(!controller.Load(invalidFile));
+  assert(controller.GetModel().draft == beforeInvalidLoad);
+  assert(controller.GetModel().currentFilePath == connectedBeforeInvalidLoad);
 
-  window.NewScenario();
-  RequireDefaultScenario(window.GetScenario());
-  assert(window.GetCurrentFilePath().empty());
-  assert(!window.IsDirty());
+  controller.NewScenario();
+  RequireDefaultScenario(controller.GetModel().draft);
+  assert(controller.GetModel().currentFilePath.empty());
+  assert(!controller.IsDirty());
 
-  assert(window.LoadScenarioFile(validFile));
-  assert(window.GetScenario().name == "Saved Scenario");
-  RequireNear(window.GetScenario().events.front().command.rollDeg, 9.0);
-  assert(!window.IsDirty());
+  assert(controller.Load(validFile));
+  assert(controller.GetModel().draft.name == "Saved Scenario");
+  RequireNear(controller.GetModel().draft.events.front().command.rollDeg, 9.0);
+  assert(!controller.IsDirty());
 
   assert(std::filesystem::remove(invalidFile));
   assert(std::filesystem::remove(validFile));
@@ -222,10 +228,42 @@ void TestScenarioWindowFileLifecycle() {
 }
 
 void TestRepositoryScenarioAsset() {
-  gui::ScenarioWindow window;
-  assert(window.LoadScenarioFile("c172_roll_hold_5deg.yaml"));
-  RequireDefaultScenario(window.GetScenario());
-  assert(!window.IsDirty());
+  gui::ScenarioController controller;
+  assert(controller.Load("roll_hold_5deg_30s.yaml"));
+  RequireDefaultScenario(controller.GetModel().draft);
+  assert(!controller.IsDirty());
+}
+
+void TestScenarioApplyAndPopupLifecycle() {
+  int launchCount = 0;
+  gui::ScenarioController *controllerPtr = nullptr;
+  gui::ScenarioController controller({},
+      gui::architecture::EventSink<gui::ScenarioLaunchRequested>{
+          [&launchCount, &controllerPtr](const gui::ScenarioLaunchRequested &) {
+            ++launchCount;
+            controllerPtr->Handle(gui::ScenarioApplyCompleted{
+                .succeeded = true,
+            });
+          }});
+  controllerPtr = &controller;
+
+  gui::ScenarioSetupPopup popup(controller);
+  popup.RequestOpen();
+  assert(popup.IsOpenRequested());
+  popup.Cancel();
+  assert(!popup.IsOpenRequested());
+  assert(launchCount == 0);
+
+  assert(controller.Apply());
+  assert(launchCount == 1);
+  assert(controller.GetModel().lastApplySucceeded);
+
+  sim::SimulationScenario invalid = controller.GetModel().draft;
+  invalid.durationSec = 0.0;
+  controller.Handle(gui::ScenarioDraftChanged{invalid});
+  assert(!controller.Apply());
+  assert(launchCount == 1);
+  assert(controller.GetModel().statusIsError);
 }
 } // namespace
 
@@ -233,10 +271,10 @@ int main() {
   RequireDefaultScenario(sim::SimulationScenario{});
   TestScenarioValidation();
 
-  gui::ScenarioWindow window;
-  RequireDefaultScenario(window.GetScenario());
+  gui::ScenarioController controller;
+  RequireDefaultScenario(controller.GetModel().draft);
 
-  sim::SimulationScenario &edited = window.GetScenario();
+  sim::SimulationScenario &edited = controller.EditDraftForCompatibility();
   edited.name = "Edited Scenario";
   edited.initialCondition.altitudeFt = 1200.0;
   edited.windEnabled = true;
@@ -245,12 +283,13 @@ int main() {
   edited.events.front().command.rollDeg = -12.0;
   edited.maxOscillationCycles = 8.0;
 
-  window.ResetDefaults();
-  RequireDefaultScenario(window.GetScenario());
+  controller.ResetDefaults();
+  RequireDefaultScenario(controller.GetModel().draft);
 
   TestYamlRoundTrip();
   TestInvalidYamlIsTransactional();
-  TestScenarioWindowFileLifecycle();
+  TestScenarioControllerFileLifecycle();
   TestRepositoryScenarioAsset();
+  TestScenarioApplyAndPopupLifecycle();
   return 0;
 }

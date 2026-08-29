@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/math/Math.hpp"
+#include "contract/telemetry/RecordingTypes.hpp"
 #include "sim/AircraftState.hpp"
 #include "sim/EngineState.hpp"
 #include "sim/FDMState.hpp"
@@ -7,10 +9,11 @@
 #include "sim/SimulationConfig.h"
 #include "sim/control/ControlInput.hpp"
 #include "sim/control/FlightControlMode.hpp"
+#include "sim/execution/ExecutionRequest.hpp"
 #include "sim/gnc/TrimTypes.hpp"
+#include "sim/gnc/hold/Px4RollHoldParameterMetadata.hpp"
 #include "sim/linearization/DynamicModeHistory.hpp"
 #include "sim/linearization/LinearizationResult.hpp"
-#include "contract/telemetry/RecordingTypes.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -39,7 +42,7 @@ enum class SimulationCommandType {
   Resume,
   Reset,
   TickOnce,
-  RunScenario,
+  RunExecution,
   SetAutomaticRate,
   SetMaximumSpeed,
   SetManualControl,
@@ -56,13 +59,28 @@ struct PrimaryRollHoldConfig {
 struct BaselineRollHoldConfig {
   bool enabled = false;
   double targetRollRad = 0.0;
-  double timeConstantSec = 0.35;
-  double maximumRollRateRadPerSec = 0.0;
-  double rateProportionalGain = 0.160;
-  double rateIntegralGain = 0.080;
-  double rateDerivativeGain = 0.0;
-  double rateFeedForwardGain = 0.80;
-  double integratorLimit = 0.15;
+  double timeConstantSec = gnc::GetPx4RollHoldParameterMetadata(
+      gnc::Px4RollHoldParameter::TimeConstant)
+                               .defaultValue;
+  double maximumRollRateRadPerSec =
+      math::DegToRad(gnc::GetPx4RollHoldParameterMetadata(
+          gnc::Px4RollHoldParameter::MaximumRollRate)
+              .defaultValue);
+  double rateProportionalGain = gnc::GetPx4RollHoldParameterMetadata(
+      gnc::Px4RollHoldParameter::RateProportionalGain)
+                                    .defaultValue;
+  double rateIntegralGain = gnc::GetPx4RollHoldParameterMetadata(
+      gnc::Px4RollHoldParameter::RateIntegralGain)
+                                .defaultValue;
+  double rateDerivativeGain = gnc::GetPx4RollHoldParameterMetadata(
+      gnc::Px4RollHoldParameter::RateDerivativeGain)
+                                  .defaultValue;
+  double rateFeedForwardGain = gnc::GetPx4RollHoldParameterMetadata(
+      gnc::Px4RollHoldParameter::RateFeedForwardGain)
+                                   .defaultValue;
+  double integratorLimit = gnc::GetPx4RollHoldParameterMetadata(
+      gnc::Px4RollHoldParameter::IntegratorLimit)
+                               .defaultValue;
 };
 
 struct ControllerConfig {
@@ -140,6 +158,7 @@ struct SimulationInstanceSnapshot {
 struct SimulationSnapshot {
   SimulationStatus status;
   SimulationConfig config;
+  std::optional<ResolvedExecutionSpec> appliedExecution;
   InitialCondition defaultInitialCondition;
   SimulationInstanceSnapshot primary;
   std::optional<SimulationInstanceSnapshot> baseline;

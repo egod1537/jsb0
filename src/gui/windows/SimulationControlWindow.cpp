@@ -262,10 +262,11 @@ std::string MakeShortcutLabel(std::size_t index) {
 
 namespace gui {
 SimulationControlWindow::SimulationControlWindow(
-    SimulationController &simulation, EditorPlatformController &editorPlatform,
-    EditorIconRegistry &icons)
+    SimulationController &simulation, ScenarioController &scenario,
+    EditorPlatformController &editorPlatform, EditorIconRegistry &icons)
     : Window("Simulation Control"), simulation_(simulation),
-      editorPlatform_(editorPlatform), icons_(icons) {}
+      scenarioPopup_(scenario), editorPlatform_(editorPlatform), icons_(icons) {
+}
 
 float SimulationControlWindow::GetReservedHeight() {
   return FlightUI::Ui(ToolbarHeight);
@@ -287,7 +288,9 @@ ImGuiWindowFlags SimulationControlWindow::GetWindowFlags() const {
          | ImGuiWindowFlags_NoNavFocus;
 }
 
-void SimulationControlWindow::OnRender(const sim::SimulationSnapshot &) {
+void SimulationControlWindow::OnRender(
+    const sim::SimulationSnapshot &snapshot) {
+  HandleTransportShortcut();
   HandleLayoutShortcuts();
 
   const SimulationTransportProps props = simulation_.GetTransportProps();
@@ -305,6 +308,14 @@ void SimulationControlWindow::OnRender(const sim::SimulationSnapshot &) {
   const float buttonSpacing = FlightUI::Ui(ToolbarButtonSpacing);
   const float sectionSpacing = FlightUI::Ui(ToolbarSectionSpacing);
   Toolbar toolbar;
+  const float scenarioButtonWidth = ImGui::CalcTextSize("New Scenario...").x
+                                    + ImGui::GetStyle().FramePadding.x * 2.0F;
+  toolbar.Left(scenarioButtonWidth, [this, scenarioButtonWidth] {
+    if (ImGui::Button("New Scenario...",
+            ImVec2(scenarioButtonWidth, FlightUI::Ui(ToolbarButtonSize)))) {
+      scenarioPopup_.RequestOpen();
+    }
+  });
   toolbar.Center(GetToolbarControlsWidth(state), [&] {
     DrawStatusBadge(state);
     ImGui::SameLine(0.0F, buttonSpacing);
@@ -321,12 +332,9 @@ void SimulationControlWindow::OnRender(const sim::SimulationSnapshot &) {
             isStopped ? TransportIcon::Play : TransportIcon::Stop,
             scenarioInactive || !isStopped,
             isRunning,
-            isStopped ? "Play simulation" : "Stop simulation")) {
-      if (isStopped) {
-        simulation_.Handle(SimulationStartRequested{});
-      } else {
-        simulation_.Handle(SimulationStopRequested{});
-      }
+            isStopped ? "Play simulation (Space)"
+                      : "Stop simulation (Space)")) {
+      simulation_.Handle(SimulationPlaybackToggled{});
     }
 
     ImGui::SameLine(0.0F, buttonSpacing);
@@ -443,6 +451,18 @@ void SimulationControlWindow::OnRender(const sim::SimulationSnapshot &) {
       });
   toolbar.Render();
   DrawLayoutDialogs();
+  scenarioPopup_.Draw(snapshot);
+}
+
+void SimulationControlWindow::HandleTransportShortcut() {
+  const ImGuiIO &io = ImGui::GetIO();
+  if (io.WantTextInput || io.KeyCtrl || io.KeyShift || io.KeyAlt || io.KeySuper
+      || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+    return;
+  }
+  if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
+    simulation_.Handle(SimulationPlaybackToggled{});
+  }
 }
 
 void SimulationControlWindow::HandleLayoutShortcuts() {

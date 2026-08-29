@@ -1,4 +1,7 @@
 #include "common/crypto/Sha256.hpp"
+#include "sim/execution/ExecutionVariantResolver.hpp"
+#include "sim/gnc/autopilot/MyAutopilot.hpp"
+#include "sim/gnc/autopilot/PX4Autopilot.hpp"
 #include "sim/scenario/SimulationScenarioSerializer.hpp"
 #include "telemetry/aircraft_state.pb.h"
 #include "telemetry/control.pb.h"
@@ -6,6 +9,8 @@
 #include <google/protobuf/descriptor.h>
 
 #include <cassert>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -13,6 +18,15 @@
 #ifndef JSB_TEST_CONTRACT_SCENARIO_PATH
 #define JSB_TEST_CONTRACT_SCENARIO_PATH                                        \
   "contract/examples/scenario/roll_hold.yaml"
+#endif
+
+#ifndef JSB_TEST_EXECUTION_VARIANTS_PATH
+#define JSB_TEST_EXECUTION_VARIANTS_PATH "contract/execution/variants.json"
+#endif
+
+#ifndef JSB_TEST_EXECUTION_CAPABILITIES_PATH
+#define JSB_TEST_EXECUTION_CAPABILITIES_PATH                                   \
+  "contract/execution/capabilities.json"
 #endif
 
 namespace {
@@ -27,7 +41,9 @@ void TestCanonicalScenarioIsExecutableInput() {
   assert(scenario.schemaVersion == 1);
   assert(scenario.scenarioType == "roll_hold");
   assert(scenario.aircraft == "c172x");
-  assert(scenario.autopilot == gnc::AutopilotKind::Baseline);
+  const std::string serialized =
+      sim::SimulationScenarioSerializer::Serialize(scenario);
+  assert(serialized.find("autopilot") == std::string::npos);
 }
 
 void TestUnsupportedScenarioVersionIsRejected() {
@@ -51,9 +67,6 @@ void TestAuthoritativeScenarioValidation() {
   invalid.aircraft = "unknown";
   requireInvalid(invalid, "aircraft");
   invalid = valid;
-  invalid.autopilot = static_cast<gnc::AutopilotKind>(99);
-  requireInvalid(invalid, "autopilot.type");
-  invalid = valid;
   invalid.durationSec = 0.0;
   requireInvalid(invalid, "simulation.duration_sec");
   invalid = valid;
@@ -70,25 +83,79 @@ void TestAuthoritativeScenarioValidation() {
 
   const std::string serialized =
       sim::SimulationScenarioSerializer::Serialize(valid);
-  const std::string autopilotBlock = "autopilot:\n  type: primary\n";
-  const std::size_t position = serialized.find(autopilotBlock);
-  assert(position != std::string::npos);
-  std::string missingAutopilot = serialized;
-  missingAutopilot.erase(position, autopilotBlock.size());
   sim::SimulationScenario parsed;
-  assert(!sim::SimulationScenarioSerializer::Deserialize(missingAutopilot,
+  assert(sim::SimulationScenarioSerializer::Deserialize(serialized,
       parsed,
       error));
-  assert(error.find("autopilot") != std::string::npos);
 
-  std::string invalidAutopilot = serialized;
-  invalidAutopilot.replace(position,
-      autopilotBlock.size(),
-      "autopilot:\n  type: unsupported\n");
+  const std::string invalidAutopilot = "autopilot: unsupported\n" + serialized;
   assert(!sim::SimulationScenarioSerializer::Deserialize(invalidAutopilot,
       parsed,
       error));
-  assert(error.find("autopilot.type") != std::string::npos);
+  assert(error.find("autopilot") != std::string::npos);
+}
+
+void TestExecutionVariantContractAndResolution() {
+  sim::ExecutionVariant variant = sim::ExecutionVariant::Primary;
+  assert(sim::TryParseExecutionVariant("baseline", variant));
+  assert(variant == sim::ExecutionVariant::Baseline);
+  assert(sim::TryParseExecutionVariant("primary", variant));
+  assert(variant == sim::ExecutionVariant::Primary);
+  assert(!sim::TryParseExecutionVariant("Primary", variant));
+  assert(!sim::TryParseExecutionVariant("foo", variant));
+  assert(sim::SupportedExecutionVariants.size() == 2);
+  assert(sim::ToString(sim::SupportedExecutionVariants[0]) == "baseline");
+  assert(sim::ToString(sim::SupportedExecutionVariants[1]) == "primary");
+
+  const auto baseline = sim::ExecutionVariantResolver::CreateAutopilot(
+      sim::ExecutionVariant::Baseline);
+  const auto primary = sim::ExecutionVariantResolver::CreateAutopilot(
+      sim::ExecutionVariant::Primary);
+  assert(dynamic_cast<gnc::PX4Autopilot *>(baseline.get()) != nullptr);
+  assert(dynamic_cast<gnc::MyAutopilot *>(primary.get()) != nullptr);
+
+  std::ifstream capabilityInput(JSB_TEST_EXECUTION_VARIANTS_PATH,
+      std::ios::binary);
+  assert(capabilityInput);
+  const std::string capabilities(
+      std::istreambuf_iterator<char>(capabilityInput),
+      {});
+  assert(capabilities.find("\"baseline\"") != std::string::npos);
+  assert(capabilities.find("\"primary\"") != std::string::npos);
+
+  std::ifstream executionCapabilitiesInput(JSB_TEST_EXECUTION_CAPABILITIES_PATH,
+      std::ios::binary);
+  assert(executionCapabilitiesInput);
+  const std::string executionCapabilities(
+      std::istreambuf_iterator<char>(executionCapabilitiesInput),
+      {});
+  assert(executionCapabilities.find("\"single\"") != std::string::npos);
+  assert(executionCapabilities.find("\"compare\"") != std::string::npos);
+  assert(executionCapabilities.find("\"baseline\"") != std::string::npos);
+  assert(executionCapabilities.find("\"primary\"") != std::string::npos);
+}
+
+void TestLegacyAutopilotMigration() {
+  const std::string canonical =
+      sim::SimulationScenarioSerializer::Serialize(sim::SimulationScenario{});
+  for (const std::string legacyField : {
+           std::string("autopilot: baseline\n"),
+           std::string("autopilot:\n  type: baseline\n"),
+       }) {
+    sim::SimulationScenario scenario;
+    sim::ScenarioLoadMetadata metadata;
+    std::string error;
+    assert(
+        sim::SimulationScenarioSerializer::Deserialize(legacyField + canonical,
+            scenario,
+            error,
+            &metadata));
+    assert(metadata.legacyVariant == sim::ExecutionVariant::Baseline);
+    assert(!metadata.warnings.empty());
+    assert(
+        sim::SimulationScenarioSerializer::Serialize(scenario).find("autopilot")
+        == std::string::npos);
+  }
 }
 
 void TestRequiredProtobufSignalsExist() {
@@ -115,6 +182,8 @@ int main() {
   TestCanonicalScenarioIsExecutableInput();
   TestUnsupportedScenarioVersionIsRejected();
   TestAuthoritativeScenarioValidation();
+  TestExecutionVariantContractAndResolution();
+  TestLegacyAutopilotMigration();
   TestRequiredProtobufSignalsExist();
   TestScenarioDigestUsesSha256();
   return 0;

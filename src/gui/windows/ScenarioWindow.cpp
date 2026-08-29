@@ -1,152 +1,141 @@
 #include "gui/windows/ScenarioWindow.hpp"
 
 #include "flightui/FlightUI.hpp"
+#include "sim/execution/ExecutionVariant.hpp"
+#include "sim/runtime/SimulationContracts.hpp"
 
 #include <imgui.h>
 
-#include <array>
 #include <cstdio>
-#include <filesystem>
 #include <string>
-#include <utility>
 
 namespace gui {
 namespace UI = FlightUI;
 
 namespace {
 constexpr float InitialWindowWidth = 430.0F;
-constexpr float InitialWindowHeight = 680.0F;
+constexpr float InitialWindowHeight = 620.0F;
 constexpr float FieldLabelWidthRatio = 0.44F;
 constexpr float MinimumFieldLabelWidth = 110.0F;
 constexpr float MaximumFieldLabelWidth = 180.0F;
 constexpr float MinimumTwoColumnWidth = 320.0F;
-constexpr std::size_t ScenarioNameCapacity = 256;
 
 UI::PropertyGridBuilder MakeScenarioPropertyGrid(const char *id) {
   return UI::PropertyGrid(id)
       .LabelWidthRatio(FieldLabelWidthRatio)
       .MinimumLabelWidth(MinimumFieldLabelWidth)
       .MaximumLabelWidth(MaximumFieldLabelWidth)
-      .SingleColumnThreshold(MinimumTwoColumnWidth);
+      .SingleColumnThreshold(MinimumTwoColumnWidth)
+      .AlternatingRows();
 }
 
-UI::UIElement MakeDoubleField(const char *id, double &value, double step,
-    double fastStep) {
-  return UI::InputDouble(id, value)
-      .Step(step)
-      .FastStep(fastStep)
-      .Format("%.2f")
-      .OnChanged([&value](double changedValue) { value = changedValue; });
-}
-
-UI::UIElement MakeBooleanField(const char *id, bool &value) {
-  return UI::Toggle(id, value).OnChanged(
-      [&value](bool changedValue) { value = changedValue; });
-}
-
-int TrimModeIndex(gnc::TrimMode mode) {
+const char *TrimModeLabel(gnc::TrimMode mode) {
   switch (mode) {
   case gnc::TrimMode::Longitudinal:
-    return 0;
+    return "Longitudinal";
   case gnc::TrimMode::Full:
-    return 1;
+    return "Full";
   case gnc::TrimMode::Ground:
-    return 2;
+    return "Ground";
   }
-  return 0;
+  return "Unknown";
 }
 
-gnc::TrimMode TrimModeFromIndex(int index) {
-  switch (index) {
-  case 1:
-    return gnc::TrimMode::Full;
-  case 2:
-    return gnc::TrimMode::Ground;
-  case 0:
-  default:
-    return gnc::TrimMode::Longitudinal;
+const char *CommandTypeLabel(sim::ScenarioCommandType type) {
+  switch (type) {
+  case sim::ScenarioCommandType::RollHold:
+    return "Roll hold";
+  }
+  return "Unknown";
+}
+
+void DrawIdentity(const sim::ResolvedExecutionSpec &execution) {
+  const sim::SimulationScenario &scenario = execution.scenario;
+  UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("CurrentIdentity");
+  fields.Add("Scenario", UI::Text(scenario.name))
+      .Add("Scenario Type", UI::Text(scenario.scenarioType))
+      .Add("Schema Version", UI::Text(std::to_string(scenario.schemaVersion)))
+      .Add("Aircraft", UI::Text(scenario.aircraft))
+      .Add("Autopilot", UI::Text(std::string(sim::ToString(execution.variant))))
+      .Add("Duration",
+          UI::ValueLabel("##Duration", scenario.durationSec, "%.3f s"))
+      .Add("Time Step", UI::ValueLabel("##TimeStep", scenario.dtSec, "%.6f s"));
+  static_cast<UI::UIElement>(fields).Render();
+}
+
+void DrawInitialCondition(const sim::InitialCondition &condition) {
+  ImGui::SeparatorText("Initial Condition");
+  UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("CurrentInitial");
+  fields
+      .Add("Latitude",
+          UI::ValueLabel("##Latitude", condition.latitudeDeg, "%.3f deg"))
+      .Add("Longitude",
+          UI::ValueLabel("##Longitude", condition.longitudeDeg, "%.3f deg"))
+      .Add("Altitude",
+          UI::ValueLabel("##Altitude", condition.altitudeFt, "%.3f ft"))
+      .Add("Airspeed",
+          UI::ValueLabel("##Airspeed", condition.airspeedKts, "%.3f kt"))
+      .Add("Roll", UI::ValueLabel("##Roll", condition.rollDeg, "%.3f deg"))
+      .Add("Pitch", UI::ValueLabel("##Pitch", condition.pitchDeg, "%.3f deg"))
+      .Add("Heading",
+          UI::ValueLabel("##Heading", condition.headingDeg, "%.3f deg"));
+  static_cast<UI::UIElement>(fields).Render();
+}
+
+void DrawConditions(const sim::SimulationScenario &scenario) {
+  ImGui::SeparatorText("Conditions");
+  UI::PropertyGridBuilder fields =
+      MakeScenarioPropertyGrid("CurrentConditions");
+  fields.Add("Wind", UI::Text(scenario.windEnabled ? "Enabled" : "Disabled"))
+      .Add("Trim", UI::Text(scenario.runTrim ? "Enabled" : "Disabled"))
+      .Add("Trim Mode", UI::Text(TrimModeLabel(scenario.trimMode)));
+  static_cast<UI::UIElement>(fields).Render();
+}
+
+void DrawEvents(const sim::SimulationScenario &scenario) {
+  ImGui::SeparatorText("Events");
+  if (scenario.events.empty()) {
+    UI::TextDisabled("No events.").Render();
+    return;
+  }
+
+  for (const sim::ScenarioEventDefinition &event : scenario.events) {
+    char summary[160]{};
+    std::snprintf(summary,
+        sizeof(summary),
+        "%.3f s   %s = %.3f deg",
+        event.timeSec,
+        CommandTypeLabel(event.command.type),
+        event.command.rollDeg);
+    UI::Text(summary).Render();
   }
 }
 
+void DrawAcceptance(const sim::SimulationScenario &scenario) {
+  ImGui::SeparatorText("Acceptance Criteria");
+  UI::PropertyGridBuilder fields =
+      MakeScenarioPropertyGrid("CurrentAcceptance");
+  fields
+      .Add("Settling Band",
+          UI::ValueLabel("##SettlingBand",
+              scenario.settlingBandDeg,
+              "%.3f deg"))
+      .Add("Settling Limit",
+          UI::ValueLabel("##SettlingLimit",
+              scenario.settlingTimeLimitSec,
+              "%.3f s"))
+      .Add("Overshoot Limit",
+          UI::ValueLabel("##Overshoot", scenario.overshootLimitDeg, "%.3f deg"))
+      .Add("Oscillation Cycles",
+          UI::ValueLabel("##Oscillation",
+              scenario.maxOscillationCycles,
+              "%.3f"));
+  static_cast<UI::UIElement>(fields).Render();
+}
 } // namespace
 
-ScenarioWindow::ScenarioWindow(std::filesystem::path scenarioDirectory)
-    : Window("Scenario", EditorIconAliases::Scenario),
-      ownedController_(
-          std::make_unique<ScenarioController>(std::move(scenarioDirectory))),
-      controller_(ownedController_.get()) {
-  SetFileNameInput(controller_->GetModel().suggestedFileName);
-}
-
-ScenarioWindow::ScenarioWindow(SimulationController &controller,
-    std::filesystem::path scenarioDirectory)
-    : Window("Scenario", EditorIconAliases::Scenario),
-      ownedController_(
-          std::make_unique<ScenarioController>(std::move(scenarioDirectory),
-              architecture::EventSink<ScenarioLaunchRequested>{
-                  [&controller](const ScenarioLaunchRequested &event) {
-                    controller.Handle(event);
-                  }})),
-      controller_(ownedController_.get()) {
-  SetFileNameInput(controller_->GetModel().suggestedFileName);
-}
-
-sim::SimulationScenario &ScenarioWindow::GetScenario() {
-  return controller_->EditDraftForCompatibility();
-}
-
-const sim::SimulationScenario &ScenarioWindow::GetScenario() const {
-  return controller_->GetModel().draft;
-}
-
-void ScenarioWindow::ResetDefaults() {
-  controller_->ResetDefaults();
-  renderDraft_ = controller_->GetModel().draft;
-}
-
-void ScenarioWindow::NewScenario() {
-  controller_->NewScenario();
-  renderDraft_ = controller_->GetModel().draft;
-  SetFileNameInput(controller_->GetModel().suggestedFileName);
-}
-
-bool ScenarioWindow::LoadScenarioFile(const std::filesystem::path &path) {
-  const bool loaded = controller_->Load(path);
-  if (loaded) {
-    renderDraft_ = controller_->GetModel().draft;
-    SetFileNameInput(controller_->GetModel().suggestedFileName);
-  }
-  return loaded;
-}
-
-bool ScenarioWindow::SaveScenarioFile() {
-  const bool saved = controller_->Save();
-  renderDraft_ = controller_->GetModel().draft;
-  return saved;
-}
-
-bool ScenarioWindow::SaveScenarioFileAs(const std::filesystem::path &path) {
-  const bool saved = controller_->SaveAs(path);
-  if (saved) {
-    renderDraft_ = controller_->GetModel().draft;
-    SetFileNameInput(controller_->GetModel().suggestedFileName);
-  }
-  return saved;
-}
-
-bool ScenarioWindow::IsDirty() const { return controller_->IsDirty(); }
-
-const std::filesystem::path &ScenarioWindow::GetScenarioDirectory() const {
-  return controller_->GetModel().directory;
-}
-
-const std::filesystem::path &ScenarioWindow::GetCurrentFilePath() const {
-  return controller_->GetModel().currentFilePath;
-}
-
-const std::string &ScenarioWindow::GetFileStatusMessage() const {
-  return controller_->GetModel().statusMessage;
-}
+ScenarioWindow::ScenarioWindow()
+    : Window("Current Scenario", EditorIconAliases::Scenario, "Scenario") {}
 
 void ScenarioWindow::PrepareWindow() {
   ImGui::SetNextWindowSize(
@@ -155,281 +144,32 @@ void ScenarioWindow::PrepareWindow() {
 }
 
 void ScenarioWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
-  renderDraft_ = controller_->GetModel().draft;
-  DrawFileSection();
-  DrawScenarioSection();
-  DrawInitialConditionSection();
-  DrawEnvironmentSection();
-  DrawTrimSection();
-  DrawCommandSection();
-  DrawSimulationSection();
-  DrawAcceptanceCriteriaSection();
-  DrawActions(snapshot);
-  if (renderDraft_ != controller_->GetModel().draft) {
-    controller_->Handle(ScenarioDraftChanged{renderDraft_});
-  }
-}
-
-void ScenarioWindow::DrawFileSection() {
-  const ScenarioFileModel &file = controller_->GetModel();
-  ImGui::SeparatorText("Scenario File");
-  const std::string connectionLabel =
-      file.currentFilePath.empty() ? "Not connected"
-                                   : file.currentFilePath.filename().string();
-  ImGui::Text("%s%s", connectionLabel.c_str(), IsDirty() ? " *" : "");
-  ImGui::SetNextItemWidth(-1.0F);
-  ImGui::InputText("##ScenarioFileName",
-      fileNameInput_.data(),
-      fileNameInput_.size());
-  ImGui::TextDisabled("Directory: %s", file.directory.string().c_str());
-
-  if (ImGui::BeginTable("ScenarioFileActions",
-          4,
-          ImGuiTableFlags_SizingStretchSame
-              | ImGuiTableFlags_NoSavedSettings)) {
-    ImGui::TableNextColumn();
-    if (ImGui::Button("New", ImVec2(-1.0F, 0.0F))) {
-      NewScenario();
-    }
-
-    const bool hasFileName = fileNameInput_[0] != '\0';
-    ImGui::TableNextColumn();
-    ImGui::BeginDisabled(!hasFileName);
-    if (ImGui::Button("Load", ImVec2(-1.0F, 0.0F))) {
-      std::filesystem::path path;
-      if (ResolveFileNameInput(path)) {
-        LoadScenarioFile(path);
-      }
-    }
-    ImGui::EndDisabled();
-
-    ImGui::TableNextColumn();
-    ImGui::BeginDisabled(file.currentFilePath.empty());
-    if (ImGui::Button("Save", ImVec2(-1.0F, 0.0F))) {
-      SaveScenarioFile();
-    }
-    ImGui::EndDisabled();
-
-    ImGui::TableNextColumn();
-    ImGui::BeginDisabled(!hasFileName);
-    if (ImGui::Button("Save As", ImVec2(-1.0F, 0.0F))) {
-      std::filesystem::path path;
-      if (ResolveFileNameInput(path)) {
-        SaveScenarioFileAs(path);
-      }
-    }
-    ImGui::EndDisabled();
-    ImGui::EndTable();
-  }
-
-  if (!file.statusMessage.empty()) {
-    if (file.statusIsError) {
-      const UI::UIElement badge =
-          UI::StatusBadge("Error", UI::StatusTone::Error);
-      badge.Render();
-      ImGui::SameLine();
-    }
-    ImGui::TextWrapped("%s", file.statusMessage.c_str());
-  }
+  UI::TextDisabled("Resolved values from the Scenario applied to the runtime.")
+      .Render();
   ImGui::Spacing();
-}
+  if (!snapshot.appliedExecution.has_value()) {
+    UI::TextDisabled("No Scenario is currently applied.").Render();
+    return;
+  }
 
-bool ScenarioWindow::ResolveFileNameInput(std::filesystem::path &path) {
-  return controller_->ResolveFileName(fileNameInput_.data(), path);
-}
+  const sim::ResolvedExecutionSpec &execution = *snapshot.appliedExecution;
+  DrawIdentity(execution);
+  DrawInitialCondition(execution.scenario.initialCondition);
+  DrawConditions(execution.scenario);
+  DrawEvents(execution.scenario);
+  DrawAcceptance(execution.scenario);
 
-void ScenarioWindow::SetFileNameInput(const std::filesystem::path &path) {
-  std::snprintf(fileNameInput_.data(),
-      fileNameInput_.size(),
-      "%s",
-      path.filename().string().c_str());
-}
-
-void ScenarioWindow::DrawScenarioSection() {
-  UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("ScenarioFields");
-  fields.Add(UI::PropertyRow("Name")[UI::Custom([this] {
-    std::array<char, ScenarioNameCapacity> nameBuffer{};
-    std::snprintf(nameBuffer.data(),
-        nameBuffer.size(),
-        "%s",
-        renderDraft_.name.c_str());
-    ImGui::SetNextItemWidth(-1.0F);
-    if (ImGui::InputText("##Value", nameBuffer.data(), nameBuffer.size())) {
-      renderDraft_.name = nameBuffer.data();
+  if (!execution.source.file.empty()
+      || !execution.source.digestSha256.empty()) {
+    ImGui::SeparatorText("Source");
+    UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("CurrentSource");
+    fields.Add("File",
+        UI::Text(execution.source.file.empty() ? "Embedded"
+                                               : execution.source.file));
+    if (!execution.source.digestSha256.empty()) {
+      fields.Add("SHA-256", UI::Text(execution.source.digestSha256));
     }
-  })]);
-  UI::FoldOut("Scenario")
-      .Open(scenarioSectionOpen_)
-      .Flags(ImGuiTreeNodeFlags_CollapsingHeader
-             | ImGuiTreeNodeFlags_SpanAvailWidth)
-      .Id("ScenarioSection")[fields]
-      .Render();
-}
-
-void ScenarioWindow::DrawInitialConditionSection() {
-  UI::PropertyGridBuilder fields =
-      MakeScenarioPropertyGrid("InitialConditionFields");
-  fields
-      .Add(UI::PropertyRow("Altitude [ft]")[MakeDoubleField("Altitude",
-          renderDraft_.initialCondition.altitudeFt,
-          100.0,
-          1000.0)])
-      .Add(UI::PropertyRow("Airspeed [kt]")[MakeDoubleField("Airspeed",
-          renderDraft_.initialCondition.airspeedKts,
-          1.0,
-          10.0)])
-      .Add(UI::PropertyRow("Roll [deg]")[MakeDoubleField("InitialRoll",
-          renderDraft_.initialCondition.rollDeg,
-          0.1,
-          1.0)])
-      .Add(UI::PropertyRow("Pitch [deg]")[MakeDoubleField("InitialPitch",
-          renderDraft_.initialCondition.pitchDeg,
-          0.1,
-          1.0)])
-      .Add(UI::PropertyRow("Heading [deg]")[MakeDoubleField("InitialHeading",
-          renderDraft_.initialCondition.headingDeg,
-          1.0,
-          10.0)]);
-  UI::FoldOut("Initial Condition")
-      .Open(initialConditionSectionOpen_)
-      .Flags(ImGuiTreeNodeFlags_CollapsingHeader
-             | ImGuiTreeNodeFlags_SpanAvailWidth)
-      .Id("InitialConditionSection")[fields]
-      .Render();
-}
-
-void ScenarioWindow::DrawEnvironmentSection() {
-  UI::PropertyGridBuilder fields =
-      MakeScenarioPropertyGrid("EnvironmentFields");
-  fields.Add(UI::PropertyRow("Wind Enabled")[MakeBooleanField("WindEnabled",
-      renderDraft_.windEnabled)]);
-  UI::FoldOut("Environment")
-      .Open(environmentSectionOpen_)
-      .Flags(ImGuiTreeNodeFlags_CollapsingHeader
-             | ImGuiTreeNodeFlags_SpanAvailWidth)
-      .Id("EnvironmentSection")[fields]
-      .Render();
-}
-
-void ScenarioWindow::DrawTrimSection() {
-  int trimModeIndex = TrimModeIndex(renderDraft_.trimMode);
-  UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("TrimFields");
-  fields
-      .Add(UI::PropertyRow(
-          "Run Trim")[MakeBooleanField("RunTrim", renderDraft_.runTrim)])
-      .Add(UI::PropertyRow("Trim Mode")[UI::Combo("TrimMode",
-          trimModeIndex,
-          {"Longitudinal", "Full", "Ground"})
-              .OnChanged([this](int index) {
-                renderDraft_.trimMode = TrimModeFromIndex(index);
-              })]);
-  UI::FoldOut("Trim")
-      .Open(trimSectionOpen_)
-      .Flags(ImGuiTreeNodeFlags_CollapsingHeader
-             | ImGuiTreeNodeFlags_SpanAvailWidth)
-      .Id("TrimSection")[fields]
-      .Render();
-}
-
-void ScenarioWindow::DrawCommandSection() {
-  UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("CommandFields");
-  fields
-      .Add(UI::PropertyRow("Command Start [s]")[MakeDoubleField("CommandStart",
-          renderDraft_.events.front().timeSec,
-          0.1,
-          1.0)])
-      .Add(UI::PropertyRow(
-          "Commanded Roll [deg]")[MakeDoubleField("CommandedRoll",
-          renderDraft_.events.front().command.rollDeg,
-          0.1,
-          1.0)]);
-  UI::FoldOut("Command")
-      .Open(commandSectionOpen_)
-      .Flags(ImGuiTreeNodeFlags_CollapsingHeader
-             | ImGuiTreeNodeFlags_SpanAvailWidth)
-      .Id("CommandSection")[fields]
-      .Render();
-}
-
-void ScenarioWindow::DrawSimulationSection() {
-  UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("SimulationFields");
-  fields.Add(UI::PropertyRow("Duration [s]")
-          [MakeDoubleField("Duration", renderDraft_.durationSec, 1.0, 10.0)]);
-  UI::FoldOut("Simulation")
-      .Open(simulationSectionOpen_)
-      .Flags(ImGuiTreeNodeFlags_CollapsingHeader
-             | ImGuiTreeNodeFlags_SpanAvailWidth)
-      .Id("SimulationSection")[fields]
-      .Render();
-}
-
-void ScenarioWindow::DrawAcceptanceCriteriaSection() {
-  UI::PropertyGridBuilder fields =
-      MakeScenarioPropertyGrid("AcceptanceCriteriaFields");
-  fields
-      .Add(
-          UI::PropertyRow("Settling Band [deg]")[MakeDoubleField("SettlingBand",
-              renderDraft_.settlingBandDeg,
-              0.1,
-              0.5)])
-      .Add(UI::PropertyRow(
-          "Settling Time Limit [s]")[MakeDoubleField("SettlingTimeLimit",
-          renderDraft_.settlingTimeLimitSec,
-          0.5,
-          1.0)])
-      .Add(UI::PropertyRow(
-          "Overshoot Limit [deg]")[MakeDoubleField("OvershootLimit",
-          renderDraft_.overshootLimitDeg,
-          0.1,
-          0.5)])
-      .Add(UI::PropertyRow(
-          "Max Oscillation Cycles")[MakeDoubleField("MaxOscillationCycles",
-          renderDraft_.maxOscillationCycles,
-          0.5,
-          1.0)]);
-  UI::FoldOut("Acceptance Criteria")
-      .Open(acceptanceSectionOpen_)
-      .Flags(ImGuiTreeNodeFlags_CollapsingHeader
-             | ImGuiTreeNodeFlags_SpanAvailWidth)
-      .Id("AcceptanceCriteriaSection")[fields]
-      .Render();
-}
-
-void ScenarioWindow::DrawActions(const sim::SimulationSnapshot &snapshot) {
-  ImGui::Spacing();
-  ImGui::Separator();
-  const ImGuiStyle &style = ImGui::GetStyle();
-  const float resetButtonWidth =
-      ImGui::CalcTextSize("Reset Defaults").x + style.FramePadding.x * 2.0F;
-  const float runButtonWidth =
-      ImGui::CalcTextSize("Run Scenario").x + style.FramePadding.x * 2.0F;
-  const bool stackButtons =
-      ImGui::GetContentRegionAvail().x
-      < resetButtonWidth + style.ItemSpacing.x + runButtonWidth;
-  const ImVec2 buttonSize(stackButtons ? -1.0F : 0.0F, 0.0F);
-
-  if (ImGui::Button("Reset Defaults", buttonSize)) {
-    ResetDefaults();
-  }
-
-  if (!stackButtons) {
-    ImGui::SameLine();
-  }
-  const bool isStopped =
-      snapshot.status.executionState == sim::SimulationExecutionState::Stopped;
-  std::string validationError;
-  const bool scenarioValid =
-      sim::ValidateSimulationScenario(renderDraft_, &validationError);
-  const bool canRun = controller_ != nullptr && isStopped && scenarioValid;
-  ImGui::BeginDisabled(!canRun);
-  if (ImGui::Button("Run Scenario", buttonSize)) {
-    controller_->Handle(ScenarioLaunchRequested{renderDraft_});
-  }
-  ImGui::EndDisabled();
-  if (!canRun && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-    ImGui::SetTooltip("%s",
-        isStopped ? validationError.c_str()
-                  : "Stop the simulation before running a scenario.");
+    static_cast<UI::UIElement>(fields).Render();
   }
 }
 } // namespace gui

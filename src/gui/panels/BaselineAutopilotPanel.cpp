@@ -2,7 +2,6 @@
 
 #include "flightui/FlightUI.hpp"
 
-#include <cmath>
 #include <string>
 
 namespace gui {
@@ -11,22 +10,32 @@ namespace UI = FlightUI;
 namespace {
 constexpr float AutopilotParameterLabelWidth = 112.0F;
 constexpr float AutopilotTargetInputWidth = 140.0F;
+constexpr float AutopilotParameterInputWidth = 88.0F;
 constexpr float HoldCaptureButtonWidth = 96.0F;
 
-UI::UIElement MakePx4ParameterEditor(const char *editorId, double value,
-    BaselineRollHoldField field,
-    architecture::EventSink<BaselineRollHoldValueChanged> events,
-    double minimum, double maximum) {
-  return UI::ScalarEditor(editorId, value)
-      .Range(minimum, maximum)
-      .Step(0.01)
-      .FastStep(0.1)
-      .Format("%.2f")
-      .OnChanged([events, field](double newValue) {
-        if (std::isfinite(newValue)) {
-          events.Emit({field, newValue});
-        }
-      });
+UI::PropertyRowBuilder RenderPx4ParameterRow(
+    const BaselinePx4RollHoldParameterBinding &binding,
+    const BaselineAutopilotPanelState &state,
+    architecture::EventSink<BaselineRollHoldValueChanged> events) {
+  const auto &metadata =
+      gnc::GetPx4RollHoldParameterMetadata(binding.parameter);
+  const std::string editorId = std::string(metadata.name) + "Editor";
+  const std::string tooltip = metadata.unit.empty()
+                                  ? std::string(metadata.description)
+                                  : std::string(metadata.description) + " ("
+                                        + std::string(metadata.unit) + ")";
+
+  return UI::PropertyRow(std::string(metadata.name))
+      .Tooltip(tooltip)[UI::ScalarEditor(editorId, state.*(binding.value))
+              .Range(metadata.minimum, metadata.maximum)
+              .Step(metadata.increment)
+              .FastStep(metadata.increment * 10.0)
+              .Format("%.3f")
+              .InputWidth(AutopilotParameterInputWidth)
+              .Tooltip(tooltip)
+              .OnChanged([events, field = binding.field](double newValue) {
+                events.Emit({field, newValue});
+              })];
 }
 
 UI::UIElement MakeBaselineRollHoldTuning(
@@ -38,52 +47,10 @@ UI::UIElement MakeBaselineRollHoldTuning(
           .ColumnSpacing(4.0F)
           .RowPadding(2.0F)
           .AlternatingRows();
-  parameters
-      .Add(UI::PropertyRow(
-          "FW_R_TC")[MakePx4ParameterEditor("Px4RollTimeConstant",
-          state.px4RollTimeConstantSec,
-          BaselineRollHoldField::TimeConstantSec,
-          props.valueEvents,
-          0.01,
-          1.0)])
-      .Add(UI::PropertyRow(
-          "FW_R_RMAX")[MakePx4ParameterEditor("Px4RollMaximumRate",
-          state.px4RollMaximumRateDegPerSec,
-          BaselineRollHoldField::MaximumRateDegPerSec,
-          props.valueEvents,
-          10.0,
-          180.0)])
-      .Add(UI::PropertyRow("FW_RR_P")[MakePx4ParameterEditor("Px4RollRateP",
-          state.px4RollRateProportionalGain,
-          BaselineRollHoldField::RateProportionalGain,
-          props.valueEvents,
-          0.005,
-          0.5)])
-      .Add(UI::PropertyRow("FW_RR_I")[MakePx4ParameterEditor("Px4RollRateI",
-          state.px4RollRateIntegralGain,
-          BaselineRollHoldField::RateIntegralGain,
-          props.valueEvents,
-          0.005,
-          0.5)])
-      .Add(UI::PropertyRow("FW_RR_D")[MakePx4ParameterEditor("Px4RollRateD",
-          state.px4RollRateDerivativeGain,
-          BaselineRollHoldField::RateDerivativeGain,
-          props.valueEvents,
-          0.0,
-          0.5)])
-      .Add(UI::PropertyRow("FW_RR_FF")[MakePx4ParameterEditor("Px4RollRateFF",
-          state.px4RollRateFeedForwardGain,
-          BaselineRollHoldField::RateFeedForwardGain,
-          props.valueEvents,
-          0.0,
-          6.0)])
-      .Add(UI::PropertyRow(
-          "FW_RR_IMAX")[MakePx4ParameterEditor("Px4RollIntegratorLimit",
-          state.px4RollIntegratorLimit,
-          BaselineRollHoldField::IntegratorLimit,
-          props.valueEvents,
-          0.0,
-          1.0)]);
+  for (const BaselinePx4RollHoldParameterBinding &binding :
+      BaselinePx4RollHoldParameterBindings) {
+    parameters.Add(RenderPx4ParameterRow(binding, state, props.valueEvents));
+  }
 
   return UI::FoldOut("PX4 Roll Hold Tuning")
       .Open(state.px4RollTuningOpen)

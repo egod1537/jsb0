@@ -87,7 +87,8 @@ void Validate(const SimulationScenario &scenario) {
   }
 }
 
-SimulationScenario ParseScenario(const YAML::Node &root) {
+SimulationScenario ParseScenario(const YAML::Node &root,
+    ScenarioLoadMetadata &metadata) {
   if (!root || !root.IsMap()) {
     throw std::runtime_error("scenario YAML root must be a mapping");
   }
@@ -113,13 +114,26 @@ SimulationScenario ParseScenario(const YAML::Node &root) {
   scenario.name = ReadRequired<std::string>(root, "name", "name");
   scenario.aircraft = ReadRequired<std::string>(root, "aircraft", "aircraft");
 
-  const YAML::Node autopilot = RequireMap(root, "autopilot", "autopilot");
-  RequireOnlyKeys(autopilot, {"type"}, "autopilot");
-  const std::string autopilotType =
-      ReadRequired<std::string>(autopilot, "type", "autopilot.type");
-  if (!gnc::TryParseAutopilotKind(autopilotType, scenario.autopilot)) {
-    throw std::runtime_error(
-        "autopilot.type: unsupported autopilot '" + autopilotType + "'");
+  if (const YAML::Node autopilot = root["autopilot"]) {
+    std::string legacyValue;
+    if (autopilot.IsScalar()) {
+      legacyValue = autopilot.as<std::string>();
+    } else if (autopilot.IsMap()) {
+      RequireOnlyKeys(autopilot, {"type"}, "autopilot");
+      legacyValue =
+          ReadRequired<std::string>(autopilot, "type", "autopilot.type");
+    } else {
+      throw std::runtime_error("autopilot must be a string or mapping");
+    }
+    ExecutionVariant legacyVariant;
+    if (!TryParseExecutionVariant(legacyValue, legacyVariant)) {
+      throw std::runtime_error(
+          "autopilot: unsupported legacy value '" + legacyValue + "'");
+    }
+    metadata.legacyVariant = legacyVariant;
+    metadata.warnings.push_back("Deprecated scenario field 'autopilot'. Use "
+                                "--variant "
+        + legacyValue + ".");
   }
 
   const YAML::Node initial =
@@ -243,9 +257,6 @@ std::string SimulationScenarioSerializer::Serialize(
          << scenario.scenarioType;
   output << YAML::Key << "name" << YAML::Value << scenario.name;
   output << YAML::Key << "aircraft" << YAML::Value << scenario.aircraft;
-  output << YAML::Key << "autopilot" << YAML::Value << YAML::BeginMap
-         << YAML::Key << "type" << YAML::Value
-         << gnc::ToString(scenario.autopilot) << YAML::EndMap;
   const InitialCondition &initial = scenario.initialCondition;
   output << YAML::Key << "initial_condition" << YAML::Value << YAML::BeginMap
          << YAML::Key << "latitude_deg" << YAML::Value << initial.latitudeDeg
@@ -291,10 +302,16 @@ std::string SimulationScenarioSerializer::Serialize(
 }
 
 bool SimulationScenarioSerializer::Deserialize(std::string_view yaml,
-    SimulationScenario &scenario, std::string &error) {
+    SimulationScenario &scenario, std::string &error,
+    ScenarioLoadMetadata *metadata) {
   try {
-    SimulationScenario parsed = ParseScenario(YAML::Load(std::string(yaml)));
+    ScenarioLoadMetadata parsedMetadata;
+    SimulationScenario parsed =
+        ParseScenario(YAML::Load(std::string(yaml)), parsedMetadata);
     scenario = std::move(parsed);
+    if (metadata != nullptr) {
+      *metadata = std::move(parsedMetadata);
+    }
     error.clear();
     return true;
   } catch (const YAML::Exception &exception) {
@@ -306,7 +323,8 @@ bool SimulationScenarioSerializer::Deserialize(std::string_view yaml,
 }
 
 bool SimulationScenarioSerializer::Load(const std::filesystem::path &path,
-    SimulationScenario &scenario, std::string &error) {
+    SimulationScenario &scenario, std::string &error,
+    ScenarioLoadMetadata *metadata) {
   std::ifstream input(path, std::ios::binary);
   if (!input) {
     error = "Could not open scenario file: " + path.string();
@@ -319,11 +337,15 @@ bool SimulationScenarioSerializer::Load(const std::filesystem::path &path,
     return false;
   }
   const std::string bytes = buffer.str();
-  if (!Deserialize(bytes, scenario, error)) {
+  ScenarioLoadMetadata parsedMetadata;
+  if (!Deserialize(bytes, scenario, error, &parsedMetadata)) {
     return false;
   }
-  scenario.sourceFile = path.string();
-  scenario.sourceDigestSha256 = common::crypto::Sha256Hex(bytes);
+  parsedMetadata.sourceFile = path.string();
+  parsedMetadata.sourceDigestSha256 = common::crypto::Sha256Hex(bytes);
+  if (metadata != nullptr) {
+    *metadata = std::move(parsedMetadata);
+  }
   return true;
 }
 

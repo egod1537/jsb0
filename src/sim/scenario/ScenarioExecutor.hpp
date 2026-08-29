@@ -66,6 +66,7 @@ private:
   SimulationScenario scenario_;
   double dtSec_ = 0.0;
   std::uint64_t targetStepCount_ = 0;
+  std::vector<std::uint64_t> eventStepIndices_;
 
   // Runtime state
   ScenarioExecutorState state_ = ScenarioExecutorState::Idle;

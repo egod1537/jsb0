@@ -40,6 +40,9 @@ struct RecordingMetadata {
   std::string scenarioType;
   double scenarioDurationSec = 0.0;
   double simulationDtSec = 0.0;
+  std::string executionMode;
+  std::string executionVariant;
+  std::string executionVariants;
   std::string primaryAutopilot;
   std::string baselineAutopilot;
 };

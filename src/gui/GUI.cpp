@@ -1,6 +1,7 @@
 #include "GUI.hpp"
 #include "gui/features/editor/EditorPlatformController.hpp"
 #include "gui/features/monitor/MonitorController.hpp"
+#include "gui/features/simulation/ScenarioController.hpp"
 #include "messaging/SimulationMessageClient.hpp"
 #include "gui/windows/EditorIconBrowserWindow.hpp"
 #include "gui/windows/GNCWindow.hpp"
@@ -167,7 +168,7 @@ void GUI::Tick() {
           .dynamicModes =
               {
                   .history = simulationSnapshot_.linearization
-                                 .dynamicModeHistory.GetSnapshots(),
+                      .dynamicModeHistory.GetSnapshots(),
                   .errorMessage =
                       simulationSnapshot_.linearization.errorMessage,
                   .available = simulationSnapshot_.linearization.available,
@@ -259,6 +260,17 @@ void GUI::RegisterFeatureTree() {
 
   simulationController_ =
       std::make_unique<SimulationController>(*simulationMessageClient_);
+  scenarioController_ = std::make_unique<ScenarioController>(
+      std::filesystem::path{},
+      architecture::EventSink<ScenarioLaunchRequested>{
+          [this](const ScenarioLaunchRequested &event) {
+            const bool succeeded = simulationController_->Handle(event);
+            scenarioController_->Handle(ScenarioApplyCompleted{
+                .succeeded = succeeded,
+                .error = simulationController_->GetLastCommandError().value_or(
+                    std::string{}),
+            });
+          }});
   gncController_ = std::make_unique<GNCController>(*simulationMessageClient_);
   linearizationController_ =
       std::make_unique<LinearizationController>(*simulationMessageClient_);
@@ -274,7 +286,7 @@ void GUI::RegisterFeatureTree() {
           [this] { ResetEditorLayoutToDefault(); });
 
   RegisterWindow<SimulationWindow>(*simulationController_);
-  RegisterWindow<ScenarioWindow>(*simulationController_);
+  RegisterWindow<ScenarioWindow>();
   RegisterWindow<GNCWindow>(*gncController_);
   RegisterWindow<LinearizationWindow>(*linearizationController_);
   RegisterWindow<FlightDataMonitorWindow>(*monitorController_);
@@ -286,6 +298,7 @@ void GUI::RegisterFeatureTree() {
           &editorIcons_);
   RegisterWindow<EditorIconBrowserWindow>(editorIcons_);
   RegisterComponent<SimulationControlWindow>(*simulationController_,
+      *scenarioController_,
       *editorPlatformController_,
       editorIcons_);
   featureTreeRegistered_ = true;
@@ -508,7 +521,7 @@ void GUI::InitializeDefaultDockLayout(ImGuiID dockSpaceId,
   ImGui::DockBuilderDockWindow("GNC", leftNode);
   ImGui::DockBuilderDockWindow("Monitor", leftNode);
   ImGui::DockBuilderDockWindow("FG Linearization", leftNode);
-  ImGui::DockBuilderDockWindow("Scenario", rightNode);
+  ImGui::DockBuilderDockWindow("Current Scenario###Scenario", rightNode);
   ImGui::DockBuilderDockWindow("Simulation", rightNode);
   ImGui::DockBuilderFinish(dockSpaceId);
 }

@@ -1,4 +1,5 @@
 add_library(jsb_runner STATIC
+  ExecutionMode.cpp
   McapRunObserver.cpp
   RunnerOptions.cpp
   SimulationRunner.cpp

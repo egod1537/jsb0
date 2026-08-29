@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string_view>
 
 namespace telemetry {
@@ -33,10 +34,13 @@ public:
   // Telemetry and event consumption
   void Consume(double simulationTimeSec, const TelemetryRegistry &primary,
       const TelemetryRegistry *baseline) noexcept;
+  void Consume(const TelemetryFrame &frame) noexcept;
   void RecordScenarioEvent(const ScenarioEvent &event) noexcept;
   void RecordPrimarySettings(const PrimaryRollHoldSettings &settings) noexcept;
   void RecordBaselineSettings(
       const BaselineRollHoldSettings &settings) noexcept;
+  static std::optional<TelemetrySourceFrame> CaptureSource(
+      const TelemetryRegistry &registry, double simulationTimeSec);
 
   // Output location helpers
   static std::filesystem::path GetDefaultRecordingsDirectory();

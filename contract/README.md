@@ -11,7 +11,7 @@ the contract itself. Every contract Protobuf channel embeds a binary
 
 ## Version
 
-`VERSION` is semantic version `1.0.0`; consumers must compare its major
+`VERSION` is semantic version `2.0.0`; consumers must compare its major
 component. Removing or renaming a topic, changing field semantics, units,
 frames or sign conventions, changing a Protobuf field number, or adding a
 required scenario/metadata field requires a major version increment.
@@ -43,26 +43,72 @@ Runtime can publish it with verified semantics.
 
 ## Scenario and metadata
 
-`scenario/scenario.schema.json` describes the YAML accepted by the Runtime.
-Unit suffixes are authoritative and are used consistently for numeric scenario
-fields. v1 exposes the actually supported `roll_hold` capability, C172x model,
-`primary|baseline` autopilots, and the three Runtime trim modes.
+`scenario/scenario.schema.json` describes the experiment-condition YAML
+accepted by the Runtime. Unit suffixes are authoritative and are used
+consistently for numeric Scenario fields. Scenario v1 exposes the supported
+`roll_hold` capability, C172x model, and the three Runtime trim modes.
 
-The Scenario is the authoritative definition of one reproducible execution.
-It explicitly owns aircraft, `autopilot.type`, complete initial condition,
-fixed timestep, duration, trim/environment choice, and the ordered typed event
-sequence. Runtime implementation defaults that are not exposed remain part of
-the JSB0 commit identity. A normal headless run accepts no CLI override for
-aircraft, autopilot, timestep, duration, or trim:
+`execution/capabilities.json` is the machine-readable JSB0 headless capability
+source for JSB1. It declares the `single` and `compare` modes, the canonical
+`baseline` and `primary` variants, and the fixed comparison pair. The narrower
+`execution/variants.json` remains the Execution Variant contract. JSB1 must
+read these JSB0-owned artifacts rather than maintaining an authoritative list.
+
+A Scenario owns aircraft, complete initial condition, fixed timestep,
+duration, trim/environment choice, ordered typed events, and common acceptance
+criteria. An Execution Variant owns the runtime/control implementation. A
+single headless run requires one explicit variant and accepts no CLI override
+for other Scenario semantics. The mode defaults to `single` for CLI
+compatibility:
 
 ```text
-jsb0-runner --scenario scenarios/roll_hold_primary.yaml --output run
+jsb-sim-runner --scenario scenarios/roll_hold_5deg_30s.yaml --mode single --variant baseline --output out/baseline
+jsb-sim-runner --scenario scenarios/roll_hold_5deg_30s.yaml --mode single --variant primary --output out/primary
 ```
 
-The same binary executes `roll_hold_primary.yaml` and
-`roll_hold_baseline.yaml`; autopilot is run configuration, never build
-identity. `run.json` and MCAP metadata record the full runtime commit SHA, the
-SHA-256 digest of the original scenario bytes, and the resolved autopilot.
+Both commands use the same binary and Scenario bytes. `run.json` records
+`execution.variant`; MCAP Metadata named `jsb0.run` records
+`execution_variant`. The compatibility provenance fields `autopilot` and
+`resolved_autopilot` remain present but are not Scenario inputs. Each output
+directory contains `telemetry.mcap`, `run.json`, and an exact `scenario.yaml`
+snapshot.
+Concurrent processes must receive distinct output directories; the runner has
+no global output path, port, IPC endpoint, or shared mutable runtime state.
+
+A comparison execution is one Run and one process:
+
+```text
+jsb-sim-runner --scenario scenarios/roll_hold_5deg_30s.yaml --mode compare --output out/comparison
+```
+
+It creates independent baseline and primary JSBSim/controller runtimes from
+the same parsed Scenario and steps them sequentially on one authoritative
+integer step clock. Duration, `dt`, trim request, initial condition,
+environment, and event schedule are common. Event times are resolved to step
+indices before execution, and divergence in simulation time or emitted command
+events fails the whole comparison. A fatal failure in either variant stops the
+pair; internal threading is not used.
+
+Comparison output is one `run.json`, exact `scenario.yaml` snapshot, and one
+`telemetry.mcap`. The MCAP contains both `/jsb/baseline/...` and
+`/jsb/primary/...` channels using the same Protobuf schemas. Messages produced
+at the same shared step use the same simulation-time log/publish timestamp.
+`run.json` records `mode: compare`, the canonical variant pair, and per-variant
+results. MCAP Metadata records `execution_mode=compare` and
+`execution_variants=baseline,primary`.
+
+The runtime loader temporarily accepts legacy Scenario `autopilot` fields in
+either scalar form or the former `{type: ...}` mapping and emits a deprecation
+warning. `--variant` remains required in single mode. A mismatch between the
+legacy value and the CLI variant is rejected before simulation starts. Compare
+mode rejects the legacy selector because one value cannot describe the pair;
+saving the Scenario produces canonical YAML without the legacy field.
+
+Headless single-run recordings always publish the active execution on the
+existing `/jsb/primary/...` topics, regardless of variant. Therefore baseline
+and primary artifacts use identical topic names, Protobuf schemas, units, and
+timing semantics and can be overlaid directly. Desktop `SimulationSlot`
+namespaces remain unchanged and are mapped explicitly to Execution Variants.
 
 `metadata/run.schema.json` describes `run.json`. Its contract/runtime/scenario
 identifiers are also copied into MCAP Metadata named `jsb0.run`.

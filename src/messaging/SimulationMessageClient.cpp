@@ -91,12 +91,12 @@ SimulationMessageClient::SimulationMessageClient(messaging::MessageBus &bus)
           }));
 }
 
-bool SimulationMessageClient::RunScenario(
-    const sim::SimulationScenario &scenario) {
+bool SimulationMessageClient::RunExecution(
+    const sim::ExecutionRequest &request) {
   const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::ScenarioRunCommand{
+  bus_.Publish(messaging::ExecutionRunCommand{
       .requestId = requestId,
-      .scenario = scenario,
+      .request = request,
   });
   return TakeRequestResult(requestId);
 }

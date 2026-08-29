@@ -1,11 +1,12 @@
 #pragma once
 
 #include "RunnerOptions.hpp"
-#include "sim/gnc/autopilot/AutopilotFactory.hpp"
+#include "contract/telemetry/RecordingTypes.hpp"
 
 #include <csignal>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -34,6 +35,10 @@ struct RunnerResult {
   double realtimeFactor = 0.0;
   std::uint64_t steps = 0;
   std::string error;
+  std::string baselineStatus;
+  std::string baselineError;
+  std::string primaryStatus;
+  std::string primaryError;
 };
 
 struct SimulationRunInfo {
@@ -45,9 +50,15 @@ struct SimulationRunInfo {
   std::string aircraft = "c172x";
   std::string startedAt;
   std::filesystem::path outputDirectory;
-  gnc::AutopilotKind autopilot = gnc::AutopilotKind::Primary;
+  ExecutionMode mode = ExecutionMode::Single;
+  std::optional<sim::ExecutionVariant> variant;
   double dtSec = 0.0;
   double durationSec = 0.0;
+};
+
+struct SimulationRunObservation {
+  telemetry::recording::TelemetryFrame telemetry;
+  std::vector<telemetry::recording::ScenarioEvent> scenarioEvents;
 };
 
 class ISimulationRunObserver {
@@ -56,12 +67,11 @@ public:
 
   // Run lifecycle
   virtual bool OnRunStarted(const SimulationRunInfo &info,
-      sim::SimulationRuntime &runtime, std::string &error) = 0;
+      const SimulationRunObservation &observation, std::string &error) = 0;
   virtual bool OnSimulationStep(const SimulationRunInfo &info,
-      sim::SimulationRuntime &runtime, std::string &error) = 0;
+      const SimulationRunObservation &observation, std::string &error) = 0;
   virtual bool OnRunFinished(const SimulationRunInfo &info,
-      sim::SimulationRuntime &runtime, const RunnerResult &result,
-      std::string &error) = 0;
+      const RunnerResult &result, std::string &error) = 0;
 };
 
 class SimulationRunner {

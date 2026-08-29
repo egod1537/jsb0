@@ -23,14 +23,6 @@ bool IsSupportedTrimMode(gnc::TrimMode mode) {
   return false;
 }
 
-bool IsSupportedAutopilot(gnc::AutopilotKind kind) {
-  switch (kind) {
-  case gnc::AutopilotKind::Primary:
-  case gnc::AutopilotKind::Baseline:
-    return true;
-  }
-  return false;
-}
 } // namespace
 
 namespace sim {
@@ -58,9 +50,6 @@ bool ValidateSimulationScenario(const SimulationScenario &scenario,
     return ValidationFailed(error,
         "aircraft",
         "unsupported aircraft '" + scenario.aircraft + "'");
-  }
-  if (!IsSupportedAutopilot(scenario.autopilot)) {
-    return ValidationFailed(error, "autopilot.type", "unsupported value");
   }
   if (!IsSupportedTrimMode(scenario.trimMode)) {
     return ValidationFailed(error, "trim.mode", "unsupported value");

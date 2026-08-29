@@ -197,6 +197,31 @@ def validate_instance(instance: Any, schema: dict[str, Any], location: str = "$"
     return errors
 
 
+def validate_execution_metadata(metadata: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    mode = metadata.get("mode")
+    execution = metadata.get("execution", {})
+    if mode == "single":
+        if (
+            set(execution) != {"variant"}
+            or "autopilot" not in metadata
+            or "results" in metadata
+        ):
+            errors.append(
+                "single metadata must contain one variant/autopilot and no comparison results"
+            )
+    elif mode == "compare":
+        if (
+            execution != {"variants": ["baseline", "primary"]}
+            or "autopilot" in metadata
+            or "results" not in metadata
+        ):
+            errors.append(
+                "compare metadata must contain canonical variants/results and no autopilot"
+            )
+    return errors
+
+
 def parse_proto_messages(contract_root: Path) -> dict[str, dict[str, str]]:
     messages: dict[str, dict[str, str]] = {}
     for relative in PROTO_FILES:
@@ -240,14 +265,29 @@ def validate_contract(root: Path, protoc: Path, output: Path) -> None:
 
     scenario_schema = json.loads((contract_root / "scenario/scenario.schema.json").read_text(encoding="utf-8"))
     metadata_schema = json.loads((contract_root / "metadata/run.schema.json").read_text(encoding="utf-8"))
-    for name, schema in (("scenario", scenario_schema), ("metadata", metadata_schema)):
+    variants_schema = json.loads((contract_root / "execution/variants.schema.json").read_text(encoding="utf-8"))
+    capabilities_schema = json.loads((contract_root / "execution/capabilities.schema.json").read_text(encoding="utf-8"))
+    for name, schema in (("scenario", scenario_schema), ("metadata", metadata_schema), ("execution variants", variants_schema), ("execution capabilities", capabilities_schema)):
         if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
             raise ContractError(f"{name} schema must declare JSON Schema draft 2020-12")
 
     scenario = load_yaml_mapping(contract_root / "examples/scenario/roll_hold.yaml")
     metadata = json.loads((contract_root / "examples/metadata/run.json").read_text(encoding="utf-8"))
+    variants = json.loads((contract_root / "execution/variants.json").read_text(encoding="utf-8"))
+    capabilities = json.loads((contract_root / "execution/capabilities.json").read_text(encoding="utf-8"))
     errors = validate_instance(scenario, scenario_schema)
     errors.extend(validate_instance(metadata, metadata_schema))
+    errors.extend(validate_instance(variants, variants_schema))
+    errors.extend(validate_instance(capabilities, capabilities_schema))
+    if variants.get("variants") != ["baseline", "primary"]:
+        errors.append("$.variants must expose baseline and primary in canonical order")
+    if capabilities != {
+        "modes": ["single", "compare"],
+        "variants": ["baseline", "primary"],
+        "compare_variants": ["baseline", "primary"],
+    }:
+        errors.append("execution capabilities do not expose canonical modes and variants")
+    errors.extend(validate_execution_metadata(metadata))
     scenario_digest = hashlib.sha256(
         (contract_root / "examples/scenario/roll_hold.yaml").read_bytes()
     ).hexdigest()
@@ -334,6 +374,7 @@ def validate_run_metadata(root: Path, run_json: Path) -> None:
     )
     metadata = json.loads(run_json.read_text(encoding="utf-8"))
     errors = validate_instance(metadata, schema)
+    errors.extend(validate_execution_metadata(metadata))
     expected_version = (root / "contract/VERSION").read_text(encoding="utf-8").strip()
     if metadata.get("contract_version") != expected_version:
         errors.append("$.contract_version does not match contract/VERSION")

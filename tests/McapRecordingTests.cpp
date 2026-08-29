@@ -67,18 +67,19 @@ private:
 
 RecordingMetadata MakeMetadata() {
   return RecordingMetadata{
-      .contractVersion = "1.0.0",
+      .contractVersion = "2.0.0",
       .telemetrySchemaVersion = 1,
       .applicationVersion = "test-version",
       .gitCommit = "test-commit",
       .runtimeBranch = "backend",
       .aircraft = "c172x",
       .scenarioName = "roll_hold_5deg",
-      .scenarioFile = "scenarios/c172_roll_hold_5deg.yaml",
+      .scenarioFile = "scenarios/roll_hold_5deg_30s.yaml",
       .scenarioSchemaVersion = 1,
       .scenarioType = "roll_hold",
       .scenarioDurationSec = 30.0,
       .simulationDtSec = 0.01,
+      .executionVariant = "primary",
       .primaryAutopilot = "MyAutopilot",
       .baselineAutopilot = "PX4Autopilot",
   };
@@ -178,7 +179,9 @@ void TestRoundTripMultipleChannelsAndMetadata() {
   const auto &run = reader.GetRunInfo();
   Require(run.scenarioName == "roll_hold_5deg",
       "scenario_name metadata mismatch");
-  Require(run.contractVersion == "1.0.0", "contract_version metadata mismatch");
+  Require(run.contractVersion == "2.0.0", "contract_version metadata mismatch");
+  Require(run.executionVariant == "primary",
+      "execution_variant metadata mismatch");
   Require(run.telemetrySchemaVersion == 1,
       "telemetry_schema_version metadata mismatch");
   Require(run.scenarioSchemaVersion == 1,

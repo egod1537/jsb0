@@ -43,6 +43,8 @@ add_jsb_test(contract_runtime_tests
 )
 target_compile_definitions(contract_runtime_tests PRIVATE
   JSB_TEST_CONTRACT_SCENARIO_PATH="${PROJECT_SOURCE_DIR}/contract/examples/scenario/roll_hold.yaml"
+  JSB_TEST_EXECUTION_VARIANTS_PATH="${PROJECT_SOURCE_DIR}/contract/execution/variants.json"
+  JSB_TEST_EXECUTION_CAPABILITIES_PATH="${PROJECT_SOURCE_DIR}/contract/execution/capabilities.json"
 )
 
 add_test(
@@ -69,6 +71,7 @@ add_test(
   NAME contract_roll_hold_run
   COMMAND jsb-sim-runner
     --scenario "${PROJECT_SOURCE_DIR}/contract/examples/scenario/roll_hold.yaml"
+    --variant baseline
     --output "${JSB_CONTRACT_RUN_OUTPUT}"
 )
 set_tests_properties(contract_roll_hold_run PROPERTIES
@@ -175,6 +178,7 @@ add_jsb_test(runner_mcap_integration_tests
 
 target_compile_definitions(runner_mcap_integration_tests PRIVATE
   JSB_TEST_HEADLESS_SCENARIO_PATH="${PROJECT_SOURCE_DIR}/tests/data/scenarios/headless_smoke.yaml"
+  JSB_TEST_CANONICAL_SCENARIO_PATH="${PROJECT_SOURCE_DIR}/scenarios/roll_hold_5deg_30s.yaml"
 )
 
 add_jsb_test(linearization_perturbation_tests
@@ -262,7 +266,26 @@ if(TARGET jsb-sim-runner)
     COMMAND ${CMAKE_COMMAND}
       -DRUNNER=$<TARGET_FILE:jsb-sim-runner>
       -DSCENARIO=${PROJECT_SOURCE_DIR}/tests/data/scenarios/headless_smoke.yaml
+      -DVARIANT=primary
       -DOUTPUT=${PROJECT_BINARY_DIR}/test-results/headless-smoke
       -P ${PROJECT_SOURCE_DIR}/tests/VerifyHeadlessRunner.cmake
+  )
+
+  add_test(
+    NAME headless_runner_compare_smoke
+    COMMAND ${CMAKE_COMMAND}
+      -DRUNNER=$<TARGET_FILE:jsb-sim-runner>
+      -DSCENARIO=${PROJECT_SOURCE_DIR}/tests/data/scenarios/headless_smoke.yaml
+      -DOUTPUT=${PROJECT_BINARY_DIR}/test-results/headless-compare-smoke
+      -P ${PROJECT_SOURCE_DIR}/tests/VerifyHeadlessComparison.cmake
+  )
+
+  add_test(
+    NAME headless_runner_concurrent_variants
+    COMMAND ${Python3_EXECUTABLE}
+      "${PROJECT_SOURCE_DIR}/tests/verify_concurrent_runner.py"
+      --runner $<TARGET_FILE:jsb-sim-runner>
+      --scenario "${PROJECT_SOURCE_DIR}/tests/data/scenarios/headless_smoke.yaml"
+      --output "${PROJECT_BINARY_DIR}/test-results/headless-concurrent"
   )
 endif()

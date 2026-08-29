@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 
 namespace application {
 class SimulationMessageClient;
@@ -37,6 +38,7 @@ public:
   // Transport events
   void Handle(const SimulationStartRequested &event);
   void Handle(const SimulationStopRequested &event);
+  void Handle(const SimulationPlaybackToggled &event);
   void Handle(const SimulationPauseRequested &event);
   void Handle(const SimulationResumeRequested &event);
   void Handle(const SimulationResetRequested &event);
@@ -45,7 +47,8 @@ public:
   void Handle(const MaximumSimulationSpeedChanged &event);
   void Handle(const TelemetryRecordingToggled &event);
   void Handle(const OpenTelemetryFolderRequested &event);
-  void Handle(const ScenarioLaunchRequested &event);
+  bool Handle(const ScenarioLaunchRequested &event);
+  std::optional<std::string> GetLastCommandError() const;
 
   // Initial-condition child events
   void Handle(const InitialConditionFieldChanged &event);

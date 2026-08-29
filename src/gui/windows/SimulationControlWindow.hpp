@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gui/features/editor/EditorPlatformController.hpp"
+#include "gui/features/simulation/ScenarioSetupPopup.hpp"
 #include "gui/features/simulation/SimulationController.hpp"
 #include "gui/Window.hpp"
 
@@ -9,12 +10,14 @@
 
 namespace gui {
 class EditorIconRegistry;
+class ScenarioController;
 
 class SimulationControlWindow final : public Window {
 public:
   // Lifetime and layout
   SimulationControlWindow(SimulationController &simulation,
-      EditorPlatformController &editorPlatform, EditorIconRegistry &icons);
+      ScenarioController &scenario, EditorPlatformController &editorPlatform,
+      EditorIconRegistry &icons);
   static float GetReservedHeight();
 
 protected:
@@ -24,6 +27,9 @@ protected:
   void OnRender(const sim::SimulationSnapshot &snapshot) override;
 
 private:
+  // Simulation transport controls
+  void HandleTransportShortcut();
+
   // Layout preset controls
   void HandleLayoutShortcuts();
   void DrawLayoutDropdown(float width);
@@ -37,6 +43,7 @@ private:
 
   // Dependencies
   SimulationController &simulation_;
+  ScenarioSetupPopup scenarioPopup_;
   EditorPlatformController &editorPlatform_;
   EditorIconRegistry &icons_;
 

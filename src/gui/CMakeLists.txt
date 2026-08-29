@@ -26,6 +26,7 @@ if(JSB_BUILD_EDITOR)
     features/linearization/LinearizationController.cpp
     features/monitor/MonitorView.cpp
     features/simulation/ScenarioController.cpp
+    features/simulation/ScenarioSetupPopup.cpp
     features/simulation/SimulationController.cpp
     platform/FileDialogService.cpp
     panels/AutopilotPanel.cpp

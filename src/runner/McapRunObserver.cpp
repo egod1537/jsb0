@@ -1,7 +1,6 @@
 #include "McapRunObserver.hpp"
 
-#include "sim/gnc/autopilot/AutopilotFactory.hpp"
-#include "sim/runtime/SimulationRuntime.hpp"
+#include "sim/execution/ExecutionVariant.hpp"
 #include "contract/telemetry/RecordingTypes.hpp"
 
 #include <string>
@@ -20,7 +19,7 @@ std::string RecordingError(const telemetry::recording::RecordingStatus &status,
 } // namespace
 
 bool McapRunObserver::OnRunStarted(const SimulationRunInfo &info,
-    sim::SimulationRuntime &runtime, std::string &error) {
+    const SimulationRunObservation &observation, std::string &error) {
   telemetry::recording::RecordingMetadata metadata;
   metadata.contractVersion = JSB_CONTRACT_VERSION;
   metadata.telemetrySchemaVersion = JSB_TELEMETRY_SCHEMA_VERSION;
@@ -35,26 +34,45 @@ bool McapRunObserver::OnRunStarted(const SimulationRunInfo &info,
   metadata.scenarioType = info.scenarioType;
   metadata.scenarioDurationSec = info.durationSec;
   metadata.simulationDtSec = info.dtSec;
-  metadata.primaryAutopilot = gnc::ToString(info.autopilot);
+  metadata.executionMode = std::string(ToString(info.mode));
+  if (info.mode == ExecutionMode::Compare) {
+    metadata.executionVariants = "baseline,primary";
+    metadata.primaryAutopilot = "primary";
+    metadata.baselineAutopilot = "baseline";
+  } else if (info.variant) {
+    metadata.executionVariant = std::string(sim::ToString(*info.variant));
+    metadata.primaryAutopilot = metadata.executionVariant;
+  }
 
-  if (!runtime.StartTelemetryRecording(info.outputDirectory / "telemetry.mcap",
-          metadata)) {
-    error = RecordingError(runtime.GetTelemetryRecordingStatus(),
+  telemetry::recording::TelemetryRecordingConfig config;
+  config.outputPath = info.outputDirectory / "telemetry.mcap";
+  config.recordPrimary = true;
+  config.recordBaseline = info.mode == ExecutionMode::Compare;
+  if (!recording_.Start(config, metadata)) {
+    error = RecordingError(recording_.GetStatus(),
         "failed to initialize MCAP recorder for telemetry.mcap");
     return false;
   }
   started_ = true;
-  return true;
+  return Consume(observation, error);
 }
 
 bool McapRunObserver::OnSimulationStep(const SimulationRunInfo &,
-    sim::SimulationRuntime &runtime, std::string &error) {
+    const SimulationRunObservation &observation, std::string &error) {
+  return Consume(observation, error);
+}
+
+bool McapRunObserver::Consume(const SimulationRunObservation &observation,
+    std::string &error) {
   if (!started_) {
     error = "MCAP recorder was not started";
     return false;
   }
-  const telemetry::recording::RecordingStatus status =
-      runtime.GetTelemetryRecordingStatus();
+  recording_.Consume(observation.telemetry);
+  for (const auto &event : observation.scenarioEvents) {
+    recording_.RecordScenarioEvent(event);
+  }
+  const telemetry::recording::RecordingStatus status = recording_.GetStatus();
   if (status.state != telemetry::recording::RecordingState::Recording) {
     error = RecordingError(status, "failed to record telemetry.mcap");
     return false;
@@ -63,14 +81,13 @@ bool McapRunObserver::OnSimulationStep(const SimulationRunInfo &,
 }
 
 bool McapRunObserver::OnRunFinished(const SimulationRunInfo &,
-    sim::SimulationRuntime &runtime, const RunnerResult &, std::string &error) {
+    const RunnerResult &, std::string &error) {
   if (!started_) {
     return true;
   }
-  runtime.StopTelemetryRecording();
+  recording_.Stop();
   started_ = false;
-  const telemetry::recording::RecordingStatus status =
-      runtime.GetTelemetryRecordingStatus();
+  const telemetry::recording::RecordingStatus status = recording_.GetStatus();
   if (status.state != telemetry::recording::RecordingState::Idle) {
     error = RecordingError(status, "failed to finalize telemetry.mcap");
     return false;

@@ -23,6 +23,9 @@ struct RecordedRunInfo {
   std::string runtimeBranch;
   std::string applicationVersion;
   std::string aircraft;
+  std::string executionMode;
+  std::string executionVariant;
+  std::string executionVariants;
   std::string primaryAutopilot;
   std::string resolvedAutopilot;
   std::string baselineAutopilot;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sim/runtime/SimulationContracts.hpp"
+#include "sim/execution/ExecutionRequest.hpp"
 #include "sim/telemetry/TelemetryContracts.hpp"
 #include "contract/telemetry/RecordingTypes.hpp"
 #include "sim/telemetry/recording/TelemetryRecordingService.hpp"
@@ -9,10 +10,10 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace sim {
 class Simulation;
-struct SimulationScenario;
 class ScenarioExecutor;
 
 class SimulationRuntime {
@@ -24,8 +25,8 @@ public:
   SimulationRuntime(const SimulationRuntime &) = delete;
   SimulationRuntime &operator=(const SimulationRuntime &) = delete;
 
-  static std::unique_ptr<SimulationRuntime> CreateForScenario(
-      const SimulationScenario &scenario, std::string &error);
+  static std::unique_ptr<SimulationRuntime> CreateForExecution(
+      const ResolvedExecutionSpec &execution, std::string &error);
 
   // Lifetime and stepping
   bool Initialize(const SimulationConfig &config);
@@ -39,8 +40,8 @@ public:
   void RequestTick();
   bool Tick();
 
-  // Scenario execution
-  bool RunScenario(const SimulationScenario &scenario);
+  // Resolved execution
+  bool RunExecution(const ResolvedExecutionSpec &execution);
   std::optional<ScenarioExecutionStatus> GetScenarioStatus() const;
 
   // Scheduling
@@ -55,6 +56,10 @@ public:
   std::uint64_t GetTelemetryVersion(SimulationSlot slot) const;
   telemetry::TelemetryFrame GetLatestTelemetryFrame(SimulationSlot slot) const;
   telemetry::TelemetrySnapshot GetTelemetrySnapshot(SimulationSlot slot) const;
+  double GetSimulationTimeSec() const;
+  std::optional<telemetry::recording::TelemetrySourceFrame>
+  CaptureRecordingSource() const;
+  std::vector<telemetry::recording::ScenarioEvent> TakeScenarioEvents();
 
   // External command boundary
   bool SetManualControl(const control::ControlInput &input);
@@ -76,7 +81,7 @@ private:
   bool SynchronizeBaselineControlState();
   void FinishScenario();
   void RecordPendingScenarioCommandEvent();
-  bool SelectScenarioAutopilot(const SimulationScenario &scenario);
+  bool SelectExecutionVariant(ExecutionVariant variant);
   bool ReinitializeForScenario(const SimulationScenario &scenario);
   void RestoreInteractiveSimulationOrder();
   SimulationInstanceSnapshot CaptureSnapshot(
@@ -91,8 +96,10 @@ private:
   std::unique_ptr<Simulation> primarySimulation_;
   std::unique_ptr<Simulation> baselineSimulation_;
   std::unique_ptr<ScenarioExecutor> scenarioExecutor_;
+  std::optional<ResolvedExecutionSpec> resolvedExecution_;
   bool scenarioSimulationSwapped_ = false;
   telemetry::recording::TelemetryRecordingService telemetryRecording_;
+  std::vector<telemetry::recording::ScenarioEvent> pendingScenarioEvents_;
 
   // Configuration and execution state
   SimulationConfig config_;

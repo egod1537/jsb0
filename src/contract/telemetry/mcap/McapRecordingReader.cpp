@@ -233,6 +233,11 @@ private:
     runInfo_.applicationVersion =
         FindValue(runInfo_.metadata, "application_version");
     runInfo_.aircraft = FindValue(runInfo_.metadata, "aircraft");
+    runInfo_.executionMode = FindValue(runInfo_.metadata, "execution_mode");
+    runInfo_.executionVariant =
+        FindValue(runInfo_.metadata, "execution_variant");
+    runInfo_.executionVariants =
+        FindValue(runInfo_.metadata, "execution_variants");
     runInfo_.primaryAutopilot =
         FindValue(runInfo_.metadata, "primary_autopilot");
     runInfo_.resolvedAutopilot =

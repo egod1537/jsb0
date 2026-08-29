@@ -30,7 +30,7 @@ public:
   explicit SimulationMessageClient(messaging::MessageBus &bus);
 
   // Execution and scenarios
-  bool RunScenario(const sim::SimulationScenario &scenario);
+  bool RunExecution(const sim::ExecutionRequest &request);
   std::optional<ScenarioExecutionStatus> GetScenarioExecutionStatus() const;
   SimulationExecutionState GetSimulationExecutionState() const;
   void StartSimulation();
