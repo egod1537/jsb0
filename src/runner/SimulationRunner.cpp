@@ -1,12 +1,11 @@
 #include "SimulationRunner.hpp"
 
-#include "sim/Simulation.hpp"
-#include "sim/SimulationConfig.h"
-#include "sim/gnc/autopilot/AutopilotFactory.hpp"
+#include "common/crypto/Sha256.hpp"
 #include "sim/runtime/SimulationRuntime.hpp"
 #include "sim/scenario/SimulationScenarioSerializer.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <cmath>
 #include <ctime>
 #include <fstream>
@@ -119,6 +118,9 @@ bool WriteManifest(const std::filesystem::path &directory,
             "    \"file\": \""
          << JsonEscape(info.scenarioFile)
          << "\",\n"
+            "    \"digest_sha256\": \""
+         << JsonEscape(info.scenarioDigest)
+         << "\",\n"
             "    \"schema_version\": "
          << info.scenarioSchemaVersion
          << ",\n"
@@ -137,6 +139,9 @@ bool WriteManifest(const std::filesystem::path &directory,
          << "\",\n"
             "  \"started_at\": \""
          << JsonEscape(info.startedAt)
+         << "\",\n"
+            "  \"ended_at\": \""
+         << JsonEscape(result.endedAt)
          << "\",\n"
             "  \"duration_s\": "
          << info.durationSec
@@ -183,6 +188,9 @@ void SetOutputFailure(RunnerResult &result, std::string error) {
 }
 
 void WriteFinalManifest(const SimulationRunInfo &info, RunnerResult &result) {
+  if (result.endedAt.empty()) {
+    result.endedAt = GetWallClockTimestamp();
+  }
   std::string error;
   if (!WriteManifest(info.outputDirectory, info, result, error)) {
     SetOutputFailure(result, std::move(error));
@@ -204,7 +212,6 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
     return result;
   }
 
-  const double dtSec = options.dtSec.value_or(1.0 / sim::DefaultSimulationHz);
   std::error_code pathError;
   const std::filesystem::path absoluteScenarioPath =
       std::filesystem::absolute(options.scenarioPath, pathError);
@@ -214,10 +221,18 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
           (pathError ? options.scenarioPath : absoluteScenarioPath).string(),
       .startedAt = GetWallClockTimestamp(),
       .outputDirectory = options.outputDirectory,
-      .autopilot = options.autopilot.value_or(gnc::AutopilotKind::Primary),
-      .dtSec = dtSec,
-      .durationSec = options.durationSec.value_or(0.0),
   };
+
+  {
+    std::ifstream scenarioInput(options.scenarioPath, std::ios::binary);
+    if (scenarioInput) {
+      std::ostringstream bytes;
+      bytes << scenarioInput.rdbuf();
+      if (!scenarioInput.bad()) {
+        info.scenarioDigest = common::crypto::Sha256Hex(bytes.str());
+      }
+    }
+  }
 
   sim::SimulationScenario scenario;
   if (!sim::SimulationScenarioSerializer::Load(options.scenarioPath,
@@ -229,12 +244,7 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
     return result;
   }
   scenario.sourceFile = info.scenarioFile;
-  if (options.durationSec) {
-    scenario.durationSec = *options.durationSec;
-  }
-  if (options.noTrim) {
-    scenario.runTrim = false;
-  }
+  scenario.sourceDigestSha256 = info.scenarioDigest;
   if (!sim::ValidateSimulationScenario(scenario, &error)) {
     result.exitCode = RunnerExitCode::ScenarioLoadFailure;
     result.error = std::move(error);
@@ -244,39 +254,23 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
     return result;
   }
 
-  gnc::AutopilotKind scenarioAutopilot;
-  if (!gnc::TryParseAutopilotKind(scenario.autopilot, scenarioAutopilot)) {
-    result.exitCode = RunnerExitCode::ScenarioLoadFailure;
-    result.error = "scenario autopilot is not supported";
-    WriteFinalManifest(info, result);
-    return result;
-  }
-  info.autopilot = options.autopilot.value_or(scenarioAutopilot);
-
   info.scenarioName = scenario.name;
   info.scenarioSchemaVersion =
       static_cast<std::uint32_t>(scenario.schemaVersion);
   info.scenarioType = scenario.scenarioType;
   info.aircraft = scenario.aircraft;
+  info.autopilot = scenario.autopilot;
+  info.dtSec = scenario.dtSec;
   info.durationSec = scenario.durationSec;
-  sim::SimulationConfig config;
-  config.simulationHz = 1.0 / dtSec;
-  std::unique_ptr<gnc::IAutopilot> autopilot =
-      gnc::CreateAutopilot(info.autopilot);
-  if (!autopilot) {
+  std::unique_ptr<sim::SimulationRuntime> runtimeOwner =
+      sim::SimulationRuntime::CreateForScenario(scenario, error);
+  if (runtimeOwner == nullptr) {
     result.exitCode = RunnerExitCode::SimulationInitializationFailure;
-    result.error = "failed to create autopilot";
+    result.error = std::move(error);
     WriteFinalManifest(info, result);
     return result;
   }
-  auto simulation = std::make_unique<sim::Simulation>(std::move(autopilot));
-  sim::SimulationRuntime runtime(std::move(simulation));
-  if (!runtime.Initialize(config)) {
-    result.exitCode = RunnerExitCode::SimulationInitializationFailure;
-    result.error = runtime.GetStatus().lastError;
-    WriteFinalManifest(info, result);
-    return result;
-  }
+  sim::SimulationRuntime &runtime = *runtimeOwner;
 
   if (!runtime.RunScenario(scenario)) {
     result.exitCode = RunnerExitCode::SimulationInitializationFailure;
@@ -294,8 +288,7 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
       result.error = observerError.empty() ? "run observer failed to start"
                                            : std::move(observerError);
       runtime.Stop();
-      result.simulationTimeSec =
-          runtime.GetSnapshot().primary.aircraft.simulationTimeSec;
+      result.simulationTimeSec = 0.0;
       for (ISimulationRunObserver *startedObserver : startedObservers) {
         observerError.clear();
         if (!startedObserver->OnRunFinished(info,
@@ -316,8 +309,8 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
 
   std::cout << "[runner] scenario: " << scenario.name << '\n'
             << "[runner] autopilot: " << gnc::ToString(info.autopilot) << '\n'
-            << "[runner] dt: " << std::fixed << std::setprecision(6) << dtSec
-            << '\n'
+            << "[runner] dt: " << std::fixed << std::setprecision(6)
+            << scenario.dtSec << '\n'
             << "[runner] duration: " << std::setprecision(3)
             << scenario.durationSec << '\n'
             << "[runner] starting\n";
@@ -356,8 +349,8 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
   }
   const std::chrono::duration<double> wallDuration = Clock::now() - start;
   result.wallTimeSec = wallDuration.count();
-  result.simulationTimeSec =
-      runtime.GetSnapshot().primary.aircraft.simulationTimeSec;
+  result.simulationTimeSec = std::min(scenario.durationSec,
+      static_cast<double>(result.steps) * scenario.dtSec);
   result.realtimeFactor = result.wallTimeSec > 0.0
                               ? result.simulationTimeSec / result.wallTimeSec
                               : 0.0;

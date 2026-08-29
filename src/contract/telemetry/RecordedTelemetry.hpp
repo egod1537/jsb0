@@ -16,6 +16,7 @@ struct RecordedRunInfo {
   std::uint32_t telemetrySchemaVersion = 0;
   std::string scenarioName;
   std::string scenarioFile;
+  std::string scenarioDigest;
   std::uint32_t scenarioSchemaVersion = 0;
   std::string scenarioType;
   std::string gitCommit;
@@ -23,6 +24,7 @@ struct RecordedRunInfo {
   std::string applicationVersion;
   std::string aircraft;
   std::string primaryAutopilot;
+  std::string resolvedAutopilot;
   std::string baselineAutopilot;
   std::string createdAtWallClock;
   double scenarioDurationSec = 0.0;

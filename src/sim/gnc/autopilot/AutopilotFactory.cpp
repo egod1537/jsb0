@@ -36,4 +36,15 @@ bool TryParseAutopilotKind(std::string_view value, AutopilotKind &kind) {
   }
   return false;
 }
+
+std::optional<AutopilotKind> IdentifyAutopilotKind(
+    const IAutopilot &autopilot) {
+  if (dynamic_cast<const MyAutopilot *>(&autopilot) != nullptr) {
+    return AutopilotKind::Primary;
+  }
+  if (dynamic_cast<const PX4Autopilot *>(&autopilot) != nullptr) {
+    return AutopilotKind::Baseline;
+  }
+  return std::nullopt;
+}
 } // namespace gnc

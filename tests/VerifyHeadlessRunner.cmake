@@ -7,10 +7,6 @@ execute_process(
   COMMAND "${RUNNER}"
           --scenario "${SCENARIO}"
           --output "${OUTPUT}"
-          --autopilot primary
-          --dt 0.01
-          --duration 0.1
-          --no-trim
   RESULT_VARIABLE result
   OUTPUT_VARIABLE stdout_text
   ERROR_VARIABLE stderr_text

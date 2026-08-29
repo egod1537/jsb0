@@ -271,23 +271,23 @@ void ScenarioWindow::DrawInitialConditionSection() {
       MakeScenarioPropertyGrid("InitialConditionFields");
   fields
       .Add(UI::PropertyRow("Altitude [ft]")[MakeDoubleField("Altitude",
-          renderDraft_.altitudeFt,
+          renderDraft_.initialCondition.altitudeFt,
           100.0,
           1000.0)])
       .Add(UI::PropertyRow("Airspeed [kt]")[MakeDoubleField("Airspeed",
-          renderDraft_.airspeedKts,
+          renderDraft_.initialCondition.airspeedKts,
           1.0,
           10.0)])
       .Add(UI::PropertyRow("Roll [deg]")[MakeDoubleField("InitialRoll",
-          renderDraft_.initialRollDeg,
+          renderDraft_.initialCondition.rollDeg,
           0.1,
           1.0)])
       .Add(UI::PropertyRow("Pitch [deg]")[MakeDoubleField("InitialPitch",
-          renderDraft_.initialPitchDeg,
+          renderDraft_.initialCondition.pitchDeg,
           0.1,
           1.0)])
       .Add(UI::PropertyRow("Heading [deg]")[MakeDoubleField("InitialHeading",
-          renderDraft_.initialHeadingDeg,
+          renderDraft_.initialCondition.headingDeg,
           1.0,
           10.0)]);
   UI::FoldOut("Initial Condition")
@@ -335,12 +335,12 @@ void ScenarioWindow::DrawCommandSection() {
   UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("CommandFields");
   fields
       .Add(UI::PropertyRow("Command Start [s]")[MakeDoubleField("CommandStart",
-          renderDraft_.commandStartSec,
+          renderDraft_.events.front().timeSec,
           0.1,
           1.0)])
       .Add(UI::PropertyRow(
           "Commanded Roll [deg]")[MakeDoubleField("CommandedRoll",
-          renderDraft_.commandedRollDeg,
+          renderDraft_.events.front().command.rollDeg,
           0.1,
           1.0)]);
   UI::FoldOut("Command")

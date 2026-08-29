@@ -18,17 +18,17 @@ void RequireNear(double actual, double expected) {
 
 void RequireDefaultScenario(const sim::SimulationScenario &scenario) {
   assert(scenario.name == "C172 Roll Hold 5deg");
-  RequireNear(scenario.altitudeFt, 3000.0);
-  RequireNear(scenario.airspeedKts, 100.0);
-  RequireNear(scenario.initialRollDeg, 0.0);
-  RequireNear(scenario.initialPitchDeg, 0.0);
-  RequireNear(scenario.initialHeadingDeg, 0.0);
+  RequireNear(scenario.initialCondition.altitudeFt, 3000.0);
+  RequireNear(scenario.initialCondition.airspeedKts, 100.0);
+  RequireNear(scenario.initialCondition.rollDeg, 0.0);
+  RequireNear(scenario.initialCondition.pitchDeg, 0.0);
+  RequireNear(scenario.initialCondition.headingDeg, 0.0);
   assert(!scenario.windEnabled);
   assert(scenario.runTrim);
   assert(scenario.trimMode == gnc::TrimMode::Full);
   RequireNear(scenario.durationSec, 30.0);
-  RequireNear(scenario.commandStartSec, 5.0);
-  RequireNear(scenario.commandedRollDeg, 5.0);
+  RequireNear(scenario.events.front().timeSec, 5.0);
+  RequireNear(scenario.events.front().command.rollDeg, 5.0);
   RequireNear(scenario.settlingBandDeg, 0.5);
   RequireNear(scenario.settlingTimeLimitSec, 10.0);
   RequireNear(scenario.overshootLimitDeg, 1.0);
@@ -48,7 +48,7 @@ void TestScenarioValidation() {
   };
 
   sim::SimulationScenario scenario;
-  scenario.airspeedKts = -1.0;
+  scenario.initialCondition.airspeedKts = -1.0;
   requireInvalid(scenario, "initial_condition.airspeed_kts");
 
   scenario = {};
@@ -56,8 +56,8 @@ void TestScenarioValidation() {
   requireInvalid(scenario, "trim.mode");
 
   scenario = {};
-  scenario.commandStartSec = scenario.durationSec + 1.0;
-  requireInvalid(scenario, "command.start_sec");
+  scenario.events.front().timeSec = scenario.durationSec + 1.0;
+  requireInvalid(scenario, "events[0].time_sec");
 
   scenario = {};
   scenario.overshootLimitDeg = -1.0;
@@ -77,17 +77,17 @@ std::filesystem::path MakeTemporaryScenarioDirectory() {
 void TestYamlRoundTrip() {
   sim::SimulationScenario source;
   source.name = "Edited YAML Scenario";
-  source.altitudeFt = 4250.5;
-  source.airspeedKts = 87.25;
-  source.initialRollDeg = -3.5;
-  source.initialPitchDeg = 2.25;
-  source.initialHeadingDeg = 271.0;
-  source.windEnabled = true;
+  source.initialCondition.altitudeFt = 4250.5;
+  source.initialCondition.airspeedKts = 87.25;
+  source.initialCondition.rollDeg = -3.5;
+  source.initialCondition.pitchDeg = 2.25;
+  source.initialCondition.headingDeg = 271.0;
+  source.windEnabled = false;
   source.runTrim = false;
   source.trimMode = gnc::TrimMode::Ground;
   source.durationSec = 45.0;
-  source.commandStartSec = 7.5;
-  source.commandedRollDeg = -12.0;
+  source.events.front().timeSec = 7.5;
+  source.events.front().command.rollDeg = -12.0;
   source.settlingBandDeg = 0.25;
   source.settlingTimeLimitSec = 8.0;
   source.overshootLimitDeg = 0.75;
@@ -116,23 +116,32 @@ schema_version: 1
 scenario_type: roll_hold
 name: Missing Acceptance
 aircraft: c172x
-autopilot: primary
+autopilot:
+  type: primary
 initial_condition:
+  latitude_deg: 0
+  longitude_deg: 0
   altitude_ft: 3000
   airspeed_kts: 100
   roll_deg: 0
   pitch_deg: 0
   heading_deg: 0
+  p_rad_s: 0
+  q_rad_s: 0
+  r_rad_s: 0
 environment:
   wind_enabled: false
 trim:
   enabled: true
   mode: Full
-command:
-  start_sec: 5
-  roll_deg: 5
 simulation:
   duration_sec: 30
+  dt_sec: 0.03333333333333333
+events:
+  - time_sec: 5
+    command:
+      type: roll_hold
+      roll_deg: 5
 )";
   assert(!sim::SimulationScenarioSerializer::Deserialize(missingFieldYaml,
       destination,
@@ -181,7 +190,7 @@ void TestScenarioWindowFileLifecycle() {
   assert(std::filesystem::is_regular_file(validFile));
   assert(!window.IsDirty());
 
-  window.GetScenario().commandedRollDeg = 9.0;
+  window.GetScenario().events.front().command.rollDeg = 9.0;
   assert(window.IsDirty());
   assert(window.SaveScenarioFile());
   assert(!window.IsDirty());
@@ -204,7 +213,7 @@ void TestScenarioWindowFileLifecycle() {
 
   assert(window.LoadScenarioFile(validFile));
   assert(window.GetScenario().name == "Saved Scenario");
-  RequireNear(window.GetScenario().commandedRollDeg, 9.0);
+  RequireNear(window.GetScenario().events.front().command.rollDeg, 9.0);
   assert(!window.IsDirty());
 
   assert(std::filesystem::remove(invalidFile));
@@ -229,11 +238,11 @@ int main() {
 
   sim::SimulationScenario &edited = window.GetScenario();
   edited.name = "Edited Scenario";
-  edited.altitudeFt = 1200.0;
+  edited.initialCondition.altitudeFt = 1200.0;
   edited.windEnabled = true;
   edited.runTrim = false;
   edited.trimMode = gnc::TrimMode::Ground;
-  edited.commandedRollDeg = -12.0;
+  edited.events.front().command.rollDeg = -12.0;
   edited.maxOscillationCycles = 8.0;
 
   window.ResetDefaults();

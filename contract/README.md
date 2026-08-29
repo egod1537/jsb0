@@ -48,6 +48,22 @@ Unit suffixes are authoritative and are used consistently for numeric scenario
 fields. v1 exposes the actually supported `roll_hold` capability, C172x model,
 `primary|baseline` autopilots, and the three Runtime trim modes.
 
+The Scenario is the authoritative definition of one reproducible execution.
+It explicitly owns aircraft, `autopilot.type`, complete initial condition,
+fixed timestep, duration, trim/environment choice, and the ordered typed event
+sequence. Runtime implementation defaults that are not exposed remain part of
+the JSB0 commit identity. A normal headless run accepts no CLI override for
+aircraft, autopilot, timestep, duration, or trim:
+
+```text
+jsb0-runner --scenario scenarios/roll_hold_primary.yaml --output run
+```
+
+The same binary executes `roll_hold_primary.yaml` and
+`roll_hold_baseline.yaml`; autopilot is run configuration, never build
+identity. `run.json` and MCAP metadata record the full runtime commit SHA, the
+SHA-256 digest of the original scenario bytes, and the resolved autopilot.
+
 `metadata/run.schema.json` describes `run.json`. Its contract/runtime/scenario
 identifiers are also copied into MCAP Metadata named `jsb0.run`.
 

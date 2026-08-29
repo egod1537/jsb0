@@ -24,6 +24,9 @@ public:
   SimulationRuntime(const SimulationRuntime &) = delete;
   SimulationRuntime &operator=(const SimulationRuntime &) = delete;
 
+  static std::unique_ptr<SimulationRuntime> CreateForScenario(
+      const SimulationScenario &scenario, std::string &error);
+
   // Lifetime and stepping
   bool Initialize(const SimulationConfig &config);
   void Shutdown();
@@ -73,6 +76,9 @@ private:
   bool SynchronizeBaselineControlState();
   void FinishScenario();
   void RecordPendingScenarioCommandEvent();
+  bool SelectScenarioAutopilot(const SimulationScenario &scenario);
+  bool ReinitializeForScenario(const SimulationScenario &scenario);
+  void RestoreInteractiveSimulationOrder();
   SimulationInstanceSnapshot CaptureSnapshot(
       const Simulation &simulation) const;
   AutopilotSnapshot CaptureAutopilotSnapshot(
@@ -85,6 +91,7 @@ private:
   std::unique_ptr<Simulation> primarySimulation_;
   std::unique_ptr<Simulation> baselineSimulation_;
   std::unique_ptr<ScenarioExecutor> scenarioExecutor_;
+  bool scenarioSimulationSwapped_ = false;
   telemetry::recording::TelemetryRecordingService telemetryRecording_;
 
   // Configuration and execution state

@@ -1,39 +1,60 @@
 #pragma once
 
+#include "sim/InitialCondition.hpp"
 #include "sim/gnc/TrimTypes.hpp"
+#include "sim/gnc/autopilot/AutopilotFactory.hpp"
 
 #include <string>
+#include <vector>
 
 namespace sim {
+inline constexpr int SupportedScenarioSchemaVersion = 1;
+
+enum class ScenarioCommandType { RollHold };
+
+struct ScenarioCommand {
+  ScenarioCommandType type = ScenarioCommandType::RollHold;
+  double rollDeg = 5.0;
+  bool operator==(const ScenarioCommand &) const = default;
+};
+
+struct ScenarioEventDefinition {
+  double timeSec = 5.0;
+  ScenarioCommand command;
+  bool operator==(const ScenarioEventDefinition &) const = default;
+};
+
 struct SimulationScenario {
-  // Contract identity and capability
-  int schemaVersion = 1;
+  // Contract identity and runtime capability
+  int schemaVersion = SupportedScenarioSchemaVersion;
   std::string scenarioType = "roll_hold";
   std::string name = "C172 Roll Hold 5deg";
   std::string aircraft = "c172x";
-  std::string autopilot = "primary";
+  gnc::AutopilotKind autopilot = gnc::AutopilotKind::Primary;
   std::string sourceFile;
+  std::string sourceDigestSha256;
 
-  // Initial condition
-  double altitudeFt = 3000.0;
-  double airspeedKts = 100.0;
-  double initialRollDeg = 0.0;
-  double initialPitchDeg = 0.0;
-  double initialHeadingDeg = 0.0;
-
-  // Environment
+  // Complete execution input
+  InitialCondition initialCondition{
+      .latitudeDeg = 0.0,
+      .longitudeDeg = 0.0,
+      .altitudeFt = 3000.0,
+      .rollDeg = 0.0,
+      .pitchDeg = 0.0,
+      .headingDeg = 0.0,
+      .airspeedKts = 100.0,
+      .pRadPerSec = 0.0,
+      .qRadPerSec = 0.0,
+      .rRadPerSec = 0.0,
+  };
   bool windEnabled = false;
-
-  // Trim
   bool runTrim = true;
   gnc::TrimMode trimMode = gnc::TrimMode::Full;
-
-  // Simulation and command
   double durationSec = 30.0;
-  double commandStartSec = 5.0;
-  double commandedRollDeg = 5.0;
+  double dtSec = 1.0 / 30.0;
+  std::vector<ScenarioEventDefinition> events{{}};
 
-  // Acceptance criteria
+  // Analysis acceptance criteria, not runtime controller behavior
   double settlingBandDeg = 0.5;
   double settlingTimeLimitSec = 10.0;
   double overshootLimitDeg = 1.0;
@@ -42,6 +63,14 @@ struct SimulationScenario {
   bool operator==(const SimulationScenario &) const = default;
 };
 
+struct ScenarioValidationError {
+  std::string path;
+  std::string message;
+  std::string ToString() const;
+};
+
+bool ValidateSimulationScenario(const SimulationScenario &scenario,
+    ScenarioValidationError *error);
 bool ValidateSimulationScenario(const SimulationScenario &scenario,
     std::string *errorMessage = nullptr);
 } // namespace sim

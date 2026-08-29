@@ -30,6 +30,7 @@ bool McapRunObserver::OnRunStarted(const SimulationRunInfo &info,
   metadata.aircraft = info.aircraft;
   metadata.scenarioName = info.scenarioName;
   metadata.scenarioFile = info.scenarioFile;
+  metadata.scenarioDigest = info.scenarioDigest;
   metadata.scenarioSchemaVersion = info.scenarioSchemaVersion;
   metadata.scenarioType = info.scenarioType;
   metadata.scenarioDurationSec = info.durationSec;

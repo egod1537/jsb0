@@ -1,4 +1,5 @@
 #include "sim/scenario/SimulationScenarioSerializer.hpp"
+#include "common/crypto/Sha256.hpp"
 
 #include <yaml-cpp/yaml.h>
 
@@ -24,15 +25,12 @@ const char *TrimModeName(gnc::TrimMode mode) {
 }
 
 gnc::TrimMode ParseTrimMode(const std::string &value) {
-  if (value == "Longitudinal") {
+  if (value == "Longitudinal")
     return gnc::TrimMode::Longitudinal;
-  }
-  if (value == "Full") {
+  if (value == "Full")
     return gnc::TrimMode::Full;
-  }
-  if (value == "Ground") {
+  if (value == "Ground")
     return gnc::TrimMode::Ground;
-  }
   throw std::runtime_error("trim.mode must be Longitudinal, Full, or Ground");
 }
 
@@ -50,12 +48,20 @@ void RequireOnlyKeys(const YAML::Node &node,
 YAML::Node RequireMap(const YAML::Node &parent, const char *key,
     const std::string &path) {
   const YAML::Node node = parent[key];
-  if (!node) {
+  if (!node)
     throw std::runtime_error("missing required field: " + path);
-  }
-  if (!node.IsMap()) {
+  if (!node.IsMap())
     throw std::runtime_error(path + " must be a mapping");
-  }
+  return node;
+}
+
+YAML::Node RequireSequence(const YAML::Node &parent, const char *key,
+    const std::string &path) {
+  const YAML::Node node = parent[key];
+  if (!node)
+    throw std::runtime_error("missing required field: " + path);
+  if (!node.IsSequence())
+    throw std::runtime_error(path + " must be a sequence");
   return node;
 }
 
@@ -63,12 +69,10 @@ template <typename T>
 T ReadRequired(const YAML::Node &parent, const char *key,
     const std::string &path) {
   const YAML::Node node = parent[key];
-  if (!node) {
+  if (!node)
     throw std::runtime_error("missing required field: " + path);
-  }
-  if (!node.IsScalar()) {
+  if (!node.IsScalar())
     throw std::runtime_error(path + " must be a scalar value");
-  }
   try {
     return node.as<T>();
   } catch (const YAML::Exception &exception) {
@@ -77,9 +81,9 @@ T ReadRequired(const YAML::Node &parent, const char *key,
 }
 
 void Validate(const SimulationScenario &scenario) {
-  std::string error;
+  ScenarioValidationError error;
   if (!ValidateSimulationScenario(scenario, &error)) {
-    throw std::runtime_error(error);
+    throw std::runtime_error(error.ToString());
   }
 }
 
@@ -96,7 +100,7 @@ SimulationScenario ParseScenario(const YAML::Node &root) {
           "initial_condition",
           "environment",
           "trim",
-          "command",
+          "events",
           "simulation",
           "acceptance"},
       "scenario");
@@ -108,27 +112,55 @@ SimulationScenario ParseScenario(const YAML::Node &root) {
       ReadRequired<std::string>(root, "scenario_type", "scenario_type");
   scenario.name = ReadRequired<std::string>(root, "name", "name");
   scenario.aircraft = ReadRequired<std::string>(root, "aircraft", "aircraft");
-  scenario.autopilot =
-      ReadRequired<std::string>(root, "autopilot", "autopilot");
+
+  const YAML::Node autopilot = RequireMap(root, "autopilot", "autopilot");
+  RequireOnlyKeys(autopilot, {"type"}, "autopilot");
+  const std::string autopilotType =
+      ReadRequired<std::string>(autopilot, "type", "autopilot.type");
+  if (!gnc::TryParseAutopilotKind(autopilotType, scenario.autopilot)) {
+    throw std::runtime_error(
+        "autopilot.type: unsupported autopilot '" + autopilotType + "'");
+  }
 
   const YAML::Node initial =
       RequireMap(root, "initial_condition", "initial_condition");
   RequireOnlyKeys(initial,
-      {"altitude_ft", "airspeed_kts", "roll_deg", "pitch_deg", "heading_deg"},
+      {"latitude_deg",
+          "longitude_deg",
+          "altitude_ft",
+          "airspeed_kts",
+          "roll_deg",
+          "pitch_deg",
+          "heading_deg",
+          "p_rad_s",
+          "q_rad_s",
+          "r_rad_s"},
       "initial_condition");
-  scenario.altitudeFt = ReadRequired<double>(initial,
+  scenario.initialCondition.latitudeDeg = ReadRequired<double>(initial,
+      "latitude_deg",
+      "initial_condition.latitude_deg");
+  scenario.initialCondition.longitudeDeg = ReadRequired<double>(initial,
+      "longitude_deg",
+      "initial_condition.longitude_deg");
+  scenario.initialCondition.altitudeFt = ReadRequired<double>(initial,
       "altitude_ft",
       "initial_condition.altitude_ft");
-  scenario.airspeedKts = ReadRequired<double>(initial,
+  scenario.initialCondition.airspeedKts = ReadRequired<double>(initial,
       "airspeed_kts",
       "initial_condition.airspeed_kts");
-  scenario.initialRollDeg =
+  scenario.initialCondition.rollDeg =
       ReadRequired<double>(initial, "roll_deg", "initial_condition.roll_deg");
-  scenario.initialPitchDeg =
+  scenario.initialCondition.pitchDeg =
       ReadRequired<double>(initial, "pitch_deg", "initial_condition.pitch_deg");
-  scenario.initialHeadingDeg = ReadRequired<double>(initial,
+  scenario.initialCondition.headingDeg = ReadRequired<double>(initial,
       "heading_deg",
       "initial_condition.heading_deg");
+  scenario.initialCondition.pRadPerSec =
+      ReadRequired<double>(initial, "p_rad_s", "initial_condition.p_rad_s");
+  scenario.initialCondition.qRadPerSec =
+      ReadRequired<double>(initial, "q_rad_s", "initial_condition.q_rad_s");
+  scenario.initialCondition.rRadPerSec =
+      ReadRequired<double>(initial, "r_rad_s", "initial_condition.r_rad_s");
 
   const YAML::Node environment = RequireMap(root, "environment", "environment");
   RequireOnlyKeys(environment, {"wind_enabled"}, "environment");
@@ -142,18 +174,38 @@ SimulationScenario ParseScenario(const YAML::Node &root) {
   scenario.trimMode =
       ParseTrimMode(ReadRequired<std::string>(trim, "mode", "trim.mode"));
 
-  const YAML::Node command = RequireMap(root, "command", "command");
-  RequireOnlyKeys(command, {"start_sec", "roll_deg"}, "command");
-  scenario.commandStartSec =
-      ReadRequired<double>(command, "start_sec", "command.start_sec");
-  scenario.commandedRollDeg =
-      ReadRequired<double>(command, "roll_deg", "command.roll_deg");
-
   const YAML::Node simulation = RequireMap(root, "simulation", "simulation");
-  RequireOnlyKeys(simulation, {"duration_sec"}, "simulation");
+  RequireOnlyKeys(simulation, {"duration_sec", "dt_sec"}, "simulation");
   scenario.durationSec = ReadRequired<double>(simulation,
       "duration_sec",
       "simulation.duration_sec");
+  scenario.dtSec =
+      ReadRequired<double>(simulation, "dt_sec", "simulation.dt_sec");
+
+  const YAML::Node events = RequireSequence(root, "events", "events");
+  scenario.events.clear();
+  for (std::size_t index = 0; index < events.size(); ++index) {
+    const YAML::Node event = events[index];
+    const std::string path = "events[" + std::to_string(index) + "]";
+    if (!event.IsMap())
+      throw std::runtime_error(path + " must be a mapping");
+    RequireOnlyKeys(event, {"time_sec", "command"}, path);
+    ScenarioEventDefinition definition;
+    definition.timeSec =
+        ReadRequired<double>(event, "time_sec", path + ".time_sec");
+    const YAML::Node command = RequireMap(event, "command", path + ".command");
+    RequireOnlyKeys(command, {"type", "roll_deg"}, path + ".command");
+    const std::string type =
+        ReadRequired<std::string>(command, "type", path + ".command.type");
+    if (type != "roll_hold") {
+      throw std::runtime_error(
+          path + ".command.type: unsupported command '" + type + "'");
+    }
+    definition.command.type = ScenarioCommandType::RollHold;
+    definition.command.rollDeg =
+        ReadRequired<double>(command, "roll_deg", path + ".command.roll_deg");
+    scenario.events.push_back(definition);
+  }
 
   const YAML::Node acceptance = RequireMap(root, "acceptance", "acceptance");
   RequireOnlyKeys(acceptance,
@@ -183,7 +235,6 @@ SimulationScenario ParseScenario(const YAML::Node &root) {
 std::string SimulationScenarioSerializer::Serialize(
     const SimulationScenario &scenario) {
   Validate(scenario);
-
   YAML::Emitter output;
   output << YAML::BeginMap;
   output << YAML::Key << "schema_version" << YAML::Value
@@ -192,66 +243,64 @@ std::string SimulationScenarioSerializer::Serialize(
          << scenario.scenarioType;
   output << YAML::Key << "name" << YAML::Value << scenario.name;
   output << YAML::Key << "aircraft" << YAML::Value << scenario.aircraft;
-  output << YAML::Key << "autopilot" << YAML::Value << scenario.autopilot;
-
-  output << YAML::Key << "initial_condition" << YAML::Value << YAML::BeginMap;
-  output << YAML::Key << "altitude_ft" << YAML::Value << scenario.altitudeFt;
-  output << YAML::Key << "airspeed_kts" << YAML::Value << scenario.airspeedKts;
-  output << YAML::Key << "roll_deg" << YAML::Value << scenario.initialRollDeg;
-  output << YAML::Key << "pitch_deg" << YAML::Value << scenario.initialPitchDeg;
-  output << YAML::Key << "heading_deg" << YAML::Value
-         << scenario.initialHeadingDeg;
-  output << YAML::EndMap;
-
-  output << YAML::Key << "environment" << YAML::Value << YAML::BeginMap;
-  output << YAML::Key << "wind_enabled" << YAML::Value << scenario.windEnabled;
-  output << YAML::EndMap;
-
-  output << YAML::Key << "trim" << YAML::Value << YAML::BeginMap;
-  output << YAML::Key << "enabled" << YAML::Value << scenario.runTrim;
-  output << YAML::Key << "mode" << YAML::Value
-         << TrimModeName(scenario.trimMode);
-  output << YAML::EndMap;
-
-  output << YAML::Key << "command" << YAML::Value << YAML::BeginMap;
-  output << YAML::Key << "start_sec" << YAML::Value << scenario.commandStartSec;
-  output << YAML::Key << "roll_deg" << YAML::Value << scenario.commandedRollDeg;
-  output << YAML::EndMap;
-
-  output << YAML::Key << "simulation" << YAML::Value << YAML::BeginMap;
-  output << YAML::Key << "duration_sec" << YAML::Value << scenario.durationSec;
-  output << YAML::EndMap;
-
-  output << YAML::Key << "acceptance" << YAML::Value << YAML::BeginMap;
-  output << YAML::Key << "settling_band_deg" << YAML::Value
-         << scenario.settlingBandDeg;
-  output << YAML::Key << "settling_time_limit_sec" << YAML::Value
-         << scenario.settlingTimeLimitSec;
-  output << YAML::Key << "overshoot_limit_deg" << YAML::Value
-         << scenario.overshootLimitDeg;
-  output << YAML::Key << "max_oscillation_cycles" << YAML::Value
-         << scenario.maxOscillationCycles;
-  output << YAML::EndMap;
-  output << YAML::EndMap;
-
-  if (!output.good()) {
-    throw std::runtime_error(output.GetLastError());
+  output << YAML::Key << "autopilot" << YAML::Value << YAML::BeginMap
+         << YAML::Key << "type" << YAML::Value
+         << gnc::ToString(scenario.autopilot) << YAML::EndMap;
+  const InitialCondition &initial = scenario.initialCondition;
+  output << YAML::Key << "initial_condition" << YAML::Value << YAML::BeginMap
+         << YAML::Key << "latitude_deg" << YAML::Value << initial.latitudeDeg
+         << YAML::Key << "longitude_deg" << YAML::Value << initial.longitudeDeg
+         << YAML::Key << "altitude_ft" << YAML::Value << initial.altitudeFt
+         << YAML::Key << "airspeed_kts" << YAML::Value << initial.airspeedKts
+         << YAML::Key << "roll_deg" << YAML::Value << initial.rollDeg
+         << YAML::Key << "pitch_deg" << YAML::Value << initial.pitchDeg
+         << YAML::Key << "heading_deg" << YAML::Value << initial.headingDeg
+         << YAML::Key << "p_rad_s" << YAML::Value << initial.pRadPerSec
+         << YAML::Key << "q_rad_s" << YAML::Value << initial.qRadPerSec
+         << YAML::Key << "r_rad_s" << YAML::Value << initial.rRadPerSec
+         << YAML::EndMap;
+  output << YAML::Key << "environment" << YAML::Value << YAML::BeginMap
+         << YAML::Key << "wind_enabled" << YAML::Value << scenario.windEnabled
+         << YAML::EndMap;
+  output << YAML::Key << "trim" << YAML::Value << YAML::BeginMap << YAML::Key
+         << "enabled" << YAML::Value << scenario.runTrim << YAML::Key << "mode"
+         << YAML::Value << TrimModeName(scenario.trimMode) << YAML::EndMap;
+  output << YAML::Key << "simulation" << YAML::Value << YAML::BeginMap
+         << YAML::Key << "duration_sec" << YAML::Value << scenario.durationSec
+         << YAML::Key << "dt_sec" << YAML::Value << scenario.dtSec
+         << YAML::EndMap;
+  output << YAML::Key << "events" << YAML::Value << YAML::BeginSeq;
+  for (const ScenarioEventDefinition &event : scenario.events) {
+    output << YAML::BeginMap << YAML::Key << "time_sec" << YAML::Value
+           << event.timeSec << YAML::Key << "command" << YAML::Value
+           << YAML::BeginMap << YAML::Key << "type" << YAML::Value
+           << "roll_hold" << YAML::Key << "roll_deg" << YAML::Value
+           << event.command.rollDeg << YAML::EndMap << YAML::EndMap;
   }
+  output << YAML::EndSeq;
+  output << YAML::Key << "acceptance" << YAML::Value << YAML::BeginMap
+         << YAML::Key << "settling_band_deg" << YAML::Value
+         << scenario.settlingBandDeg << YAML::Key << "settling_time_limit_sec"
+         << YAML::Value << scenario.settlingTimeLimitSec << YAML::Key
+         << "overshoot_limit_deg" << YAML::Value << scenario.overshootLimitDeg
+         << YAML::Key << "max_oscillation_cycles" << YAML::Value
+         << scenario.maxOscillationCycles << YAML::EndMap << YAML::EndMap;
+  if (!output.good())
+    throw std::runtime_error(output.GetLastError());
   return std::string(output.c_str()) + '\n';
 }
 
 bool SimulationScenarioSerializer::Deserialize(std::string_view yaml,
     SimulationScenario &scenario, std::string &error) {
   try {
-    const YAML::Node root = YAML::Load(std::string(yaml));
-    SimulationScenario parsed = ParseScenario(root);
+    SimulationScenario parsed = ParseScenario(YAML::Load(std::string(yaml)));
     scenario = std::move(parsed);
     error.clear();
     return true;
   } catch (const YAML::Exception &exception) {
     error = "YAML parse error: " + exception.msg;
   } catch (const std::exception &exception) {
-    error = "Scenario validation error: " + std::string(exception.what());
+    error = "ScenarioValidationError: " + std::string(exception.what());
   }
   return false;
 }
@@ -263,14 +312,19 @@ bool SimulationScenarioSerializer::Load(const std::filesystem::path &path,
     error = "Could not open scenario file: " + path.string();
     return false;
   }
-
   std::ostringstream buffer;
   buffer << input.rdbuf();
   if (input.bad()) {
     error = "Could not read scenario file: " + path.string();
     return false;
   }
-  return Deserialize(buffer.str(), scenario, error);
+  const std::string bytes = buffer.str();
+  if (!Deserialize(bytes, scenario, error)) {
+    return false;
+  }
+  scenario.sourceFile = path.string();
+  scenario.sourceDigestSha256 = common::crypto::Sha256Hex(bytes);
+  return true;
 }
 
 bool SimulationScenarioSerializer::Save(const std::filesystem::path &path,
@@ -286,7 +340,6 @@ bool SimulationScenarioSerializer::Save(const std::filesystem::path &path,
         return false;
       }
     }
-
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) {
       error = "Could not open scenario file for writing: " + path.string();

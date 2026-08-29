@@ -1,4 +1,5 @@
 add_library(jsb_common STATIC
+  crypto/Sha256.cpp
   random/Rng.cpp
 )
 target_compile_features(jsb_common PUBLIC cxx_std_20)

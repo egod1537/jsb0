@@ -67,7 +67,7 @@ void TestInteractiveRuntimeExecution() {
          == application::SimulationExecutionState::Stopped);
 }
 
-void TestScenarioAppliesSharedExperimentToBothSimulations() {
+void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
   application::messaging::MessageBus bus;
   sim::SimulationRuntime runtime(MakePrimarySimulation(),
       MakeBaselineSimulation());
@@ -78,14 +78,14 @@ void TestScenarioAppliesSharedExperimentToBothSimulations() {
 
   sim::SimulationScenario scenario;
   scenario.name = "Dual Roll Hold";
-  scenario.altitudeFt = 4200.0;
-  scenario.airspeedKts = 105.0;
-  scenario.initialRollDeg = 2.0;
-  scenario.initialPitchDeg = 1.0;
-  scenario.initialHeadingDeg = 35.0;
+  scenario.initialCondition.altitudeFt = 4200.0;
+  scenario.initialCondition.airspeedKts = 105.0;
+  scenario.initialCondition.rollDeg = 2.0;
+  scenario.initialCondition.pitchDeg = 1.0;
+  scenario.initialCondition.headingDeg = 35.0;
   scenario.runTrim = false;
-  scenario.commandStartSec = 0.0;
-  scenario.commandedRollDeg = 8.0;
+  scenario.events.front().timeSec = 0.0;
+  scenario.events.front().command.rollDeg = 8.0;
   scenario.durationSec = 12.0;
 
   sim::SimulationScenario invalidScenario = scenario;
@@ -109,32 +109,21 @@ void TestScenarioAppliesSharedExperimentToBothSimulations() {
   assert(snapshot.baselineAutopilot.has_value());
   const sim::InitialCondition &primaryCondition =
       snapshot.primary.currentCondition;
-  const sim::InitialCondition &baselineCondition =
-      snapshot.baseline->currentCondition;
-  assert(NearlyEqual(primaryCondition.altitudeFt, scenario.altitudeFt));
-  assert(NearlyEqual(primaryCondition.airspeedKts, scenario.airspeedKts));
-  assert(NearlyEqual(primaryCondition.rollDeg, scenario.initialRollDeg));
-  assert(NearlyEqual(primaryCondition.pitchDeg, scenario.initialPitchDeg));
-  assert(NearlyEqual(primaryCondition.headingDeg, scenario.initialHeadingDeg));
+  assert(NearlyEqual(primaryCondition.altitudeFt,
+      scenario.initialCondition.altitudeFt));
+  assert(NearlyEqual(primaryCondition.airspeedKts,
+      scenario.initialCondition.airspeedKts));
   assert(
-      NearlyEqual(primaryCondition.altitudeFt, baselineCondition.altitudeFt));
-  assert(
-      NearlyEqual(primaryCondition.airspeedKts, baselineCondition.airspeedKts));
-  assert(NearlyEqual(primaryCondition.rollDeg, baselineCondition.rollDeg));
-  assert(NearlyEqual(primaryCondition.pitchDeg, baselineCondition.pitchDeg));
-  assert(
-      NearlyEqual(primaryCondition.headingDeg, baselineCondition.headingDeg));
-  assert(snapshot.primary.fdmState.environment.windNedFps
-         == snapshot.baseline->fdmState.environment.windNedFps);
-  assert(snapshot.primary.fdmState.environment.gustNedFps
-         == snapshot.baseline->fdmState.environment.gustNedFps);
+      NearlyEqual(primaryCondition.rollDeg, scenario.initialCondition.rollDeg));
+  assert(NearlyEqual(primaryCondition.pitchDeg,
+      scenario.initialCondition.pitchDeg));
+  assert(NearlyEqual(primaryCondition.headingDeg,
+      scenario.initialCondition.headingDeg));
   assert(snapshot.primaryAutopilot.primaryRollHold.enabled);
-  assert(snapshot.baselineAutopilot->baselineRollHold.enabled);
+  assert(!snapshot.baselineAutopilot->baselineRollHold.enabled);
   assert(std::abs(snapshot.primaryAutopilot.primaryRollHold.targetRollRad
-                  - math::DegToRad(scenario.commandedRollDeg))
+                  - math::DegToRad(scenario.events.front().command.rollDeg))
          < 1.0e-12);
-  assert(snapshot.primaryAutopilot.primaryRollHold.targetRollRad
-         == snapshot.baselineAutopilot->baselineRollHold.targetRollRad);
   const auto primaryTelemetry =
       control.GetTelemetrySnapshot(sim::SimulationSlot::Primary);
   const auto baselineTelemetry =
@@ -152,10 +141,32 @@ void TestScenarioAppliesSharedExperimentToBothSimulations() {
   assert(stopped.baselineAutopilot.has_value());
   assert(!stopped.baselineAutopilot->baselineRollHold.enabled);
 }
+
+void TestBaselineScenarioSelectsBaselineWithoutRebuild() {
+  sim::SimulationRuntime runtime(MakePrimarySimulation(),
+      MakeBaselineSimulation());
+  assert(runtime.Initialize(sim::SimulationConfig{}));
+  sim::SimulationScenario scenario;
+  scenario.autopilot = gnc::AutopilotKind::Baseline;
+  scenario.runTrim = false;
+  scenario.events.front().timeSec = 0.0;
+  scenario.durationSec = 0.1;
+  assert(runtime.RunScenario(scenario));
+  const sim::SimulationSnapshot running = runtime.GetSnapshot();
+  assert(running.primaryAutopilot.strategyName == "PX4Autopilot");
+  assert(running.primaryAutopilot.baselineRollHold.enabled);
+  assert(running.baselineAutopilot.has_value());
+  assert(running.baselineAutopilot->strategyName == "MyAutopilot");
+  runtime.Stop();
+  const sim::SimulationSnapshot restored = runtime.GetSnapshot();
+  assert(restored.primaryAutopilot.strategyName == "MyAutopilot");
+  assert(restored.baselineAutopilot->strategyName == "PX4Autopilot");
+}
 } // namespace
 
 int main() {
   TestInteractiveRuntimeExecution();
-  TestScenarioAppliesSharedExperimentToBothSimulations();
+  TestScenarioExecutesOnlyScenarioSelectedAutopilot();
+  TestBaselineScenarioSelectsBaselineWithoutRebuild();
   return 0;
 }

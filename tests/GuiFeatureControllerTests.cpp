@@ -89,15 +89,16 @@ void TestScenarioChildUpdatesDraftAndEmitsLaunchIntent() {
   gui::ScenarioController controller({},
       gui::architecture::EventSink<gui::ScenarioLaunchRequested>{
           [&launchReceived](const gui::ScenarioLaunchRequested &event) {
-            launchReceived = event.scenario.commandedRollDeg == 14.0;
+            launchReceived =
+                event.scenario.events.front().command.rollDeg == 14.0;
           }});
   sim::SimulationScenario draft = controller.GetModel().draft;
-  draft.commandedRollDeg = 14.0;
+  draft.events.front().command.rollDeg = 14.0;
 
   controller.Handle(gui::ScenarioDraftChanged{draft});
   controller.Handle(gui::ScenarioLaunchRequested{controller.GetModel().draft});
 
-  assert(controller.GetModel().draft.commandedRollDeg == 14.0);
+  assert(controller.GetModel().draft.events.front().command.rollDeg == 14.0);
   assert(launchReceived);
 }
 } // namespace

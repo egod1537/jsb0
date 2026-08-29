@@ -224,6 +224,7 @@ private:
         ParseUint(runInfo_.metadata, "telemetry_schema_version");
     runInfo_.scenarioName = FindValue(runInfo_.metadata, "scenario_name");
     runInfo_.scenarioFile = FindValue(runInfo_.metadata, "scenario_file");
+    runInfo_.scenarioDigest = FindValue(runInfo_.metadata, "scenario_digest");
     runInfo_.scenarioSchemaVersion =
         ParseUint(runInfo_.metadata, "scenario_schema_version");
     runInfo_.scenarioType = FindValue(runInfo_.metadata, "scenario_type");
@@ -234,6 +235,8 @@ private:
     runInfo_.aircraft = FindValue(runInfo_.metadata, "aircraft");
     runInfo_.primaryAutopilot =
         FindValue(runInfo_.metadata, "primary_autopilot");
+    runInfo_.resolvedAutopilot =
+        FindValue(runInfo_.metadata, "resolved_autopilot");
     runInfo_.baselineAutopilot =
         FindValue(runInfo_.metadata, "baseline_autopilot");
     runInfo_.createdAtWallClock =

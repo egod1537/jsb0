@@ -1,10 +1,9 @@
 schema_version: 1
 scenario_type: roll_hold
-name: C172 Roll Hold 5deg
+name: roll_hold_baseline
 aircraft: c172x
 autopilot:
-  type: primary
-
+  type: baseline
 initial_condition:
   latitude_deg: 0
   longitude_deg: 0
@@ -16,26 +15,21 @@ initial_condition:
   p_rad_s: 0
   q_rad_s: 0
   r_rad_s: 0
-
 environment:
   wind_enabled: false
-
 trim:
   enabled: true
   mode: Full
-
 simulation:
   duration_sec: 30
   dt_sec: 0.03333333333333333
-
 events:
   - time_sec: 5
     command:
       type: roll_hold
       roll_deg: 5
-
 acceptance:
   settling_band_deg: 0.5
   settling_time_limit_sec: 10
-  overshoot_limit_deg: 1.0
+  overshoot_limit_deg: 1
   max_oscillation_cycles: 2

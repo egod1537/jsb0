@@ -12,6 +12,7 @@
     "aircraft",
     "autopilot",
     "started_at",
+    "ended_at",
     "duration_s",
     "status"
   ],
@@ -23,17 +24,18 @@
       "required": ["branch", "commit", "application_version"],
       "properties": {
         "branch": {"type": "string", "minLength": 1},
-        "commit": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|unknown)$", "description": "Immutable JSB0 commit SHA; unknown only for source archives without Git metadata."},
         "application_version": {"type": "string", "minLength": 1}
       }
     },
     "scenario": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "file", "schema_version", "scenario_type"],
+      "required": ["name", "file", "digest_sha256", "schema_version", "scenario_type"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
         "file": {"type": "string"},
+        "digest_sha256": {"type": "string", "pattern": "^(?:[0-9a-f]{64})?$", "description": "SHA-256 of original scenario bytes; empty only when the input file could not be read."},
         "schema_version": {"const": 1},
         "scenario_type": {"const": "roll_hold"}
       }
@@ -42,6 +44,7 @@
     "aircraft": {"const": "c172x"},
     "autopilot": {"type": "string", "enum": ["primary", "baseline"]},
     "started_at": {"type": "string", "format": "date-time"},
+    "ended_at": {"type": "string", "format": "date-time"},
     "duration_s": {"type": "number", "minimum": 0},
     "status": {"type": "string", "enum": ["completed", "failed", "interrupted"]},
     "simulation_dt_s": {"type": "number", "exclusiveMinimum": 0},

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RunnerOptions.hpp"
+#include "sim/gnc/autopilot/AutopilotFactory.hpp"
 
 #include <csignal>
 #include <cstdint>
@@ -27,6 +28,7 @@ enum class RunnerExitCode : int {
 struct RunnerResult {
   RunnerExitCode exitCode = RunnerExitCode::GeneralFailure;
   std::string status = "failed";
+  std::string endedAt;
   double simulationTimeSec = 0.0;
   double wallTimeSec = 0.0;
   double realtimeFactor = 0.0;
@@ -37,6 +39,7 @@ struct RunnerResult {
 struct SimulationRunInfo {
   std::string scenarioName;
   std::string scenarioFile;
+  std::string scenarioDigest;
   std::uint32_t scenarioSchemaVersion = 1;
   std::string scenarioType = "roll_hold";
   std::string aircraft = "c172x";

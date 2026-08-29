@@ -70,9 +70,6 @@ add_test(
   COMMAND jsb-sim-runner
     --scenario "${PROJECT_SOURCE_DIR}/contract/examples/scenario/roll_hold.yaml"
     --output "${JSB_CONTRACT_RUN_OUTPUT}"
-    --duration 0.1
-    --dt 0.01
-    --no-trim
 )
 set_tests_properties(contract_roll_hold_run PROPERTIES
   FIXTURES_SETUP contract_roll_hold_artifacts

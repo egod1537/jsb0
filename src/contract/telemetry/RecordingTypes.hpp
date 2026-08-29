@@ -35,6 +35,7 @@ struct RecordingMetadata {
   std::string aircraft;
   std::string scenarioName;
   std::string scenarioFile;
+  std::string scenarioDigest;
   std::uint32_t scenarioSchemaVersion = 0;
   std::string scenarioType;
   double scenarioDurationSec = 0.0;

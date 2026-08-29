@@ -17,6 +17,8 @@ struct InitialCondition {
   double pRadPerSec = 0.0;
   double qRadPerSec = 0.0;
   double rRadPerSec = 0.0;
+
+  bool operator==(const InitialCondition &) const = default;
 };
 
 bool ValidateInitialCondition(const InitialCondition &initialCondition,

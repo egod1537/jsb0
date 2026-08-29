@@ -133,7 +133,7 @@ void TestTrimAndScenarioRequestResults() {
   scenario.name = "Message bus integration";
   scenario.runTrim = false;
   scenario.durationSec = 0.2;
-  scenario.commandStartSec = 0.1;
+  scenario.events.front().timeSec = 0.1;
   assert(harness.client.RunScenario(scenario));
   assert(harness.client.GetScenarioExecutionStatus().has_value());
   while (harness.client.GetSimulationExecutionState()

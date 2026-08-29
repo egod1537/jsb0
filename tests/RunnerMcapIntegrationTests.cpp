@@ -3,6 +3,8 @@
 
 #include "contract/telemetry/mcap/McapRecordingReader.hpp"
 #include "contract/telemetry/mcap/McapTelemetrySchema.hpp"
+#include "sim/scenario/SimulationScenarioSerializer.hpp"
+#include "telemetry/simulation.pb.h"
 
 #include <google/protobuf/descriptor.pb.h>
 
@@ -62,10 +64,6 @@ RunnerOptions MakeOptions(const std::filesystem::path &output) {
   RunnerOptions options;
   options.scenarioPath = JSB_TEST_HEADLESS_SCENARIO_PATH;
   options.outputDirectory = output;
-  options.autopilot = gnc::AutopilotKind::Primary;
-  options.dtSec = 0.01;
-  options.durationSec = 0.1;
-  options.noTrim = true;
   return options;
 }
 
@@ -138,6 +136,10 @@ void TestSuccessfulRunArtifactsAndSignals() {
       "runner MCAP contract version is incorrect");
   Require(reader.GetRunInfo().telemetrySchemaVersion == 1,
       "runner MCAP telemetry schema version is incorrect");
+  Require(reader.GetRunInfo().gitCommit.size() == 40,
+      "runner MCAP does not contain the immutable full commit SHA");
+  Require(reader.GetRunInfo().scenarioDigest.size() == 64,
+      "runner MCAP does not contain the scenario SHA-256 digest");
 
   const std::vector<RecordedSample> diagnostics =
       reader.ReadMessages("/jsb/primary/control/roll");
@@ -149,6 +151,21 @@ void TestSuccessfulRunArtifactsAndSignals() {
       "/jsb/primary/control/roll");
   RequireMonotonicSimulationTimestamps(aircraft, "/jsb/primary/aircraft/state");
   Require(!simulationEvents.empty(), "/jsb/simulation/event has no samples");
+  bool foundScheduledCommand = false;
+  for (const RecordedSample &sample : simulationEvents) {
+    jsb::telemetry::v1::SimulationEvent event;
+    Require(event.ParseFromString(sample.payload),
+        "runner simulation event payload is invalid");
+    if (event.type() == jsb::telemetry::v1::SIMULATION_EVENT_COMMAND_APPLIED) {
+      foundScheduledCommand = true;
+      Require(event.sim_time_ns() == 20'000'000,
+          "scenario command did not execute at its declared simulation time");
+      Require(event.has_target_roll_rad(),
+          "scenario command event omitted the resolved roll target");
+    }
+  }
+  Require(foundScheduledCommand,
+      "runner MCAP did not record the scheduled scenario command");
   Require(diagnostics.front().logTimeNanoseconds == 10'000'000,
       "runner MCAP does not start at the first simulation step");
   Require(diagnostics.back().logTimeNanoseconds == 100'000'000,
@@ -234,11 +251,99 @@ void TestInterruptedRunFinalizesMcap() {
   Require(std::filesystem::is_regular_file(output / "run.json"),
       "interrupted run did not produce run.json");
 }
+
+void TestSameRunnerExecutesScenarioSelectedAutopilots() {
+  TemporaryDirectory temporary;
+  sim::SimulationScenario baseline;
+  std::string error;
+  Require(
+      sim::SimulationScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
+          baseline,
+          error),
+      "failed to load primary fixture: " + error);
+  baseline.name = "Headless Baseline";
+  baseline.autopilot = gnc::AutopilotKind::Baseline;
+  const std::filesystem::path baselinePath =
+      temporary.GetPath() / "baseline.yaml";
+  Require(
+      sim::SimulationScenarioSerializer::Save(baselinePath, baseline, error),
+      "failed to save baseline fixture: " + error);
+
+  RunnerOptions options = MakeOptions(temporary.GetPath() / "baseline-run");
+  options.scenarioPath = baselinePath;
+  const RunnerResult result = RunWithMcap(options);
+  Require(result.exitCode == RunnerExitCode::Success,
+      "baseline scenario failed in the same runner: " + result.error);
+  const std::string manifest =
+      ReadTextFile(options.outputDirectory / "run.json");
+  Require(manifest.find("\"autopilot\": \"baseline\"") != std::string::npos,
+      "metadata did not preserve scenario-selected baseline autopilot");
+  Require(manifest.find("\"digest_sha256\": \"") != std::string::npos,
+      "metadata did not include scenario digest");
+  McapRecordingReader reader;
+  Require(reader.Open(options.outputDirectory / "telemetry.mcap"),
+      "failed to read baseline MCAP");
+  Require(reader.GetRunInfo().resolvedAutopilot == "baseline",
+      "MCAP metadata did not identify the resolved autopilot");
+  Require(reader.GetRunInfo().scenarioDigest.size() == 64,
+      "MCAP metadata did not include the SHA-256 scenario digest");
+}
+
+void TestSemanticCliOverridesAreRejected() {
+  const std::vector<std::vector<std::string_view>> overrides = {
+      {"--autopilot", "baseline"},
+      {"--aircraft", "c172x"},
+      {"--duration", "5"},
+      {"--dt", "0.01"},
+      {"--no-trim"},
+  };
+  for (const auto &override : overrides) {
+    std::vector<std::string_view> arguments = {"--scenario",
+        "primary.yaml",
+        "--output",
+        "out"};
+    arguments.insert(arguments.end(), override.begin(), override.end());
+    const runner::RunnerParseResult parsed =
+        runner::ParseRunnerOptions(arguments);
+    Require(!parsed.options.has_value(),
+        "semantic CLI override was unexpectedly accepted");
+    Require(parsed.error.find("defined by the scenario") != std::string::npos,
+        "semantic CLI override rejection is not actionable");
+  }
+}
+
+void TestInvalidScenarioFailsBeforeSimulationStarts() {
+  TemporaryDirectory temporary;
+  std::string yaml = ReadTextFile(JSB_TEST_HEADLESS_SCENARIO_PATH);
+  const std::string validDuration = "duration_sec: 0.1";
+  const std::size_t position = yaml.find(validDuration);
+  Require(position != std::string::npos,
+      "headless fixture duration was not found");
+  yaml.replace(position, validDuration.size(), "duration_sec: 0");
+  const std::filesystem::path scenarioPath =
+      temporary.GetPath() / "invalid-duration.yaml";
+  {
+    std::ofstream output(scenarioPath, std::ios::binary);
+    output << yaml;
+  }
+  RunnerOptions options = MakeOptions(temporary.GetPath() / "invalid-run");
+  options.scenarioPath = scenarioPath;
+  const RunnerResult result = RunWithMcap(options);
+  Require(result.exitCode == RunnerExitCode::ScenarioLoadFailure,
+      "invalid scenario returned an unexpected exit code");
+  Require(result.steps == 0,
+      "invalid scenario advanced the simulation before failing");
+  Require(!std::filesystem::exists(options.outputDirectory / "telemetry.mcap"),
+      "invalid scenario started telemetry recording");
+}
 } // namespace
 
 int main() {
   TestSuccessfulRunArtifactsAndSignals();
   TestFailureManifestAndMcapOpenFailure();
   TestInterruptedRunFinalizesMcap();
+  TestSameRunnerExecutesScenarioSelectedAutopilots();
+  TestSemanticCliOverridesAreRejected();
+  TestInvalidScenarioFailsBeforeSimulationStarts();
   return 0;
 }

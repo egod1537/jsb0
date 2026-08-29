@@ -1,4 +1,5 @@
 #include "gui/features/simulation/ScenarioController.hpp"
+#include "common/crypto/Sha256.hpp"
 
 #include "sim/scenario/SimulationScenarioSerializer.hpp"
 
@@ -111,6 +112,8 @@ bool ScenarioController::SaveAs(const std::filesystem::path &path) {
   }
 
   model_.draft.sourceFile = resolvedPath.string();
+  model_.draft.sourceDigestSha256 = common::crypto::Sha256Hex(
+      sim::SimulationScenarioSerializer::Serialize(model_.draft));
   model_.cleanScenario = model_.draft;
   model_.currentFilePath = resolvedPath;
   model_.suggestedFileName = resolvedPath.filename().string();

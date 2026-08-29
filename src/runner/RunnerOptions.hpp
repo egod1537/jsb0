@@ -1,7 +1,5 @@
 #pragma once
 
-#include "sim/gnc/autopilot/AutopilotFactory.hpp"
-
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -12,10 +10,6 @@ namespace runner {
 struct RunnerOptions {
   std::filesystem::path scenarioPath;
   std::filesystem::path outputDirectory;
-  std::optional<gnc::AutopilotKind> autopilot;
-  std::optional<double> dtSec;
-  std::optional<double> durationSec;
-  bool noTrim = false;
 };
 
 struct RunnerParseResult {

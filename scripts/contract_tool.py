@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -61,8 +62,7 @@ def parse_scalar(text: str) -> Any:
 
 
 def load_yaml_mapping(path: Path) -> dict[str, Any]:
-    root: dict[str, Any] = {}
-    stack: list[tuple[int, dict[str, Any]]] = [(-1, root)]
+    lines: list[tuple[int, int, str]] = []
     for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if not raw_line.strip() or raw_line.lstrip().startswith("#"):
             continue
@@ -71,25 +71,67 @@ def load_yaml_mapping(path: Path) -> dict[str, Any]:
         indent = len(raw_line) - len(raw_line.lstrip(" "))
         if indent % 2 != 0:
             raise ContractError(f"{path}:{line_number}: indentation must use two spaces")
-        content = raw_line.strip()
-        if ":" not in content:
-            raise ContractError(f"{path}:{line_number}: expected a mapping entry")
-        key, value = content.split(":", 1)
-        key = key.strip()
-        if not key:
-            raise ContractError(f"{path}:{line_number}: empty mapping key")
-        while stack[-1][0] >= indent:
-            stack.pop()
-        parent = stack[-1][1]
-        if key in parent:
-            raise ContractError(f"{path}:{line_number}: duplicate key {key}")
-        if value.strip():
-            parent[key] = parse_scalar(value)
-        else:
-            child: dict[str, Any] = {}
-            parent[key] = child
-            stack.append((indent, child))
-    return root
+        lines.append((line_number, indent, raw_line.strip()))
+
+    def parse_block(index: int, indent: int) -> tuple[Any, int]:
+        is_sequence = lines[index][2].startswith("- ")
+        container: Any = [] if is_sequence else {}
+        while index < len(lines):
+            line_number, line_indent, content = lines[index]
+            if line_indent < indent:
+                break
+            if line_indent != indent:
+                raise ContractError(f"{path}:{line_number}: unexpected indentation")
+            if is_sequence:
+                if not content.startswith("- "):
+                    break
+                entry = content[2:].strip()
+                if ":" not in entry:
+                    raise ContractError(f"{path}:{line_number}: expected a mapping sequence item")
+                key, value = entry.split(":", 1)
+                item: dict[str, Any] = {}
+                item[key.strip()] = parse_scalar(value) if value.strip() else None
+                index += 1
+                while index < len(lines) and lines[index][1] > indent:
+                    child_line, child_indent, child_content = lines[index]
+                    if child_indent != indent + 2 or ":" not in child_content:
+                        raise ContractError(f"{path}:{child_line}: invalid sequence item indentation")
+                    child_key, child_value = child_content.split(":", 1)
+                    child_key = child_key.strip()
+                    if child_key in item:
+                        raise ContractError(f"{path}:{child_line}: duplicate key {child_key}")
+                    if child_value.strip():
+                        item[child_key] = parse_scalar(child_value)
+                        index += 1
+                    else:
+                        index += 1
+                        if index >= len(lines) or lines[index][1] <= child_indent:
+                            item[child_key] = {}
+                        else:
+                            item[child_key], index = parse_block(index, child_indent + 2)
+                container.append(item)
+            else:
+                if content.startswith("- ") or ":" not in content:
+                    raise ContractError(f"{path}:{line_number}: expected a mapping entry")
+                key, value = content.split(":", 1)
+                key = key.strip()
+                if not key or key in container:
+                    raise ContractError(f"{path}:{line_number}: invalid or duplicate key {key}")
+                index += 1
+                if value.strip():
+                    container[key] = parse_scalar(value)
+                elif index < len(lines) and lines[index][1] > indent:
+                    container[key], index = parse_block(index, indent + 2)
+                else:
+                    container[key] = {}
+        return container, index
+
+    if not lines:
+        raise ContractError(f"{path}: document is empty")
+    result, consumed = parse_block(0, lines[0][1])
+    if consumed != len(lines) or not isinstance(result, dict):
+        raise ContractError(f"{path}: root must be a mapping")
+    return result
 
 
 def type_matches(instance: Any, expected: str) -> bool:
@@ -129,6 +171,13 @@ def validate_instance(instance: Any, schema: dict[str, Any], location: str = "$"
         for key, value in instance.items():
             if key in properties:
                 errors.extend(validate_instance(value, properties[key], f"{location}.{key}"))
+    if isinstance(instance, list):
+        if len(instance) < schema.get("minItems", 0):
+            errors.append(f"{location}: array is shorter than minItems")
+        item_schema = schema.get("items")
+        if item_schema:
+            for index, value in enumerate(instance):
+                errors.extend(validate_instance(value, item_schema, f"{location}[{index}]"))
     if isinstance(instance, str):
         if len(instance) < schema.get("minLength", 0):
             errors.append(f"{location}: string is shorter than minLength")
@@ -136,6 +185,8 @@ def validate_instance(instance: Any, schema: dict[str, Any], location: str = "$"
             r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z", instance
         ):
             errors.append(f"{location}: expected an RFC3339 UTC date-time")
+        if "pattern" in schema and not re.fullmatch(schema["pattern"], instance):
+            errors.append(f"{location}: string does not match required pattern")
     if isinstance(instance, (int, float)) and not isinstance(instance, bool):
         if not math.isfinite(float(instance)):
             errors.append(f"{location}: number must be finite")
@@ -197,8 +248,25 @@ def validate_contract(root: Path, protoc: Path, output: Path) -> None:
     metadata = json.loads((contract_root / "examples/metadata/run.json").read_text(encoding="utf-8"))
     errors = validate_instance(scenario, scenario_schema)
     errors.extend(validate_instance(metadata, metadata_schema))
-    if scenario.get("command", {}).get("start_sec", 0) > scenario.get("simulation", {}).get("duration_sec", 0):
-        errors.append("$.command.start_sec must not exceed $.simulation.duration_sec")
+    scenario_digest = hashlib.sha256(
+        (contract_root / "examples/scenario/roll_hold.yaml").read_bytes()
+    ).hexdigest()
+    if metadata.get("scenario", {}).get("digest_sha256") != scenario_digest:
+        errors.append("example metadata scenario digest does not match scenario bytes")
+    duration = scenario.get("simulation", {}).get("duration_sec", 0)
+    dt = scenario.get("simulation", {}).get("dt_sec", 0)
+    if dt and not math.isclose(duration / dt, round(duration / dt), abs_tol=1e-9):
+        errors.append("$.simulation.duration_sec must be an integer multiple of $.simulation.dt_sec")
+    previous_time = -1
+    for index, event in enumerate(scenario.get("events", [])):
+        event_time = event.get("time_sec", -1)
+        if event_time < previous_time:
+            errors.append(f"$.events[{index}].time_sec must be ordered")
+        if event_time >= duration:
+            errors.append(f"$.events[{index}].time_sec must be less than $.simulation.duration_sec")
+        if dt and not math.isclose(event_time / dt, round(event_time / dt), abs_tol=1e-9):
+            errors.append(f"$.events[{index}].time_sec must align to $.simulation.dt_sec")
+        previous_time = event_time
     invalid_scenario = load_yaml_mapping(contract_root / "tests/invalid_scenario.yaml")
     if not validate_instance(invalid_scenario, scenario_schema):
         errors.append("invalid scenario fixture was unexpectedly accepted")

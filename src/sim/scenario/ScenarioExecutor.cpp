@@ -12,20 +12,6 @@
 
 namespace sim {
 namespace {
-InitialCondition MakeInitialCondition(const SimulationScenario &scenario,
-    const InitialCondition &reference) {
-  InitialCondition initialCondition = reference;
-  initialCondition.altitudeFt = scenario.altitudeFt;
-  initialCondition.airspeedKts = scenario.airspeedKts;
-  initialCondition.rollDeg = scenario.initialRollDeg;
-  initialCondition.pitchDeg = scenario.initialPitchDeg;
-  initialCondition.headingDeg = scenario.initialHeadingDeg;
-  initialCondition.pRadPerSec = 0.0;
-  initialCondition.qRadPerSec = 0.0;
-  initialCondition.rRadPerSec = 0.0;
-  return initialCondition;
-}
-
 FDMEnvironmentState MakeEnvironment(const Simulation &reference,
     bool windEnabled) {
   FDMEnvironmentState environment =
@@ -48,8 +34,7 @@ FDMEnvironmentState MakeEnvironment(const Simulation &reference,
 gnc::IRollHoldAutopilot *FindRollHold(Simulation &simulation) {
   auto *manager = simulation.GetComponent<control::FlightControlManager>();
   return manager != nullptr
-             ? dynamic_cast<gnc::IRollHoldAutopilot *>(
-                   &manager->GetAutopilot())
+             ? dynamic_cast<gnc::IRollHoldAutopilot *>(&manager->GetAutopilot())
              : nullptr;
 }
 
@@ -68,19 +53,17 @@ bool ConfigureRollHold(Simulation &simulation, double targetRollRad,
 }
 } // namespace
 
-ScenarioExecutor::ScenarioExecutor(Simulation &primary, Simulation *baseline)
-    : primary_(primary), baseline_(baseline) {}
+ScenarioExecutor::ScenarioExecutor(Simulation &simulation)
+    : simulation_(simulation) {}
 
-bool ScenarioExecutor::Start(const SimulationScenario &scenario,
-    double dtSec) {
+bool ScenarioExecutor::Start(const SimulationScenario &scenario, double dtSec) {
   if (state_ == ScenarioExecutorState::Running) {
     return Fail("scenario executor is already running");
   }
   lastError_.clear();
-  pendingCommandActivationTimeSec_.reset();
-  if (!primary_.IsInitialized()
-      || (baseline_ != nullptr && !baseline_->IsInitialized())) {
-    return Fail("all scenario simulations must be initialized");
+  pendingCommandActivations_.clear();
+  if (!simulation_.IsInitialized()) {
+    return Fail("scenario simulation must be initialized");
   }
   std::string validationError;
   if (!ValidateSimulationScenario(scenario, &validationError)) {
@@ -90,13 +73,11 @@ bool ScenarioExecutor::Start(const SimulationScenario &scenario,
   if (!targetSteps) {
     return Fail("scenario duration and timestep produce an invalid step count");
   }
-  if (std::abs(primary_.GetTickSizeSec() - dtSec) > 1.0e-12
-      || (baseline_ != nullptr
-          && std::abs(baseline_->GetTickSizeSec() - dtSec) > 1.0e-12)) {
-    return Fail("simulation configuration timestep does not match executor timestep");
+  if (std::abs(simulation_.GetTickSizeSec() - dtSec) > 1.0e-12) {
+    return Fail(
+        "simulation configuration timestep does not match executor timestep");
   }
-  if (FindRollHold(primary_) == nullptr
-      || (baseline_ != nullptr && FindRollHold(*baseline_) == nullptr)) {
+  if (FindRollHold(simulation_) == nullptr) {
     return Fail("scenario simulation does not support Roll Hold");
   }
 
@@ -104,7 +85,9 @@ bool ScenarioExecutor::Start(const SimulationScenario &scenario,
   dtSec_ = dtSec;
   targetStepCount_ = *targetSteps;
   stepCount_ = 0;
+  nextEventIndex_ = 0;
   commandActive_ = false;
+  targetRollRad_ = 0.0;
   if (!ResetSimulations()) {
     return Fail("failed to reset scenario simulation");
   }
@@ -125,13 +108,8 @@ ScenarioStepResult ScenarioExecutor::Step() {
     Fail("failed to apply scenario control state");
     return result;
   }
-  result.commandActivationTimeSec = TakeCommandActivationTime();
-  if (!primary_.Step(dtSec_)) {
-    Fail("primary simulation step failed");
-    return result;
-  }
-  if (baseline_ != nullptr && !baseline_->Step(dtSec_)) {
-    Fail("baseline simulation step failed");
+  if (!simulation_.Step(dtSec_)) {
+    Fail("scenario simulation step failed");
     return result;
   }
 
@@ -181,27 +159,28 @@ const SimulationScenario *ScenarioExecutor::GetScenario() const {
 
 const std::string &ScenarioExecutor::GetLastError() const { return lastError_; }
 
-std::optional<double> ScenarioExecutor::TakeCommandActivationTime() {
-  return std::exchange(pendingCommandActivationTimeSec_, std::nullopt);
+std::vector<ScenarioCommandActivation>
+ScenarioExecutor::TakeCommandActivations() {
+  return std::exchange(pendingCommandActivations_, {});
 }
 
 std::optional<std::uint64_t> ScenarioExecutor::CalculateStepCount(
     double durationSec, double dtSec) {
-  if (!std::isfinite(durationSec) || durationSec <= 0.0
-      || !std::isfinite(dtSec) || dtSec <= 0.0) {
+  if (!std::isfinite(durationSec) || durationSec <= 0.0 || !std::isfinite(dtSec)
+      || dtSec <= 0.0) {
     return std::nullopt;
   }
   const double ratio = durationSec / dtSec;
   if (!std::isfinite(ratio)
-      || ratio > static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+      || ratio
+             > static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
     return std::nullopt;
   }
   const double nearest = std::round(ratio);
   const double tolerance = std::numeric_limits<double>::epsilon()
                            * std::max(1.0, std::abs(ratio)) * 8.0;
-  const double steps = std::abs(ratio - nearest) <= tolerance
-                           ? nearest
-                           : std::ceil(ratio);
+  const double steps =
+      std::abs(ratio - nearest) <= tolerance ? nearest : std::ceil(ratio);
   if (steps < 1.0) {
     return std::nullopt;
   }
@@ -209,40 +188,36 @@ std::optional<std::uint64_t> ScenarioExecutor::CalculateStepCount(
 }
 
 bool ScenarioExecutor::ResetSimulations() {
-  const InitialCondition initialCondition =
-      MakeInitialCondition(scenario_, primary_.GetDefaultInitialCondition());
   const FDMEnvironmentState environment =
-      MakeEnvironment(primary_, scenario_.windEnabled);
+      MakeEnvironment(simulation_, scenario_.windEnabled);
   const SimulationResetOptions options{
       .runTrim = scenario_.runTrim,
       .trimMode = scenario_.trimMode,
       .environment = environment,
   };
-  return primary_.Reset(initialCondition, options)
-         && (baseline_ == nullptr || baseline_->Reset(initialCondition, options));
+  return simulation_.Reset(scenario_.initialCondition, options);
 }
 
 bool ScenarioExecutor::ApplyControlState() {
-  const bool commandActive = GetElapsedSec() >= scenario_.commandStartSec;
-  const double targetRollRad = math::DegToRad(scenario_.commandedRollDeg);
-  if (!ConfigureRollHold(primary_, targetRollRad, commandActive)
-      || (baseline_ != nullptr
-          && !ConfigureRollHold(*baseline_, targetRollRad, commandActive))) {
-    return false;
-  }
-  if (commandActive && !commandActive_) {
+  while (nextEventIndex_ < scenario_.events.size()
+         && GetElapsedSec() >= scenario_.events[nextEventIndex_].timeSec) {
+    targetRollRad_ =
+        math::DegToRad(scenario_.events[nextEventIndex_].command.rollDeg);
     commandActive_ = true;
-    pendingCommandActivationTimeSec_ = primary_.GetTime();
+    pendingCommandActivations_.push_back({
+        .simulationTimeSec = simulation_.GetTime(),
+        .targetRollRad = targetRollRad_,
+    });
+    ++nextEventIndex_;
+  }
+  if (!ConfigureRollHold(simulation_, targetRollRad_, commandActive_)) {
+    return false;
   }
   return true;
 }
 
 void ScenarioExecutor::DisableRollHold() {
-  const double targetRollRad = math::DegToRad(scenario_.commandedRollDeg);
-  ConfigureRollHold(primary_, targetRollRad, false);
-  if (baseline_ != nullptr) {
-    ConfigureRollHold(*baseline_, targetRollRad, false);
-  }
+  ConfigureRollHold(simulation_, targetRollRad_, false);
 }
 
 bool ScenarioExecutor::Fail(std::string message) {

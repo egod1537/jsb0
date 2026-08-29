@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string_view>
 
 namespace gnc {
@@ -14,4 +15,5 @@ enum class AutopilotKind {
 std::unique_ptr<IAutopilot> CreateAutopilot(AutopilotKind kind);
 const char *ToString(AutopilotKind kind);
 bool TryParseAutopilotKind(std::string_view value, AutopilotKind &kind);
+std::optional<AutopilotKind> IdentifyAutopilotKind(const IAutopilot &autopilot);
 } // namespace gnc
