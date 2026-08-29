@@ -1,17 +1,13 @@
-#include "application/gui/panels/AutopilotPanel.hpp"
-#include "application/gui/panels/BaselineAutopilotPanel.hpp"
-#include "application/gui/viz/FlightVisualizer.hpp"
-#include "application/gui/windows/GNCWindow.hpp"
-#include "application/gui/windows/monitor/RollTrackingAcceptance.hpp"
-#include "application/gui/windows/viz/FlightVizWindow.hpp"
-#include "application/sim/Simulation.hpp"
-#include "application/sim/gnc/autopilot/MyAutopilot.hpp"
-#include "application/sim/gnc/autopilot/PX4Autopilot.hpp"
+#include "gui/panels/AutopilotPanel.hpp"
+#include "gui/panels/BaselineAutopilotPanel.hpp"
+#include "gui/features/flightviz/FlightVisualizer.hpp"
+#include "gui/windows/GNCWindow.hpp"
+#include "gui/features/monitor/plots/RollTrackingAcceptance.hpp"
+#include "gui/windows/viz/FlightVizWindow.hpp"
+#include "sim/runtime/SimulationContracts.hpp"
 
 #include <cassert>
 #include <cmath>
-#include <memory>
-#include <type_traits>
 
 namespace {
 template <typename T>
@@ -24,9 +20,8 @@ concept HasBaselineRollHoldTuningState = requires(T &state) {
 };
 
 template <typename T>
-concept HasLegacyPx4ReferenceState = requires(T &state) {
-  state.legacyPx4ReferenceOpen;
-};
+concept HasLegacyPx4ReferenceState =
+    requires(T &state) { state.legacyPx4ReferenceOpen; };
 
 template <typename T>
 concept HasAircraftViewMode = requires(T &visualizer) {
@@ -35,24 +30,20 @@ concept HasAircraftViewMode = requires(T &visualizer) {
 };
 
 template <typename T>
-concept HasMutableSimulationSources =
-    requires(T &view, sim::Simulation *simulation) {
-      view.SetMainSimulation(simulation);
-      view.SetShadowSimulation(simulation);
-    };
+concept HasMutableSimulationSources = requires(T &view, void *source) {
+  view.SetMainSimulation(source);
+  view.SetShadowSimulation(source);
+};
 
 static_assert(!HasBaselineRollHoldTuningState<gui::AutopilotPanelState>);
-static_assert(
-    HasBaselineRollHoldTuningState<gui::BaselineAutopilotPanelState>);
-static_assert(
-    !HasLegacyPx4ReferenceState<gui::BaselineAutopilotPanelState>);
+static_assert(HasBaselineRollHoldTuningState<gui::BaselineAutopilotPanelState>);
+static_assert(!HasLegacyPx4ReferenceState<gui::BaselineAutopilotPanelState>);
 static_assert(!HasAircraftViewMode<viz::FlightVisualizer>);
 static_assert(!HasMutableSimulationSources<viz::FlightVisualizer>);
 static_assert(!HasMutableSimulationSources<gui::FlightVizWindow>);
 
 void TestLocalViewStateDefaults() {
   gui::GNCWindow gncWindow;
-
   assert(gncWindow.GetAutopilotViewState().GetSelection()
          == gui::AutopilotSelection::Primary);
 }
@@ -63,33 +54,21 @@ void TestBaselineUnavailableIsSafe() {
   assert(autopilotView.GetSelection() == gui::AutopilotSelection::Primary);
 
   viz::FlightVisualizer visualizer;
-  assert(visualizer.GetMainSimulation() == nullptr);
-  assert(visualizer.GetShadowSimulation() == nullptr);
   visualizer.SetShadowEnabled(true);
   assert(visualizer.IsShadowEnabled());
-  assert(!visualizer.Tick());
+  assert(!visualizer.Tick(nullptr));
 }
 
-void TestFlightVizWindowsUseIndependentSourcesAndIds() {
-  sim::Simulation primary(std::make_unique<gnc::MyAutopilot>());
-  sim::Simulation baseline(std::make_unique<gnc::PX4Autopilot>());
-  gui::FlightVizWindow primaryWindow(gui::SimulationSlot::Primary,
-      &primary,
-      &baseline);
-  gui::FlightVizWindow baselineWindow(gui::SimulationSlot::Baseline,
-      &baseline,
-      &primary);
+void TestFlightVizWindowsUseIndependentSlotsAndIds() {
+  gui::FlightVizWindow primaryWindow(sim::SimulationSlot::Primary);
+  gui::FlightVizWindow baselineWindow(sim::SimulationSlot::Baseline);
 
   assert(primaryWindow.GetTitle() == "Flight Viz · Primary");
   assert(primaryWindow.GetWindowId() == "FlightVizPrimary");
-  assert(primaryWindow.GetSimulationSlot() == gui::SimulationSlot::Primary);
-  assert(primaryWindow.GetMainSimulation() == &primary);
-  assert(primaryWindow.GetShadowSimulation() == &baseline);
+  assert(primaryWindow.GetSimulationSlot() == sim::SimulationSlot::Primary);
   assert(baselineWindow.GetTitle() == "Flight Viz · Baseline");
   assert(baselineWindow.GetWindowId() == "FlightVizBaseline");
-  assert(baselineWindow.GetSimulationSlot() == gui::SimulationSlot::Baseline);
-  assert(baselineWindow.GetMainSimulation() == &baseline);
-  assert(baselineWindow.GetShadowSimulation() == &primary);
+  assert(baselineWindow.GetSimulationSlot() == sim::SimulationSlot::Baseline);
   assert(&primaryWindow.GetVisualizer() != &baselineWindow.GetVisualizer());
 
   primaryWindow.GetVisualizer().SetViewMode(viz::ViewMode::ThirdPerson);
@@ -106,26 +85,22 @@ void TestShadowUsesFixedWorldProjection() {
   constexpr double MetersPerVizUnit = 75.0 * 0.3048;
   constexpr double LatitudeOffsetRad = 0.00001;
   constexpr double LongitudeOffsetRad = 0.00002;
+  constexpr double OriginLatitudeRad = 0.65;
+  constexpr double OriginLongitudeRad = 2.2;
 
-  sim::Simulation primary(std::make_unique<gnc::MyAutopilot>());
-  sim::Simulation baseline(std::make_unique<gnc::PX4Autopilot>());
-  sim::SimulationConfig config{};
-  assert(primary.Initialize(config));
-  assert(baseline.Initialize(config));
+  sim::SimulationInstanceSnapshot primary;
+  primary.available = true;
+  primary.fdmState.state.latitudeRad = OriginLatitudeRad;
+  primary.fdmState.state.longitudeRad = OriginLongitudeRad;
+  primary.fdmState.state.altitudeAslFt = 4000.0;
 
-  auto &primaryProperties = primary.GetAircraft().GetProperties();
-  auto &baselineProperties = baseline.GetAircraft().GetProperties();
-  const double originLatitudeRad = primaryProperties.Latitude().Rad();
-  const double originLongitudeRad = primaryProperties.Longitude().Rad();
+  sim::SimulationInstanceSnapshot baseline = primary;
+  baseline.fdmState.state.latitudeRad += LatitudeOffsetRad;
+  baseline.fdmState.state.longitudeRad += LongitudeOffsetRad;
 
-  baselineProperties.Set("position/lat-gc-rad",
-      originLatitudeRad + LatitudeOffsetRad);
-  baselineProperties.Set("position/long-gc-rad",
-      originLongitudeRad + LongitudeOffsetRad);
-
-  viz::FlightVisualizer visualizer(&primary, &baseline);
+  viz::FlightVisualizer visualizer;
   visualizer.SetShadowEnabled(true);
-  assert(visualizer.Tick());
+  assert(visualizer.Tick(&primary, &baseline));
 
   const viz::FrameSnapshot &firstSnapshot = visualizer.GetFrameSnapshot();
   assert(firstSnapshot.shadowEnabled);
@@ -133,16 +108,15 @@ void TestShadowUsesFixedWorldProjection() {
   const double expectedShadowNorth =
       LatitudeOffsetRad * EarthRadiusMeters / MetersPerVizUnit;
   const double expectedShadowEast = LongitudeOffsetRad
-                                    * std::cos(originLatitudeRad)
+                                    * std::cos(OriginLatitudeRad)
                                     * EarthRadiusMeters / MetersPerVizUnit;
   assert(std::abs(firstSnapshot.shadowAircraft.position.x - expectedShadowNorth)
          < 0.01);
   assert(std::abs(firstSnapshot.shadowAircraft.position.y - expectedShadowEast)
          < 0.01);
 
-  primaryProperties.Set("position/lat-gc-rad",
-      originLatitudeRad + LatitudeOffsetRad * 0.5);
-  assert(visualizer.Tick());
+  primary.fdmState.state.latitudeRad += LatitudeOffsetRad * 0.5;
+  assert(visualizer.Tick(&primary, &baseline));
   const viz::FrameSnapshot &secondSnapshot = visualizer.GetFrameSnapshot();
   assert(
       std::abs(secondSnapshot.aircraft.position.x - expectedShadowNorth * 0.5)
@@ -151,9 +125,9 @@ void TestShadowUsesFixedWorldProjection() {
       std::abs(secondSnapshot.shadowAircraft.position.x - expectedShadowNorth)
       < 0.01);
 
-  viz::FlightVisualizer primaryOnlyVisualizer(&primary, nullptr);
+  viz::FlightVisualizer primaryOnlyVisualizer;
   primaryOnlyVisualizer.SetShadowEnabled(true);
-  assert(primaryOnlyVisualizer.Tick());
+  assert(primaryOnlyVisualizer.Tick(&primary));
   assert(primaryOnlyVisualizer.GetFrameSnapshot().aircraft.available);
   assert(!primaryOnlyVisualizer.GetFrameSnapshot().shadowAircraft.available);
 }
@@ -205,7 +179,7 @@ void TestRollTrackingAcceptanceIsCommandRelative() {
 int main() {
   TestLocalViewStateDefaults();
   TestBaselineUnavailableIsSafe();
-  TestFlightVizWindowsUseIndependentSourcesAndIds();
+  TestFlightVizWindowsUseIndependentSlotsAndIds();
   TestShadowUsesFixedWorldProjection();
   TestComponentSelectionsAreIndependent();
   TestBaselineRollHoldStateSurvivesSelectionChanges();

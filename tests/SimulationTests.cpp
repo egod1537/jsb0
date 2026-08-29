@@ -1,23 +1,23 @@
-#include "application/sim/Aircraft.hpp"
-#include "application/sim/ErrorTracker.hpp"
-#include "application/sim/Simulation.hpp"
-#include "application/sim/StateLogger.hpp"
-#include "application/sim/gnc/ControlContext.hpp"
-#include "application/sim/gnc/autopilot/IAutopilot.hpp"
-#include "application/sim/gnc/autopilot/IAutopilotAnalysis.hpp"
-#include "application/sim/gnc/autopilot/IControllerInspectable.hpp"
-#include "application/sim/gnc/autopilot/ITrimReferenceConsumer.hpp"
-#include "application/sim/gnc/autopilot/MyAutopilot.hpp"
-#include "application/sim/gnc/autopilot/PX4Autopilot.hpp"
-#include "application/sim/gnc/hold/AirspeedHoldController.hpp"
-#include "application/sim/gnc/hold/AltitudeHoldController.hpp"
-#include "application/sim/gnc/hold/CourseHoldController.hpp"
-#include "application/sim/gnc/hold/PitchHoldController.hpp"
-#include "application/sim/gnc/hold/YawDamperController.hpp"
-#include "application/sim/control/FlightControlManager.hpp"
-#include "application/sim/control/FlightControlMode.hpp"
-#include "application/telemetry/AircraftTelemetry.hpp"
-#include "application/telemetry/AutopilotTelemetry.hpp"
+#include "sim/Aircraft.hpp"
+#include "sim/ErrorTracker.hpp"
+#include "sim/Simulation.hpp"
+#include "sim/StateLogger.hpp"
+#include "sim/gnc/ControlContext.hpp"
+#include "sim/gnc/autopilot/IAutopilot.hpp"
+#include "sim/gnc/autopilot/IAutopilotAnalysis.hpp"
+#include "sim/gnc/autopilot/IControllerInspectable.hpp"
+#include "sim/gnc/autopilot/ITrimReferenceConsumer.hpp"
+#include "sim/gnc/autopilot/MyAutopilot.hpp"
+#include "sim/gnc/autopilot/PX4Autopilot.hpp"
+#include "sim/gnc/hold/AirspeedHoldController.hpp"
+#include "sim/gnc/hold/AltitudeHoldController.hpp"
+#include "sim/gnc/hold/CourseHoldController.hpp"
+#include "sim/gnc/hold/PitchHoldController.hpp"
+#include "sim/gnc/hold/YawDamperController.hpp"
+#include "sim/control/FlightControlManager.hpp"
+#include "sim/control/FlightControlMode.hpp"
+#include "sim/telemetry/AircraftTelemetry.hpp"
+#include "sim/telemetry/AutopilotTelemetry.hpp"
 #include "common/math/Math.hpp"
 
 #include <algorithm>
@@ -379,19 +379,6 @@ gnc::MyAutopilot &GetMyAutopilot(sim::Simulation &simulation) {
       &GetFlightControlManager(simulation).GetAutopilot());
   Require(autopilot != nullptr, "Simulation does not use MyAutopilot");
   return *autopilot;
-}
-
-double ComputeRollProportionalGain(const gnc::RollHoldSettings &settings,
-    const gnc::RollDynamics &dynamics) {
-  const double naturalFrequency = settings.naturalFrequencyRadPerSec;
-  return naturalFrequency * naturalFrequency / dynamics.aPhi2;
-}
-
-double ComputeRollDerivativeGain(const gnc::RollHoldSettings &settings,
-    const gnc::RollDynamics &dynamics) {
-  return (2.0 * settings.dampingRatio * settings.naturalFrequencyRadPerSec
-             - dynamics.aPhi1)
-         / dynamics.aPhi2;
 }
 
 void WaitForAutopilotDynamics(sim::Simulation &simulation,
@@ -814,7 +801,6 @@ void TestSimulationPublishesAircraftTelemetry() {
       telemetry::paths::AircraftControlAileron,
       telemetry::paths::AircraftControlRudder,
       telemetry::paths::AutopilotRollHoldCommandedRoll,
-      telemetry::paths::AutopilotRollHoldAileronCommand,
   };
   const auto &telemetry = simulation.GetTelemetryRegistry();
   Require(telemetry.GetChannelPaths().size() == std::size(ExpectedPaths),
@@ -1214,7 +1200,15 @@ void TestPx4AutopilotOwnsBaselineRollReference() {
       telemetry.Find(telemetry::paths::AutopilotRollHoldCommandedRoll);
   const auto *aileronCommand =
       telemetry.Find(telemetry::paths::AutopilotRollHoldAileronCommand);
-  Require(commandedRoll != nullptr && aileronCommand != nullptr,
+  const auto *commandedRollRate =
+      telemetry.Find(telemetry::paths::AutopilotRollHoldCommandedRollRate);
+  const auto *rollRate =
+      telemetry.Find(telemetry::paths::AutopilotRollHoldRollRate);
+  const auto *rollRateError =
+      telemetry.Find(telemetry::paths::AutopilotRollHoldRollRateError);
+  Require(commandedRoll != nullptr && aileronCommand != nullptr
+              && commandedRollRate != nullptr && rollRate != nullptr
+              && rollRateError != nullptr,
       "PX4 baseline did not publish generic Roll Hold telemetry");
   RequireNear(commandedRoll->GetLatest()->value,
       math::RadToDeg(targetRollRad),
@@ -1224,6 +1218,71 @@ void TestPx4AutopilotOwnsBaselineRollReference() {
       diagnostics.aileronCommand,
       ControlCommandTolerance,
       "PX4 baseline telemetry did not retain its aileron command");
+  RequireNear(commandedRollRate->GetLatest()->value,
+      math::RadToDeg(diagnostics.bodyRateSetpointRadPerSec),
+      SimTimeTolerance,
+      "PX4 baseline telemetry did not adapt its commanded roll rate");
+  RequireNear(rollRate->GetLatest()->value,
+      math::RadToDeg(diagnostics.bodyRateSetpointRadPerSec
+                     - diagnostics.bodyRateErrorRadPerSec),
+      SimTimeTolerance,
+      "PX4 baseline telemetry did not retain its measured roll rate");
+  RequireNear(rollRateError->GetLatest()->value,
+      math::RadToDeg(diagnostics.bodyRateErrorRadPerSec),
+      SimTimeTolerance,
+      "PX4 baseline telemetry did not adapt its roll-rate error");
+  const auto requireDiagnosticTelemetry = [&telemetry](std::string_view path,
+                                              double expected) {
+    const telemetry::TelemetryChannel *channel = telemetry.Find(path);
+    Require(channel != nullptr && channel->GetLatest() != nullptr,
+        "PX4 baseline diagnostic telemetry channel is missing");
+    RequireNear(channel->GetLatest()->value,
+        expected,
+        ControlCommandTolerance,
+        "PX4 baseline diagnostic telemetry value mismatch");
+  };
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldRateProportionalTerm,
+      diagnostics.rateProportionalTerm);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldRateIntegralTerm,
+      diagnostics.rateIntegralTerm);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldRateDerivativeTerm,
+      diagnostics.rateDerivativeTerm);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldRateFeedForwardTerm,
+      diagnostics.rateFeedForwardTerm);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldUnscaledTorqueCommand,
+      diagnostics.unscaledTorqueCommand);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldRawTorqueCommand,
+      diagnostics.rawTorqueCommand);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldRollTorqueCommand,
+      diagnostics.rollTorqueCommand);
+  requireDiagnosticTelemetry(telemetry::paths::AutopilotRollHoldAirspeedScaling,
+      diagnostics.airspeedScaling);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldPositiveSaturation,
+      diagnostics.positiveSaturation ? 1.0 : 0.0);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldNegativeSaturation,
+      diagnostics.negativeSaturation ? 1.0 : 0.0);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldIntegratorLimited,
+      diagnostics.integratorLimited ? 1.0 : 0.0);
+  requireDiagnosticTelemetry(telemetry::paths::AutopilotRollHoldTrimRollCommand,
+      diagnostics.trimRollCommand);
+  const double integratorLimit =
+      std::abs(autopilot->GetRollHoldSettings().integratorLimit);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldRateIntegratorPositiveLimit,
+      integratorLimit);
+  requireDiagnosticTelemetry(
+      telemetry::paths::AutopilotRollHoldRateIntegratorNegativeLimit,
+      -integratorLimit);
   RequireNear(actualInput.elevator,
       passthrough.elevator,
       ControlCommandTolerance,
@@ -1461,8 +1520,8 @@ void TestManualModeIgnoresAutopilotSource() {
   const auto &properties = aircraft.GetProperties();
   autopilot.SetRollHoldSettings({
       .targetRollRad = properties.Roll().Rad() + 0.1,
-      .dampingRatio = 0.7,
-      .naturalFrequencyRadPerSec = 1.0,
+      .attitudeLoop = {.proportionalGain = 1.2},
+      .rateLoop = {.proportionalGain = 0.4},
   });
   autopilot.SetRollHoldEnabled(true);
 
@@ -1583,7 +1642,7 @@ void TestLinearizationRunsInManualModeWithoutHolds() {
       "Controller reset retained stale dynamic-mode snapshots");
 }
 
-void TestRollHoldControllerComputesAileronCommand() {
+void TestRollHoldControllerHasNoControlLaw() {
   sim::Simulation simulation(std::make_unique<gnc::MyAutopilot>());
   StartSimulation(simulation);
   auto &aircraft = simulation.GetAircraft();
@@ -1600,66 +1659,71 @@ void TestRollHoldControllerComputesAileronCommand() {
   const auto &properties = aircraft.GetProperties();
   const gnc::RollHoldSettings settings{
       .targetRollRad = properties.Roll().Rad() + 0.2,
-      .dampingRatio = 0.7,
-      .naturalFrequencyRadPerSec = 3.0,
-  };
-  const gnc::ControlContext context{
-      .rollDynamics =
-          gnc::RollDynamics{
-              .aPhi1 = 0.4,
-              .aPhi2 = 2.0,
-          },
+      .attitudeLoop = {.proportionalGain = 1.2},
+      .rateLoop = {.proportionalGain = 0.4},
   };
   rollHold->SetTrimAileron(0.1);
   rollHold->SetSettings(settings);
   rollHold->SetEnabled(true);
 
   const auto command =
-      rollHold->OnTick(aircraft, MakeTestTick(simulation), context);
-  Require(command.has_value(), "Enabled roll hold produced no command");
+      rollHold->OnTick(aircraft, MakeTestTick(simulation), emptyContext);
+  Require(!command.has_value(),
+      "Unimplemented Roll Hold unexpectedly produced an aileron command");
 
-  const gnc::RollDynamics &dynamics = *context.rollDynamics;
-  const double expectedAileron =
-      0.1
-      + ComputeRollProportionalGain(settings, dynamics)
-            * (settings.targetRollRad - properties.Roll().Rad())
-      - ComputeRollDerivativeGain(settings, dynamics)
-            * properties.P().RadPerSec();
-  RequireNear(*command,
-      expectedAileron,
-      SimTimeTolerance,
-      "Roll hold aileron command mismatch");
-  RequireNear(rollHold->GetDiagnostics().aileronCommand,
-      *command,
-      SimTimeTolerance,
-      "Roll Hold diagnostics did not retain the generated aileron command");
-  RequireNear(rollHold->GetDiagnostics().commandedRollRad,
+  const gnc::RollHoldDiagnostics &diagnostics = rollHold->GetDiagnostics();
+  Require(!diagnostics.controlOutputValid,
+      "Unimplemented Roll Hold marked its output valid");
+  RequireNear(diagnostics.commandedRollRad,
       settings.targetRollRad,
       SimTimeTolerance,
-      "Roll Hold diagnostics did not retain the standalone roll command");
+      "Roll Hold diagnostics did not retain the commanded roll");
+  RequireNear(diagnostics.rollRad,
+      properties.Roll().Rad(),
+      SimTimeTolerance,
+      "Roll Hold diagnostics did not retain the measured roll");
+  RequireNear(diagnostics.rollErrorRad,
+      settings.targetRollRad - properties.Roll().Rad(),
+      SimTimeTolerance,
+      "Roll Hold diagnostics did not retain the roll error");
+  RequireNear(diagnostics.rollRateRadPerSec,
+      properties.P().RadPerSec(),
+      SimTimeTolerance,
+      "Roll Hold diagnostics did not retain the measured roll rate");
+  Require(!diagnostics.commandedRollRateValid,
+      "Unimplemented Roll Hold produced a commanded roll rate");
+  RequireNear(diagnostics.commandedRollRateRadPerSec,
+      0.0,
+      SimTimeTolerance,
+      "Invalid commanded roll-rate diagnostic was not reset");
+  RequireNear(diagnostics.rollRateErrorRadPerSec,
+      0.0,
+      SimTimeTolerance,
+      "Unimplemented Roll Hold produced a roll-rate error");
+  RequireNear(diagnostics.aileronCommand,
+      0.0,
+      SimTimeTolerance,
+      "Unimplemented Roll Hold produced a diagnostic aileron command");
+  RequireNear(rollHold->GetSettings().attitudeLoop.proportionalGain,
+      1.2,
+      SimTimeTolerance,
+      "Roll angle P gain was not retained");
+  RequireNear(rollHold->GetSettings().rateLoop.proportionalGain,
+      0.4,
+      SimTimeTolerance,
+      "Roll rate P gain was not retained");
+  RequireNear(rollHold->GetTrimAileron(),
+      0.1,
+      SimTimeTolerance,
+      "Roll Hold did not retain its trim reference");
 
   const double commandedRollRad = properties.Roll().Rad() - 0.15;
-  rollHold->SetEnabled(false);
   const auto cascadedCommand = rollHold->OnTick(aircraft,
       MakeTestTick(simulation),
-      context,
+      emptyContext,
       commandedRollRad);
-  Require(cascadedCommand.has_value(),
-      "Roll hold rejected an outer-loop roll command");
-  const double expectedCascadedAileron =
-      0.1
-      + ComputeRollProportionalGain(settings, dynamics)
-            * (commandedRollRad - properties.Roll().Rad())
-      - ComputeRollDerivativeGain(settings, dynamics)
-            * properties.P().RadPerSec();
-  RequireNear(*cascadedCommand,
-      expectedCascadedAileron,
-      SimTimeTolerance,
-      "Roll hold did not use the outer-loop roll command");
-  RequireNear(rollHold->GetDiagnostics().aileronCommand,
-      *cascadedCommand,
-      SimTimeTolerance,
-      "Roll Hold diagnostics did not retain the cascaded aileron command");
+  Require(!cascadedCommand.has_value(),
+      "Unimplemented cascaded Roll Hold produced a command");
   RequireNear(rollHold->GetDiagnostics().commandedRollRad,
       commandedRollRad,
       SimTimeTolerance,
@@ -1669,6 +1733,9 @@ void TestRollHoldControllerComputesAileronCommand() {
       SimTimeTolerance,
       "Outer-loop roll command replaced the standalone Roll Hold target");
 
+  rollHold->SetEnabled(false);
+  Require(!rollHold->GetDiagnostics().controlOutputValid,
+      "Disabling Roll Hold retained active diagnostics");
   rollHold->Reset();
   RequireNear(rollHold->GetDiagnostics().commandedRollRad,
       0.0,
@@ -1678,6 +1745,88 @@ void TestRollHoldControllerComputesAileronCommand() {
       0.0,
       SimTimeTolerance,
       "Roll Hold reset retained a stale diagnostic command");
+  Require(!rollHold->GetDiagnostics().controlOutputValid,
+      "Roll Hold reset retained valid diagnostics");
+}
+
+void TestUnimplementedPrimaryRollHoldPublishesNoControlTelemetry() {
+  sim::Simulation simulation(std::make_unique<gnc::MyAutopilot>());
+  StartSimulation(simulation);
+  auto &autopilot = GetMyAutopilot(simulation);
+  auto &manager = GetFlightControlManager(simulation);
+  const auto &properties = simulation.GetAircraft().GetProperties();
+
+  const gnc::RollHoldSettings settings{
+      .targetRollRad = properties.Roll().Rad() + 0.12,
+      .attitudeLoop = {.proportionalGain = 1.2},
+      .rateLoop = {.proportionalGain = 0.4},
+  };
+  autopilot.SetRollHoldSettings(settings);
+  autopilot.SetRollHoldEnabled(true);
+  manager.SetMode(control::FlightControlMode::Autopilot);
+  Require(simulation.Tick(), "Primary Roll Hold telemetry tick failed");
+
+  const auto *controller = autopilot.GetController<gnc::RollHoldController>();
+  Require(controller != nullptr,
+      "Primary Roll Hold telemetry test is missing its controller");
+  const gnc::RollHoldDiagnostics &diagnostics = controller->GetDiagnostics();
+  Require(!diagnostics.controlOutputValid,
+      "Unimplemented Primary Roll Hold produced a valid output");
+
+  const telemetry::TelemetryRegistry &telemetry =
+      simulation.GetTelemetryRegistry();
+  const auto requireLatestNear = [&telemetry](std::string_view path,
+                                     double expected,
+                                     const std::string &message) {
+    const telemetry::TelemetryChannel *channel = telemetry.Find(path);
+    Require(channel != nullptr && channel->GetLatest() != nullptr,
+        message + " channel is unavailable");
+    RequireNear(channel->GetLatest()->value,
+        expected,
+        SimTimeTolerance,
+        message);
+  };
+
+  requireLatestNear(telemetry::paths::AutopilotRollHoldCommandedRoll,
+      math::RadToDeg(diagnostics.commandedRollRad),
+      "Commanded-roll telemetry mismatch");
+  Require(telemetry.Find(telemetry::paths::AutopilotRollHoldAileronCommand)
+              == nullptr,
+      "Unimplemented Roll Hold published aileron-command telemetry");
+  Require(telemetry.Find(telemetry::paths::AutopilotRollHoldRoll) == nullptr,
+      "Unimplemented Roll Hold published controller-state telemetry");
+  Require(telemetry.Find(telemetry::paths::AutopilotRollHoldRollError)
+              == nullptr,
+      "Unimplemented Roll Hold published roll-error telemetry");
+  Require(telemetry.Find(telemetry::paths::AutopilotRollHoldRollRate)
+              == nullptr,
+      "Unimplemented Roll Hold published roll-rate telemetry");
+  Require(telemetry.Find(telemetry::paths::AutopilotRollHoldCommandedRollRate)
+              == nullptr,
+      "Unimplemented Roll Hold published a commanded roll rate");
+  Require(telemetry.Find(telemetry::paths::AutopilotRollHoldRollRateError)
+              == nullptr,
+      "Unimplemented Roll Hold published a roll-rate error");
+  constexpr std::array Px4DiagnosticPaths{
+      telemetry::paths::AutopilotRollHoldRateProportionalTerm,
+      telemetry::paths::AutopilotRollHoldRateIntegralTerm,
+      telemetry::paths::AutopilotRollHoldRateDerivativeTerm,
+      telemetry::paths::AutopilotRollHoldRateFeedForwardTerm,
+      telemetry::paths::AutopilotRollHoldUnscaledTorqueCommand,
+      telemetry::paths::AutopilotRollHoldRawTorqueCommand,
+      telemetry::paths::AutopilotRollHoldRollTorqueCommand,
+      telemetry::paths::AutopilotRollHoldAirspeedScaling,
+      telemetry::paths::AutopilotRollHoldPositiveSaturation,
+      telemetry::paths::AutopilotRollHoldNegativeSaturation,
+      telemetry::paths::AutopilotRollHoldIntegratorLimited,
+      telemetry::paths::AutopilotRollHoldTrimRollCommand,
+      telemetry::paths::AutopilotRollHoldRateIntegratorPositiveLimit,
+      telemetry::paths::AutopilotRollHoldRateIntegratorNegativeLimit,
+  };
+  for (const std::string_view path : Px4DiagnosticPaths) {
+    Require(telemetry.Find(path) == nullptr,
+        "Non-PX4 Roll Hold published PX4 diagnostic telemetry");
+  }
 }
 
 void TestPx4RollHoldReferenceComputesBaselineCommand() {
@@ -1714,22 +1863,29 @@ void TestPx4RollHoldReferenceComputesBaselineCommand() {
       settings.trimAirspeedMps
       / std::max(properties.CalibratedAirspeed().Mps(),
           settings.stallAirspeedMps);
+  const double expectedProportionalTerm =
+      settings.rateProportionalGain * expectedRateError;
+  const double expectedIntegralTerm = 0.0;
+  const double expectedDerivativeTerm =
+      -settings.rateDerivativeGain * properties.P().DotRadPerSec2();
+  const double expectedFeedForwardTerm = settings.rateFeedForwardGain
+                                         / expectedAirspeedScale
+                                         * expectedRateSetpoint;
   const double expectedUnscaledTorque =
-      settings.rateProportionalGain * expectedRateError
-      - settings.rateDerivativeGain * properties.P().DotRadPerSec2()
-      + settings.rateFeedForwardGain / expectedAirspeedScale
-            * expectedRateSetpoint;
-  const double expectedTorque =
-      std::clamp((expectedUnscaledTorque + settings.trimRollCommand)
-                     * expectedAirspeedScale * expectedAirspeedScale,
-          -1.0,
-          1.0);
+      expectedProportionalTerm + expectedIntegralTerm + expectedDerivativeTerm
+      + expectedFeedForwardTerm;
+  const double expectedRawTorque =
+      (expectedUnscaledTorque + settings.trimRollCommand)
+      * expectedAirspeedScale * expectedAirspeedScale;
+  const double expectedTorque = std::clamp(expectedRawTorque, -1.0, 1.0);
 
   RequireNear(*command,
       expectedTorque,
       1.0e-9,
       "PX4 C172x aileron mapping mismatch");
   const auto &diagnostics = controller->GetDiagnostics();
+  Require(diagnostics.controlOutputValid,
+      "PX4 Roll Hold diagnostics did not mark its output valid");
   RequireNear(diagnostics.targetRollRad,
       targetRollRad,
       1.0e-9,
@@ -1742,10 +1898,50 @@ void TestPx4RollHoldReferenceComputesBaselineCommand() {
       expectedAirspeedScale,
       1.0e-9,
       "PX4 roll reference airspeed scaling mismatch");
+  RequireNear(diagnostics.rateProportionalTerm,
+      expectedProportionalTerm,
+      1.0e-9,
+      "PX4 roll reference proportional contribution mismatch");
+  RequireNear(diagnostics.rateIntegralTerm,
+      expectedIntegralTerm,
+      1.0e-9,
+      "PX4 roll reference integral contribution mismatch");
+  RequireNear(diagnostics.rateDerivativeTerm,
+      expectedDerivativeTerm,
+      1.0e-9,
+      "PX4 roll reference derivative contribution mismatch");
+  RequireNear(diagnostics.rateFeedForwardTerm,
+      expectedFeedForwardTerm,
+      1.0e-9,
+      "PX4 roll reference feed-forward contribution mismatch");
+  RequireNear(diagnostics.unscaledTorqueCommand,
+      expectedUnscaledTorque,
+      1.0e-9,
+      "PX4 roll reference unscaled torque mismatch");
+  RequireNear(diagnostics.rawTorqueCommand,
+      expectedRawTorque,
+      1.0e-9,
+      "PX4 roll reference raw torque mismatch");
+  RequireNear(diagnostics.rollTorqueCommand,
+      expectedTorque,
+      1.0e-9,
+      "PX4 roll reference saturated torque mismatch");
+  RequireNear(diagnostics.trimRollCommand,
+      settings.trimRollCommand,
+      1.0e-9,
+      "PX4 roll reference trim contribution mismatch");
+  Require(diagnostics.positiveSaturation == (expectedRawTorque > 1.0),
+      "PX4 roll reference positive saturation status mismatch");
+  Require(diagnostics.negativeSaturation == (expectedRawTorque < -1.0),
+      "PX4 roll reference negative saturation status mismatch");
+  Require(!diagnostics.integratorLimited,
+      "PX4 roll reference unexpectedly reported a limited integrator");
   Require(diagnostics.rateIntegrator != 0.0,
       "PX4 roll reference did not update its rate integrator");
 
   controller->Reset();
+  Require(!controller->GetDiagnostics().controlOutputValid,
+      "PX4 Roll Hold reset retained valid diagnostics");
   RequireNear(controller->GetDiagnostics().aileronCommand,
       0.0,
       1.0e-9,
@@ -1846,16 +2042,13 @@ void TestPx4BaselineRollHoldControlsAircraft() {
       "Disabling Baseline Roll Hold left its controller enabled");
 }
 
-void TestAutopilotModeAppliesAutopilotSourceOutput() {
+void TestAutopilotModeWithUnimplementedRollHoldPassesThrough() {
   sim::Simulation simulation(std::make_unique<gnc::MyAutopilot>());
   StartSimulation(simulation);
   auto &aircraft = simulation.GetAircraft();
   auto &flightControlManager = GetFlightControlManager(simulation);
   auto &manualController = flightControlManager.GetManualController();
   auto &autopilot = GetMyAutopilot(simulation);
-  const gnc::TrimResult *trimResult = simulation.GetTrimService().GetResult();
-
-  Require(trimResult != nullptr, "Autopilot mode test has no stored trim");
 
   manualController.SetCommandedInput({
       .elevator = 0.2,
@@ -1867,8 +2060,8 @@ void TestAutopilotModeAppliesAutopilotSourceOutput() {
   const auto &properties = aircraft.GetProperties();
   const gnc::RollHoldSettings rollSettings{
       .targetRollRad = properties.Roll().Rad() + 0.1,
-      .dampingRatio = 0.7,
-      .naturalFrequencyRadPerSec = 1.0,
+      .attitudeLoop = {.proportionalGain = 1.2},
+      .rateLoop = {.proportionalGain = 0.4},
   };
   autopilot.SetRollHoldSettings(rollSettings);
   autopilot.SetRollHoldEnabled(true);
@@ -1946,27 +2139,17 @@ void TestAutopilotModeAppliesAutopilotSourceOutput() {
       SimTimeTolerance,
       "Yaw dynamics B(R, DrCmd) mismatch");
 
-  const double rollBeforeTick = properties.Roll().Rad();
-  const double rollRateBeforeTick = properties.P().RadPerSec();
-
   Require(simulation.Tick(), "Autopilot mode tick failed");
 
-  const double expectedAileron =
-      control::ClampControlAxisValue(control::ControlAxis::Aileron,
-          trimResult->aileron
-              + ComputeRollProportionalGain(rollSettings, *rollDynamics)
-                    * (rollSettings.targetRollRad - rollBeforeTick)
-              - ComputeRollDerivativeGain(rollSettings, *rollDynamics)
-                    * rollRateBeforeTick);
   const control::ControlInput &actualInput = aircraft.GetControls().GetInput();
   RequireNear(actualInput.elevator,
       0.2,
       SimTimeTolerance,
       "Roll Hold should pass through manual elevator");
   RequireNear(actualInput.aileron,
-      expectedAileron,
+      -0.8,
       ControlCommandTolerance,
-      "Autopilot mode did not apply roll hold aileron");
+      "Unimplemented Roll Hold did not preserve manual aileron");
   RequireNear(actualInput.rudder,
       0.1,
       SimTimeTolerance,
@@ -1975,18 +2158,18 @@ void TestAutopilotModeAppliesAutopilotSourceOutput() {
       0.4,
       SimTimeTolerance,
       "Autopilot mode should pass through manual throttle");
+  const auto *rollHold = autopilot.GetController<gnc::RollHoldController>();
+  Require(rollHold != nullptr && !rollHold->GetDiagnostics().controlOutputValid,
+      "Unimplemented Roll Hold reported an active control output");
 }
 
-void TestRollHoldOnlyPassesThroughManualLongitudinalAxes() {
+void TestUnimplementedRollHoldPassesThroughManualInput() {
   sim::Simulation simulation(std::make_unique<gnc::MyAutopilot>());
   StartSimulation(simulation);
   auto &aircraft = simulation.GetAircraft();
   auto &flightControlManager = GetFlightControlManager(simulation);
   auto &manualController = flightControlManager.GetManualController();
   auto &autopilot = GetMyAutopilot(simulation);
-  const gnc::TrimResult *trimResult = simulation.GetTrimService().GetResult();
-
-  Require(trimResult != nullptr, "Roll hold pass-through test has no trim");
 
   manualController.SetCommandedInput({
       .elevator = 0.2,
@@ -1998,38 +2181,24 @@ void TestRollHoldOnlyPassesThroughManualLongitudinalAxes() {
   const auto &properties = aircraft.GetProperties();
   const gnc::RollHoldSettings rollSettings{
       .targetRollRad = properties.Roll().Rad() + 0.1,
-      .dampingRatio = 0.7,
-      .naturalFrequencyRadPerSec = 1.0,
+      .attitudeLoop = {.proportionalGain = 1.2},
+      .rateLoop = {.proportionalGain = 0.4},
   };
   autopilot.SetRollHoldSettings(rollSettings);
   autopilot.SetRollHoldEnabled(true);
   flightControlManager.SetMode(control::FlightControlMode::Autopilot);
 
-  WaitForAutopilotDynamics(simulation, autopilot);
-  const auto rollDynamics = autopilot.GetRollDynamics();
-  Require(rollDynamics.has_value(), "Autopilot did not provide roll dynamics");
-
-  const double rollBeforeTick = properties.Roll().Rad();
-  const double rollRateBeforeTick = properties.P().RadPerSec();
-
   Require(simulation.Tick(), "Roll hold pass-through tick failed");
 
-  const double expectedAileron =
-      control::ClampControlAxisValue(control::ControlAxis::Aileron,
-          trimResult->aileron
-              + ComputeRollProportionalGain(rollSettings, *rollDynamics)
-                    * (rollSettings.targetRollRad - rollBeforeTick)
-              - ComputeRollDerivativeGain(rollSettings, *rollDynamics)
-                    * rollRateBeforeTick);
   const control::ControlInput &actualInput = aircraft.GetControls().GetInput();
   RequireNear(actualInput.elevator,
       0.2,
       SimTimeTolerance,
       "Roll hold should pass through manual elevator");
   RequireNear(actualInput.aileron,
-      expectedAileron,
+      -0.8,
       ControlCommandTolerance,
-      "Roll hold did not apply aileron");
+      "Unimplemented Roll Hold did not pass through manual aileron");
   RequireNear(actualInput.rudder,
       0.1,
       SimTimeTolerance,
@@ -2327,11 +2496,12 @@ int main() {
     TestManualModeIgnoresAutopilotSource();
     TestAutomaticLinearizationToggle();
     TestLinearizationRunsInManualModeWithoutHolds();
-    TestRollHoldControllerComputesAileronCommand();
+    TestRollHoldControllerHasNoControlLaw();
+    TestUnimplementedPrimaryRollHoldPublishesNoControlTelemetry();
     TestPx4RollHoldReferenceComputesBaselineCommand();
     TestPx4BaselineRollHoldControlsAircraft();
-    TestAutopilotModeAppliesAutopilotSourceOutput();
-    TestRollHoldOnlyPassesThroughManualLongitudinalAxes();
+    TestAutopilotModeWithUnimplementedRollHoldPassesThrough();
+    TestUnimplementedRollHoldPassesThroughManualInput();
     TestFDMStateFlagOperations();
     TestFDMStateAndControlSynchronization();
     TestFDMPropulsionAndEnvironmentSynchronization();

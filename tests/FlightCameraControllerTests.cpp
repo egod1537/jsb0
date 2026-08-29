@@ -1,7 +1,7 @@
-#include "application/gui/viz/components/FlightCameraController.hpp"
-#include "application/gui/viz/FlightVisualizer.hpp"
+#include "flightui/visualization/components/FlightCameraController.hpp"
+#include "gui/features/flightviz/FlightVisualizer.hpp"
 
-#include "application/gui/viz/render/CameraComponent.hpp"
+#include "flightui/visualization/render/CameraComponent.hpp"
 
 #include <cassert>
 

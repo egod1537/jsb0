@@ -2,7 +2,9 @@
 
 #include "flightui/core/UIElementFactory.hpp"
 #include "flightui/core/UIRenderHelpers.hpp"
+#include "flightui/core/UIScale.hpp"
 
+#include <algorithm>
 #include <imgui.h>
 
 #include <utility>
@@ -32,6 +34,8 @@ public:
   SliderDoubleChangedAction OnChanged;
   std::string Format = "%.3f";
   float Width = 0.0F;
+  float TrailingWidth = 0.0F;
+  bool FillAvailableWidth = false;
   bool Enabled = true;
   ImGuiSliderFlags Flags = ImGuiSliderFlags_None;
   std::string Tooltip;
@@ -209,6 +213,14 @@ SliderDoubleBuilder &SliderDoubleBuilder::SetFormat(std::string format) {
 
 SliderDoubleBuilder &SliderDoubleBuilder::SetWidth(float width) {
   m_Impl->Width = width;
+  m_Impl->FillAvailableWidth = false;
+  return *this;
+}
+
+SliderDoubleBuilder &SliderDoubleBuilder::SetFillAvailableWidth(
+    float trailingWidth) {
+  m_Impl->TrailingWidth = std::max(0.0F, trailingWidth);
+  m_Impl->FillAvailableWidth = true;
   return *this;
 }
 
@@ -245,6 +257,11 @@ SliderDoubleBuilder &SliderDoubleBuilder::Width(float width) {
   return SetWidth(width);
 }
 
+SliderDoubleBuilder &SliderDoubleBuilder::FillAvailableWidth(
+    float trailingWidth) {
+  return SetFillAvailableWidth(trailingWidth);
+}
+
 SliderDoubleBuilder &SliderDoubleBuilder::Enabled(bool enabled) {
   return SetEnabled(enabled);
 }
@@ -266,7 +283,12 @@ SliderDoubleBuilder::operator UIElement() const {
   return CreateElement([state] {
     Internal::IdScope idScope(state.Id);
     Internal::DisabledScope disabledScope(!state.Enabled);
-    Internal::ItemWidthScope widthScope(state.Width);
+    const float width =
+        state.FillAvailableWidth
+            ? std::max(1.0F,
+                  ImGui::GetContentRegionAvail().x - Ui(state.TrailingWidth))
+            : state.Width;
+    Internal::ItemWidthScope widthScope(width);
     double value = state.Value;
     if (ImGui::SliderScalar(state.Label.c_str(), ImGuiDataType_Double, &value,
                             &state.Minimum, &state.Maximum,

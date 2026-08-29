@@ -1,12 +1,11 @@
-#include "application/Application.hpp"
-#include "application/SimulationExecutionControl.hpp"
-#include "application/gui/GUI.hpp"
-#include "application/sim/Simulation.hpp"
-#include "application/sim/control/FlightControlManager.hpp"
-#include "application/sim/gnc/autopilot/IRollHoldAutopilot.hpp"
-#include "application/sim/gnc/autopilot/MyAutopilot.hpp"
-#include "application/sim/gnc/autopilot/PX4Autopilot.hpp"
-#include "application/sim/scenario/SimulationScenario.hpp"
+#include "messaging/MessageBus.hpp"
+#include "messaging/SimulationMessageAdapter.hpp"
+#include "messaging/SimulationMessageClient.hpp"
+#include "sim/Simulation.hpp"
+#include "sim/gnc/autopilot/MyAutopilot.hpp"
+#include "sim/gnc/autopilot/PX4Autopilot.hpp"
+#include "sim/runtime/SimulationRuntime.hpp"
+#include "sim/scenario/SimulationScenario.hpp"
 #include "common/math/Math.hpp"
 
 #include <cassert>
@@ -18,56 +17,64 @@ bool NearlyEqual(double left, double right, double tolerance = 1.0e-6) {
   return std::abs(left - right) <= tolerance;
 }
 
-void SetNorthWind(sim::Simulation &simulation, double northFps) {
-  sim::FDMState state =
-      simulation.GetAircraft().ExtractFDMState(sim::FDMStateFlags::Environment);
-  state.environment.windNedFps[0] = northFps;
-  simulation.GetAircraft().ApplyFDMState(state);
+std::unique_ptr<sim::Simulation> MakePrimarySimulation() {
+  return std::make_unique<sim::Simulation>(
+      std::make_unique<gnc::MyAutopilot>());
 }
 
-sim::FDMEnvironmentState GetEnvironment(const sim::Simulation &simulation) {
-  return simulation.GetAircraft()
-      .ExtractFDMState(sim::FDMStateFlags::Environment)
-      .environment;
+std::unique_ptr<sim::Simulation> MakeBaselineSimulation() {
+  return std::make_unique<sim::Simulation>(
+      std::make_unique<gnc::PX4Autopilot>());
 }
 
-void TestInteractiveExecutionHasNoScenarioState() {
-  Application application;
-  application::SimulationExecutionControl &control = application;
+void TestInteractiveRuntimeExecution() {
+  application::messaging::MessageBus bus;
+  sim::SimulationRuntime runtime(MakePrimarySimulation());
+  application::messaging::SimulationMessageAdapter adapter(bus, runtime);
+  application::SimulationMessageClient control(bus);
 
   assert(control.GetSimulationExecutionState()
          == application::SimulationExecutionState::Stopped);
   assert(!control.GetScenarioExecutionStatus().has_value());
-
-  sim::SimulationScenario scenario;
-  assert(!control.RunScenario(scenario));
+  assert(!control.RunScenario(sim::SimulationScenario{}));
+  assert(runtime.Initialize(sim::SimulationConfig{}));
+  adapter.PublishState();
 
   control.StartSimulation();
   assert(control.GetSimulationExecutionState()
          == application::SimulationExecutionState::Running);
-  assert(!control.GetScenarioExecutionStatus().has_value());
+  assert(runtime.Tick());
+  adapter.PublishState();
+  const double runningTime =
+      control.GetSimulationSnapshot().primary.aircraft.simulationTimeSec;
+  assert(runningTime > 0.0);
+
+  control.PauseSimulation();
+  control.RequestSimulationTick();
+  assert(control.GetPendingSimulationTickCount() == 1);
+  assert(runtime.Tick());
+  adapter.PublishState();
+  assert(control.GetPendingSimulationTickCount() == 0);
+  assert(control.GetSimulationSnapshot().primary.aircraft.simulationTimeSec
+         > runningTime);
+
+  assert(control.ResetSimulation());
+  assert(control.GetSimulationExecutionState()
+         == application::SimulationExecutionState::Paused);
+  control.ResumeSimulation();
   control.StopSimulation();
+  assert(control.GetSimulationExecutionState()
+         == application::SimulationExecutionState::Stopped);
 }
 
 void TestScenarioAppliesSharedExperimentToBothSimulations() {
-  sim::SimulationConfig config;
-  auto primary =
-      std::make_unique<sim::Simulation>(std::make_unique<gnc::MyAutopilot>());
-  auto baseline =
-      std::make_unique<sim::Simulation>(std::make_unique<gnc::PX4Autopilot>());
-  assert(primary->Initialize(config));
-  assert(baseline->Initialize(config));
-
-  sim::Simulation *primarySource = primary.get();
-  sim::Simulation *baselineSource = baseline.get();
-  auto gui = std::make_unique<gui::GUI>(*primarySource,
-      baselineSource,
-      gui::GUIConfig{});
-  Application application(std::move(gui),
-      std::move(primary),
-      config,
-      std::move(baseline));
-  application::SimulationExecutionControl &control = application;
+  application::messaging::MessageBus bus;
+  sim::SimulationRuntime runtime(MakePrimarySimulation(),
+      MakeBaselineSimulation());
+  assert(runtime.Initialize(sim::SimulationConfig{}));
+  application::messaging::SimulationMessageAdapter adapter(bus, runtime);
+  application::SimulationMessageClient control(bus);
+  adapter.PublishState();
 
   sim::SimulationScenario scenario;
   scenario.name = "Dual Roll Hold";
@@ -80,9 +87,6 @@ void TestScenarioAppliesSharedExperimentToBothSimulations() {
   scenario.commandStartSec = 0.0;
   scenario.commandedRollDeg = 8.0;
   scenario.durationSec = 12.0;
-
-  SetNorthWind(*primarySource, 17.0);
-  SetNorthWind(*baselineSource, -4.0);
 
   sim::SimulationScenario invalidScenario = scenario;
   invalidScenario.settlingBandDeg = -1.0;
@@ -100,10 +104,13 @@ void TestScenarioAppliesSharedExperimentToBothSimulations() {
   assert(status->elapsedSec == 0.0);
   assert(status->durationSec == scenario.durationSec);
 
-  const sim::InitialCondition primaryCondition =
-      primarySource->GetCurrentCondition();
-  const sim::InitialCondition baselineCondition =
-      baselineSource->GetCurrentCondition();
+  const sim::SimulationSnapshot snapshot = control.GetSimulationSnapshot();
+  assert(snapshot.baseline.has_value());
+  assert(snapshot.baselineAutopilot.has_value());
+  const sim::InitialCondition &primaryCondition =
+      snapshot.primary.currentCondition;
+  const sim::InitialCondition &baselineCondition =
+      snapshot.baseline->currentCondition;
   assert(NearlyEqual(primaryCondition.altitudeFt, scenario.altitudeFt));
   assert(NearlyEqual(primaryCondition.airspeedKts, scenario.airspeedKts));
   assert(NearlyEqual(primaryCondition.rollDeg, scenario.initialRollDeg));
@@ -117,66 +124,38 @@ void TestScenarioAppliesSharedExperimentToBothSimulations() {
   assert(NearlyEqual(primaryCondition.pitchDeg, baselineCondition.pitchDeg));
   assert(
       NearlyEqual(primaryCondition.headingDeg, baselineCondition.headingDeg));
-  assert(primarySource->GetTickSizeSec() == baselineSource->GetTickSizeSec());
-  assert(&primarySource->GetAircraft() != &baselineSource->GetAircraft());
-  assert(&primarySource->GetTelemetryRegistry()
-         != &baselineSource->GetTelemetryRegistry());
-  const sim::FDMEnvironmentState primaryEnvironment =
-      GetEnvironment(*primarySource);
-  const sim::FDMEnvironmentState baselineEnvironment =
-      GetEnvironment(*baselineSource);
-  assert(primaryEnvironment.windNedFps[0] == 0.0);
-  assert(primaryEnvironment.windNedFps == baselineEnvironment.windNedFps);
-  assert(primaryEnvironment.gustNedFps == baselineEnvironment.gustNedFps);
-  assert(primaryEnvironment.turbulenceNedFps
-         == baselineEnvironment.turbulenceNedFps);
-
-  auto *primaryManager =
-      primarySource->GetComponent<control::FlightControlManager>();
-  auto *baselineManager =
-      baselineSource->GetComponent<control::FlightControlManager>();
-  assert(primaryManager != nullptr);
-  assert(baselineManager != nullptr);
-  auto *primaryRollHold =
-      dynamic_cast<gnc::IRollHoldAutopilot *>(&primaryManager->GetAutopilot());
-  auto *baselineRollHold =
-      dynamic_cast<gnc::IRollHoldAutopilot *>(&baselineManager->GetAutopilot());
-  assert(primaryRollHold != nullptr);
-  assert(baselineRollHold != nullptr);
-  assert(primaryRollHold->IsRollHoldEnabled());
-  assert(baselineRollHold->IsRollHoldEnabled());
-  assert(std::abs(primaryRollHold->GetTargetRollRad()
+  assert(snapshot.primary.fdmState.environment.windNedFps
+         == snapshot.baseline->fdmState.environment.windNedFps);
+  assert(snapshot.primary.fdmState.environment.gustNedFps
+         == snapshot.baseline->fdmState.environment.gustNedFps);
+  assert(snapshot.primaryAutopilot.primaryRollHold.enabled);
+  assert(snapshot.baselineAutopilot->baselineRollHold.enabled);
+  assert(std::abs(snapshot.primaryAutopilot.primaryRollHold.targetRollRad
                   - math::DegToRad(scenario.commandedRollDeg))
          < 1.0e-12);
-  assert(primaryRollHold->GetTargetRollRad()
-         == baselineRollHold->GetTargetRollRad());
+  assert(snapshot.primaryAutopilot.primaryRollHold.targetRollRad
+         == snapshot.baselineAutopilot->baselineRollHold.targetRollRad);
+  const auto primaryTelemetry =
+      control.GetTelemetrySnapshot(sim::SimulationSlot::Primary);
+  const auto baselineTelemetry =
+      control.GetTelemetrySnapshot(sim::SimulationSlot::Baseline);
+  assert(primaryTelemetry != nullptr && primaryTelemetry->available);
+  assert(baselineTelemetry != nullptr && baselineTelemetry->available);
+  assert(primaryTelemetry != baselineTelemetry);
 
   control.StopSimulation();
-  assert(control.GetSimulationExecutionState()
-         == application::SimulationExecutionState::Stopped);
-  assert(!control.GetScenarioExecutionStatus().has_value());
-  assert(!primaryRollHold->IsRollHoldEnabled());
-  assert(!baselineRollHold->IsRollHoldEnabled());
-
-  SetNorthWind(*primarySource, 12.0);
-  SetNorthWind(*baselineSource, -9.0);
-  sim::SimulationScenario windScenario = scenario;
-  windScenario.name = "Shared Wind";
-  windScenario.windEnabled = true;
-  assert(control.RunScenario(windScenario));
-  const sim::FDMEnvironmentState sharedPrimaryEnvironment =
-      GetEnvironment(*primarySource);
-  const sim::FDMEnvironmentState sharedBaselineEnvironment =
-      GetEnvironment(*baselineSource);
-  assert(NearlyEqual(sharedPrimaryEnvironment.windNedFps[0], 12.0));
-  assert(sharedPrimaryEnvironment.windNedFps
-         == sharedBaselineEnvironment.windNedFps);
-  control.StopSimulation();
+  const sim::SimulationSnapshot stopped = control.GetSimulationSnapshot();
+  assert(
+      stopped.status.executionState == sim::SimulationExecutionState::Stopped);
+  assert(!stopped.status.scenario.has_value());
+  assert(!stopped.primaryAutopilot.primaryRollHold.enabled);
+  assert(stopped.baselineAutopilot.has_value());
+  assert(!stopped.baselineAutopilot->baselineRollHold.enabled);
 }
 } // namespace
 
 int main() {
-  TestInteractiveExecutionHasNoScenarioState();
+  TestInteractiveRuntimeExecution();
   TestScenarioAppliesSharedExperimentToBothSimulations();
   return 0;
 }

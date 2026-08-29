@@ -68,6 +68,50 @@ static_assert(requires {
   UI::SliderFloat("Value", 0.5F, 0.0F, 1.0F).OnChanged([](float) {});
   UI::SliderDouble("Value", 0.5, 0.0, 1.0).OnChanged([](double) {});
   UI::SliderInt("Value", 5, 0, 10).OnChanged([](int) {});
+  UI::SliderDouble("Value", 0.5, 0.0, 1.0).FillAvailableWidth(96.0F);
+  UI::ScalarEditor("Gain", 0.5)
+      .Range(0.0, 1.0)
+      .Step(0.01)
+      .FastStep(0.1)
+      .Format("%.2f")
+      .ShowSlider()
+      .ShowInput()
+      .ShowStepper()
+      .Enabled(true)
+      .Tooltip("Gain")
+      .OnChanged([](double) {});
+  UI::PropertyTable("Properties")
+      .LabelWidth(112.0F)
+      .ColumnSpacing(4.0F)
+      .RowPadding(2.0F)
+      .AlternatingRows()
+      .Enabled(true)
+      .Visible(true)
+      .Tooltip("Property values")
+      .Add("Gain", UI::Text("0.50"));
+  UI::PropertyGrid("Responsive Properties")
+      .LabelWidthRatio(0.4F)
+      .MinimumLabelWidth(100.0F)
+      .MaximumLabelWidth(180.0F)
+      .SingleColumnThreshold(320.0F)
+      .AlternatingRows()
+      .Add(UI::PropertyRow("Gain").Tooltip("Gain value")[UI::Text("0.50")]);
+  UI::Toolbar()
+      .Id("Tools")
+      .Compact()
+      .Height(28.0F)
+      .Left(UI::Text("Tools"))
+      .Right(UI::Button("Action"));
+  UI::IconButton("Icon", ImTextureID_Invalid)
+      .FallbackText("I")
+      .Size(22.0F)
+      .Selected()
+      .Enabled(true)
+      .Tooltip("Icon action")
+      .OnAction([] {});
+  UI::ToggleIconButton("ToggleIcon", ImTextureID_Invalid, true)
+      .OnChanged([](bool) {});
+  UI::StatusBadge("Ready", UI::StatusTone::Success);
 });
 static_assert(requires(bool isOpen) {
   UI::FoldOut("Advanced")
@@ -92,11 +136,33 @@ static_assert(requires(bool isOpen) {
               .Visible(true)
               .Tooltip("Controls")
               .Id("controls")[UI::Text("Controls")]];
+  UI::ToggleFoldOut("Enabled Section", true)
+      .Open(isOpen)
+      .DefaultOpen()
+      .Section()
+      .ToggleEnabled(true)
+      .Visible(true)
+      .Tooltip("Section")
+      .Id("enabled-section")
+      .OnChanged([](bool) {})[UI::Text("Content")];
 });
 
 int main() {
   constexpr float ScaleTolerance = 0.0001F;
   constexpr double RangeTolerance = 1.0e-9;
+
+  assert(UI::ResolvePropertyGridLayout(319.0F, 320.0F)
+         == UI::PropertyGridLayout::SingleColumn);
+  assert(UI::ResolvePropertyGridLayout(320.0F, 320.0F)
+         == UI::PropertyGridLayout::TwoColumns);
+  assert(!UI::IsAlternatePropertyRow(0));
+  assert(UI::IsAlternatePropertyRow(1));
+  assert(UI::NormalizeScalarEditorValue(0.5, 0.0, 1.0) == 0.5);
+  assert(UI::NormalizeScalarEditorValue(-1.0, 0.0, 1.0) == 0.0);
+  assert(UI::NormalizeScalarEditorValue(2.0, 0.0, 1.0) == 1.0);
+  assert(!UI::NormalizeScalarEditorValue(
+              std::numeric_limits<double>::quiet_NaN(), 0.0, 1.0)
+              .has_value());
 
   const auto constantPositiveRange = UI::ExpandYAxisRange(2.0, 2.0);
   assert(constantPositiveRange.has_value());
@@ -215,6 +281,22 @@ int main() {
          < darkEditorStyle.Colors[ImGuiCol_ButtonHovered].x);
   assert(darkEditorStyle.Colors[ImGuiCol_TabSelected].x
          > darkEditorStyle.Colors[ImGuiCol_Tab].x);
+  const ImVec4 propertyRowBackground =
+      UI::GetThemeColor(UI::ThemeColor::PropertyRowBackground);
+  const ImVec4 propertyRowBackgroundAlternate =
+      UI::GetThemeColor(UI::ThemeColor::PropertyRowBackgroundAlternate);
+  assert(propertyRowBackground.w == 0.0F);
+  assert(propertyRowBackgroundAlternate.w > propertyRowBackground.w);
+  assert(propertyRowBackgroundAlternate.w < 0.3F);
+  const UI::StatusBadgeStyle neutralBadge =
+      UI::GetStatusBadgeStyle(UI::StatusTone::Neutral);
+  const UI::StatusBadgeStyle successBadge =
+      UI::GetStatusBadgeStyle(UI::StatusTone::Success);
+  const UI::StatusBadgeStyle errorBadge =
+      UI::GetStatusBadgeStyle(UI::StatusTone::Error);
+  assert(neutralBadge.Background.w > 0.0F);
+  assert(successBadge.Text.y > successBadge.Text.x);
+  assert(errorBadge.Text.x > errorBadge.Text.y);
   assert(darkEditorPlotStyle.Colors[ImPlotCol_PlotBg].x
          < darkEditorPlotStyle.Colors[ImPlotCol_FrameBg].x);
   assert(darkEditorPlotStyle.Colors[ImPlotCol_AxisGrid].w < 0.25F);
@@ -290,6 +372,13 @@ int main() {
               UI::Button("Reset")
                   .OnAction([&clicks] { ++clicks; })
                   .Width(80.0F),
+              UI::PropertyTable("Test Properties")
+                  .LabelWidth(112.0F)
+                  .AlternatingRows()
+                  .Add("Throttle",
+                      UI::SliderDouble("##PropertyThrottle", throttle, 0.0, 1.0)
+                          .FillAvailableWidth()),
+              UI::StatusBadge("Ready", UI::StatusTone::Success),
               UI::Custom([] { ImGui::TextUnformatted("Custom"); }),
           })],
           UI::TabGroup("Telemetry Tabs")
@@ -365,8 +454,6 @@ int main() {
   bool controllerOpen = true;
   bool controllerEnabled = false;
   ImVec2 controllerHeaderMinimum{};
-  ImVec2 controllerToggleMinimum{};
-  ImVec2 controllerToggleMaximum{};
   const auto renderControllerHeaderFrame = [&] {
     ImGui::NewFrame();
     ImGui::SetNextWindowPos(ImVec2(20.0F, 20.0F), ImGuiCond_Always);
@@ -375,19 +462,13 @@ int main() {
         nullptr,
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse);
     controllerHeaderMinimum = ImGui::GetCursorScreenPos();
-    UI::FoldOut("Roll Hold")
+    UI::ToggleFoldOut("Roll Hold", controllerEnabled)
         .Open(controllerOpen)
         .DefaultOpen()
-        .Framed()
-        .SpanAvailWidth()
         .Id("ControllerHeaderInteraction")
-        .HeaderLeft(
-            UI::Custom([&] {
-              ImGui::Checkbox("##Enabled", &controllerEnabled);
-              controllerToggleMinimum = ImGui::GetItemRectMin();
-              controllerToggleMaximum = ImGui::GetItemRectMax();
-            }),
-            18.0F)[UI::Text("Controller settings")]
+        .OnChanged([&controllerEnabled](bool enabledValue) {
+          controllerEnabled = enabledValue;
+        })[UI::Text("Controller settings")]
         .Render();
     ImGui::End();
     ImGui::Render();
@@ -395,9 +476,10 @@ int main() {
 
   io.AddMousePosEvent(-1000.0F, -1000.0F);
   renderControllerHeaderFrame();
-  const ImVec2 toggleCenter{
-      (controllerToggleMinimum.x + controllerToggleMaximum.x) * 0.5F,
-      (controllerToggleMinimum.y + controllerToggleMaximum.y) * 0.5F};
+  const ImVec2 toggleCenter{controllerHeaderMinimum.x
+          + ImGui::GetTreeNodeToLabelSpacing()
+          + ImGui::GetFrameHeight() * 0.5F,
+      controllerHeaderMinimum.y + ImGui::GetFrameHeight() * 0.5F};
   io.AddMousePosEvent(toggleCenter.x, toggleCenter.y);
   renderControllerHeaderFrame();
   io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
@@ -418,6 +500,32 @@ int main() {
   assert(controllerEnabled);
   assert(!controllerOpen);
   io.AddMousePosEvent(-1000.0F, -1000.0F);
+
+  ImVec2 toolbarButtonMinimum{};
+  ImVec2 toolbarButtonMaximum{};
+  const auto renderToolbarFrame = [&] {
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(20.0F, 20.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(420.0F, 120.0F), ImGuiCond_Always);
+    ImGui::Begin("Toolbar Alignment Test",
+        nullptr,
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse);
+    UI::Toolbar()
+        .Id("Alignment")
+        .AlignRight()
+        .Height(28.0F)[UI::Custom([&] {
+          ImGui::Button("Action", ImVec2(54.0F, 0.0F));
+          toolbarButtonMinimum = ImGui::GetItemRectMin();
+          toolbarButtonMaximum = ImGui::GetItemRectMax();
+        })]
+        .Render();
+    ImGui::End();
+    ImGui::Render();
+  };
+  renderToolbarFrame();
+  renderToolbarFrame();
+  assert(toolbarButtonMinimum.x > 350.0F);
+  assert(toolbarButtonMaximum.x < 440.0F);
 
   const std::vector<double> focusedNearValues{0.0, 1.0, 0.5};
   const std::vector<double> focusedFarValues{100.0, 200.0, 150.0};

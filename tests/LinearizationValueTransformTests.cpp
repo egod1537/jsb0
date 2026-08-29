@@ -1,4 +1,4 @@
-#include "application/gui/windows/LinearizationValueTransform.hpp"
+#include "gui/windows/LinearizationValueTransform.hpp"
 
 #include <cassert>
 #include <cmath>

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsb0.dev/contract/v1/run.schema.json",
+  "title": "JSB0 Run Metadata v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "runtime",
+    "scenario",
+    "telemetry_schema_version",
+    "aircraft",
+    "autopilot",
+    "started_at",
+    "duration_s",
+    "status"
+  ],
+  "properties": {
+    "contract_version": {"const": "1.0.0"},
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "commit", "application_version"],
+      "properties": {
+        "branch": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "minLength": 1},
+        "application_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "file", "schema_version", "scenario_type"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "file": {"type": "string"},
+        "schema_version": {"const": 1},
+        "scenario_type": {"const": "roll_hold"}
+      }
+    },
+    "telemetry_schema_version": {"const": 1},
+    "aircraft": {"const": "c172x"},
+    "autopilot": {"type": "string", "enum": ["primary", "baseline"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "duration_s": {"type": "number", "minimum": 0},
+    "status": {"type": "string", "enum": ["completed", "failed", "interrupted"]},
+    "simulation_dt_s": {"type": "number", "exclusiveMinimum": 0},
+    "simulation_time_s": {"type": "number", "minimum": 0},
+    "wall_time_s": {"type": "number", "minimum": 0},
+    "realtime_factor": {"type": "number", "minimum": 0},
+    "steps": {"type": "integer", "minimum": 0},
+    "error": {"type": "string"}
+  }
+}

@@ -1,7 +1,7 @@
-#include "application/gui/layout/EditorLayoutFileSerializer.hpp"
-#include "application/gui/layout/EditorLayoutManager.hpp"
-#include "application/gui/layout/EditorWindowStateSettings.hpp"
-#include "application/gui/Window.hpp"
+#include "gui/layout/EditorLayoutFileSerializer.hpp"
+#include "gui/layout/EditorLayoutManager.hpp"
+#include "gui/layout/EditorWindowStateSettings.hpp"
+#include "gui/Window.hpp"
 
 #include <imgui.h>
 
@@ -21,7 +21,7 @@ public:
       : Window(std::move(title), {}, std::move(id)) {}
 
 private:
-  void OnRender(gui::GUI &) override {}
+  void OnRender(const sim::SimulationSnapshot &) override {}
 };
 
 class FakeLayoutBackend final : public gui::IEditorLayoutBackend {

@@ -66,6 +66,7 @@ public:
   SliderDoubleBuilder &SetOnChanged(SliderDoubleChangedAction onChanged);
   SliderDoubleBuilder &SetFormat(std::string format);
   SliderDoubleBuilder &SetWidth(float width);
+  SliderDoubleBuilder &SetFillAvailableWidth(float trailingWidth = 0.0F);
   SliderDoubleBuilder &SetEnabled(bool enabled);
   SliderDoubleBuilder &SetFlags(ImGuiSliderFlags flags);
   SliderDoubleBuilder &SetTooltip(std::string tooltip);
@@ -75,6 +76,7 @@ public:
   SliderDoubleBuilder &OnChanged(SliderDoubleChangedAction onChanged);
   SliderDoubleBuilder &Format(std::string format);
   SliderDoubleBuilder &Width(float width);
+  SliderDoubleBuilder &FillAvailableWidth(float trailingWidth = 0.0F);
   SliderDoubleBuilder &Enabled(bool enabled);
   SliderDoubleBuilder &Flags(ImGuiSliderFlags flags);
   SliderDoubleBuilder &Tooltip(std::string tooltip);

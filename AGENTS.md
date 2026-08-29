@@ -6,7 +6,7 @@
 
 ## Header Organization
 
-- Use `src/application/sim/Simulation.hpp` as the reference style for non-trivial class headers.
+- Use `src/sim/Simulation.hpp` as the reference style for non-trivial class headers.
 - Group related public APIs with short semantic comments.
 - Group private helper methods by responsibility.
 - Group member variables by role or domain, such as configuration, runtime state, control, dependencies, and cached data.

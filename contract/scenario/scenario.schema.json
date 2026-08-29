@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsb0.dev/contract/v1/scenario.schema.json",
+  "title": "JSB0 Roll Hold Scenario v1",
+  "description": "Executable JSB0 roll-hold scenario. Numeric units are encoded in field names.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_type",
+    "name",
+    "aircraft",
+    "autopilot",
+    "initial_condition",
+    "environment",
+    "trim",
+    "simulation",
+    "command",
+    "acceptance"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Scenario schema major version."
+    },
+    "scenario_type": {
+      "const": "roll_hold",
+      "description": "Runtime scenario capability. v1 supports roll_hold only."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aircraft": {
+      "const": "c172x",
+      "description": "JSBSim aircraft model supported by this runtime."
+    },
+    "autopilot": {
+      "type": "string",
+      "enum": ["primary", "baseline"]
+    },
+    "initial_condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["altitude_ft", "airspeed_kts", "roll_deg", "pitch_deg", "heading_deg"],
+      "properties": {
+        "altitude_ft": {"type": "number"},
+        "airspeed_kts": {"type": "number", "minimum": 0},
+        "roll_deg": {"type": "number"},
+        "pitch_deg": {"type": "number"},
+        "heading_deg": {"type": "number"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wind_enabled"],
+      "properties": {
+        "wind_enabled": {"type": "boolean"}
+      }
+    },
+    "trim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "mode"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "mode": {"type": "string", "enum": ["Longitudinal", "Full", "Ground"]}
+      }
+    },
+    "simulation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_sec"],
+      "properties": {
+        "duration_sec": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_sec", "roll_deg"],
+      "properties": {
+        "start_sec": {"type": "number", "minimum": 0},
+        "roll_deg": {"type": "number"}
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settling_band_deg", "settling_time_limit_sec", "overshoot_limit_deg", "max_oscillation_cycles"],
+      "properties": {
+        "settling_band_deg": {"type": "number", "minimum": 0},
+        "settling_time_limit_sec": {"type": "number", "minimum": 0},
+        "overshoot_limit_deg": {"type": "number", "minimum": 0},
+        "max_oscillation_cycles": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-#include "application/telemetry/TelemetryRegistry.hpp"
+#include "sim/telemetry/TelemetryRegistry.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -137,6 +137,30 @@ void TestRegistryInspectionAndClear() {
   Require(!telemetry.GetPublishedTimeRange().has_value(),
       "Registry clear retained the published time range");
 }
+
+void TestRegistryCreatesImmutableTransportContracts() {
+  telemetry::TelemetryRegistry telemetry;
+  telemetry.Publish("aircraft/rates/r", 1.0, 10.0);
+  telemetry.Publish("aircraft/attitude/roll", 1.0, 20.0);
+  telemetry.Publish("aircraft/rates/r", 2.0, 30.0);
+
+  const telemetry::TelemetryFrame frame = telemetry.CaptureLatestFrame();
+  Require(frame.available && frame.sequence == telemetry.GetVersion(),
+      "Latest telemetry frame did not retain registry identity");
+  Require(frame.timestamp == 2.0 && frame.values.size() == 2,
+      "Latest telemetry frame had incorrect bounds or values");
+
+  const telemetry::TelemetrySnapshot snapshot = telemetry.CaptureSnapshot();
+  Require(snapshot.available && snapshot.series.size() == 2,
+      "Telemetry snapshot did not capture all channels");
+  const telemetry::TelemetrySeries *rates = snapshot.Find("aircraft/rates/r");
+  Require(rates != nullptr && rates->samples.size() == 2,
+      "Telemetry snapshot did not capture channel history");
+
+  telemetry.Clear();
+  Require(rates->samples.size() == 2,
+      "Captured telemetry contract changed with its source registry");
+}
 } // namespace
 
 int main() {
@@ -146,6 +170,7 @@ int main() {
     TestArchivedHistoryCanBeReadWithoutGrowingMemory();
     TestClosestSampleSearchIncludesArchivedHistory();
     TestRegistryInspectionAndClear();
+    TestRegistryCreatesImmutableTransportContracts();
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';
     return 1;

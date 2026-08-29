@@ -1,0 +1,31 @@
+schema_version: 1
+scenario_type: roll_hold
+name: Missing Autopilot
+aircraft: c172x
+
+initial_condition:
+  altitude_ft: 3000
+  airspeed_kts: 100
+  roll_deg: 0
+  pitch_deg: 0
+  heading_deg: 0
+
+environment:
+  wind_enabled: false
+
+trim:
+  enabled: false
+  mode: Full
+
+simulation:
+  duration_sec: 1
+
+command:
+  start_sec: 0
+  roll_deg: 5
+
+acceptance:
+  settling_band_deg: 1
+  settling_time_limit_sec: 1
+  overshoot_limit_deg: 1
+  max_oscillation_cycles: 1

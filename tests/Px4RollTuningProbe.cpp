@@ -1,8 +1,8 @@
-#include "application/sim/Simulation.hpp"
-#include "application/sim/control/FlightControlManager.hpp"
-#include "application/sim/control/FlightControlMode.hpp"
-#include "application/sim/gnc/autopilot/PX4Autopilot.hpp"
-#include "application/sim/gnc/hold/Px4RollHoldReferenceController.hpp"
+#include "sim/Simulation.hpp"
+#include "sim/control/FlightControlManager.hpp"
+#include "sim/control/FlightControlMode.hpp"
+#include "sim/gnc/autopilot/PX4Autopilot.hpp"
+#include "sim/gnc/hold/Px4RollHoldReferenceController.hpp"
 #include "common/math/Math.hpp"
 
 #include <algorithm>

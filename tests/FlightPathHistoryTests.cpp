@@ -1,4 +1,4 @@
-#include "application/gui/viz/core/FlightPathHistory.hpp"
+#include "flightui/visualization/core/FlightPathHistory.hpp"
 
 #include <cmath>
 #include <iostream>

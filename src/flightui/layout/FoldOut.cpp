@@ -1,5 +1,6 @@
 #include "flightui/layout/FoldOut.hpp"
 
+#include "flightui/core/Theme.hpp"
 #include "flightui/core/UIElementFactory.hpp"
 #include "flightui/core/UIRenderHelpers.hpp"
 #include "flightui/core/UIScale.hpp"
@@ -16,6 +17,7 @@ public:
   bool *Open = nullptr;
   bool DefaultOpen = false;
   ImGuiTreeNodeFlags Flags = ImGuiTreeNodeFlags_None;
+  FoldOutVariant Variant = FoldOutVariant::Default;
   bool Enabled = true;
   bool Visible = true;
   std::string Tooltip;
@@ -105,6 +107,15 @@ FoldOutBuilder &FoldOutBuilder::SetSpanAvailWidth(bool enabled) {
   return *this;
 }
 
+FoldOutBuilder &FoldOutBuilder::SetVariant(FoldOutVariant variant) {
+  m_Impl->Variant = variant;
+  if (variant == FoldOutVariant::Section) {
+    SetFramed();
+    SetSpanAvailWidth();
+  }
+  return *this;
+}
+
 FoldOutBuilder &FoldOutBuilder::SetEnabled(bool enabled) {
   m_Impl->Enabled = enabled;
   return *this;
@@ -155,6 +166,14 @@ FoldOutBuilder &FoldOutBuilder::Framed(bool enabled) {
 
 FoldOutBuilder &FoldOutBuilder::SpanAvailWidth(bool enabled) {
   return SetSpanAvailWidth(enabled);
+}
+
+FoldOutBuilder &FoldOutBuilder::Variant(FoldOutVariant variant) {
+  return SetVariant(variant);
+}
+
+FoldOutBuilder &FoldOutBuilder::Section() {
+  return SetVariant(FoldOutVariant::Section);
 }
 
 FoldOutBuilder &FoldOutBuilder::Enabled(bool enabled) {
@@ -215,7 +234,19 @@ UIElement FoldOutBuilder::operator[](Children children) const {
     if (hasHeaderLeft || hasHeaderRight) {
       ImGui::SetNextItemAllowOverlap();
     }
+    const bool isSection = state.Variant == FoldOutVariant::Section;
+    if (isSection) {
+      ImGui::PushStyleColor(ImGuiCol_Header,
+          GetThemeColor(ThemeColor::FoldOutSectionBackground));
+      ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
+          GetThemeColor(ThemeColor::FoldOutSectionBackgroundHovered));
+      ImGui::PushStyleColor(ImGuiCol_HeaderActive,
+          GetThemeColor(ThemeColor::FoldOutSectionBackgroundActive));
+    }
     const bool isOpen = ImGui::TreeNodeEx(label.c_str(), state.Flags);
+    if (isSection) {
+      ImGui::PopStyleColor(3);
+    }
 
     Internal::ShowTooltipIfHovered(state.Tooltip);
 

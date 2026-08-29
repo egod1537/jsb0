@@ -7,7 +7,10 @@ add_library(flightui STATIC
   layout/Window.cpp
   layout/Panel.cpp
   layout/FoldOut.cpp
+  layout/ToggleFoldOut.cpp
   layout/KeyValueGrid.cpp
+  layout/PropertyTable.cpp
+  layout/Toolbar.cpp
   layout/TabGroup.cpp
   layout/VerticalLayout.cpp
   layout/HorizontalLayout.cpp
@@ -20,12 +23,26 @@ add_library(flightui STATIC
   controls/Toggle.cpp
   controls/Input.cpp
   controls/Slider.cpp
+  controls/ScalarEditor.cpp
+  controls/IconButton.cpp
+  controls/StatusBadge.cpp
   controls/Separator.cpp
   controls/Space.cpp
   controls/Custom.cpp
   latex/LatexRenderer.cpp
   plot/DataView.cpp
   plot/Plot.cpp
+  visualization/core/Component.cpp
+  visualization/core/FlightPathHistory.cpp
+  visualization/core/GameObject.cpp
+  visualization/core/Scene.cpp
+  visualization/render/CameraComponent.cpp
+  visualization/render/LineCanvas.cpp
+  visualization/components/GroundGridRenderer.cpp
+  visualization/components/AltitudeCueRenderer.cpp
+  visualization/components/FlightCameraController.cpp
+  visualization/components/AircraftWireframeRenderer.cpp
+  visualization/components/TelemetryOverlay.cpp
 )
 
 target_compile_features(flightui PUBLIC
@@ -41,6 +58,7 @@ target_include_directories(flightui PUBLIC
 )
 
 target_link_libraries(flightui PUBLIC
+  jsb_common
   imgui
   implot
 )

@@ -1,4 +1,4 @@
-#include "application/gui/resources/EditorIconRegistry.hpp"
+#include "gui/resources/EditorIconRegistry.hpp"
 
 #include <cassert>
 

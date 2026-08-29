@@ -1,0 +1,25 @@
+{
+  "contract_version": "1.0.0",
+  "runtime": {
+    "branch": "backend",
+    "commit": "b8c20b27d3d6",
+    "application_version": "0.1.0"
+  },
+  "scenario": {
+    "name": "Contract Roll Hold 5deg",
+    "file": "contract/examples/scenario/roll_hold.yaml",
+    "schema_version": 1,
+    "scenario_type": "roll_hold"
+  },
+  "telemetry_schema_version": 1,
+  "aircraft": "c172x",
+  "autopilot": "baseline",
+  "started_at": "2026-01-01T00:00:00Z",
+  "duration_s": 0.1,
+  "status": "completed",
+  "simulation_dt_s": 0.01,
+  "simulation_time_s": 0.1,
+  "wall_time_s": 1.0,
+  "realtime_factor": 0.1,
+  "steps": 10
+}

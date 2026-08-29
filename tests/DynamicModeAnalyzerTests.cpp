@@ -1,6 +1,6 @@
-#include "application/sim/linearizer/DynamicModeAnalyzer.hpp"
-#include "application/sim/linearizer/DynamicModeHistory.hpp"
-#include "application/sim/linearizer/LinearizationResult.hpp"
+#include "sim/linearization/DynamicModeAnalyzer.hpp"
+#include "sim/linearization/DynamicModeHistory.hpp"
+#include "sim/linearization/LinearizationResult.hpp"
 
 #include <Eigen/Dense>
 

@@ -1,6 +1,6 @@
-#include "application/gui/windows/ScenarioWindow.hpp"
-#include "application/sim/scenario/SimulationScenario.hpp"
-#include "application/sim/scenario/SimulationScenarioSerializer.hpp"
+#include "gui/windows/ScenarioWindow.hpp"
+#include "sim/scenario/SimulationScenario.hpp"
+#include "sim/scenario/SimulationScenarioSerializer.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -112,7 +112,11 @@ void TestInvalidYamlIsTransactional() {
   std::string error;
 
   const std::string missingFieldYaml = R"(
+schema_version: 1
+scenario_type: roll_hold
 name: Missing Acceptance
+aircraft: c172x
+autopilot: primary
 initial_condition:
   altitude_ft: 3000
   airspeed_kts: 100

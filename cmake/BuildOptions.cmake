@@ -3,6 +3,11 @@ option(JSB_ENABLE_UNITY_BUILD
   OFF
 )
 
+option(JSB_BUILD_EDITOR
+  "Build the interactive FlightUI editor"
+  ON
+)
+
 if(NOT DEFINED CMAKE_CXX_COMPILER_LAUNCHER)
   find_program(CCACHE_EXECUTABLE ccache)
   if(CCACHE_EXECUTABLE)

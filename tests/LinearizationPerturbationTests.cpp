@@ -1,5 +1,5 @@
-#include "application/sim/FDMState.hpp"
-#include "application/sim/linearizer/LinearizationPerturbation.hpp"
+#include "sim/FDMState.hpp"
+#include "sim/linearization/LinearizationPerturbation.hpp"
 
 #include <cmath>
 #include <iostream>

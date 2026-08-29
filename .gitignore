@@ -1,5 +1,6 @@
 # CMake build outputs
 /build/
+/build-headless*/
 
 # Downloaded/runtime dependencies
 /.deps/

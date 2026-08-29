@@ -8,6 +8,11 @@
 #include <string>
 
 namespace FlightUI {
+enum class FoldOutVariant {
+  Default,
+  Section,
+};
+
 class FoldOutBuilder {
 public:
   // Lifetime
@@ -24,6 +29,7 @@ public:
   FoldOutBuilder &SetFlags(ImGuiTreeNodeFlags flags);
   FoldOutBuilder &SetFramed(bool enabled = true);
   FoldOutBuilder &SetSpanAvailWidth(bool enabled = true);
+  FoldOutBuilder &SetVariant(FoldOutVariant variant);
   FoldOutBuilder &SetEnabled(bool enabled);
   FoldOutBuilder &SetVisible(bool visible);
   FoldOutBuilder &SetTooltip(std::string tooltip);
@@ -37,6 +43,8 @@ public:
   FoldOutBuilder &Flags(ImGuiTreeNodeFlags flags);
   FoldOutBuilder &Framed(bool enabled = true);
   FoldOutBuilder &SpanAvailWidth(bool enabled = true);
+  FoldOutBuilder &Variant(FoldOutVariant variant);
+  FoldOutBuilder &Section();
   FoldOutBuilder &Enabled(bool enabled);
   FoldOutBuilder &Visible(bool visible);
   FoldOutBuilder &Tooltip(std::string tooltip);

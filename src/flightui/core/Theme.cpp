@@ -34,6 +34,13 @@ struct DarkEditorPalette {
   ImVec4 success = Color(0x63A177);
   ImVec4 warning = Color(0xC49354);
   ImVec4 error = Color(0xC76969);
+  ImVec4 propertyRowBackground = Color(0x181A1F, 0.0F);
+  ImVec4 propertyRowBackgroundAlternate = Color(0x30353E, 0.22F);
+  ImVec4 foldOutSectionBackground = Color(0x292D35, 0.72F);
+  ImVec4 foldOutSectionBackgroundHovered = Color(0x333A46, 0.82F);
+  ImVec4 foldOutSectionBackgroundActive = Color(0x384454, 0.88F);
+  ImVec4 iconButtonSelected = Color(0x315B8E);
+  ImVec4 iconButtonSelectedHovered = Color(0x3A6BA6);
 };
 
 const DarkEditorPalette &Palette() {
@@ -126,8 +133,8 @@ void ApplyImGuiTheme(const DarkEditorPalette &palette) {
   colors[ImGuiCol_TableHeaderBg] = Color(0x262A32);
   colors[ImGuiCol_TableBorderStrong] = palette.border;
   colors[ImGuiCol_TableBorderLight] = Color(0x30353E);
-  colors[ImGuiCol_TableRowBg] = Color(0x181A1F, 0.0F);
-  colors[ImGuiCol_TableRowBgAlt] = Color(0x30353E, 0.30F);
+  colors[ImGuiCol_TableRowBg] = palette.propertyRowBackground;
+  colors[ImGuiCol_TableRowBgAlt] = palette.propertyRowBackgroundAlternate;
   colors[ImGuiCol_TextLink] = palette.accentHovered;
   colors[ImGuiCol_TextSelectedBg] = Color(0x4C8DFF, 0.38F);
   colors[ImGuiCol_TreeLines] = Color(0x464D59);
@@ -190,5 +197,45 @@ ImVec4 GetDarkEditorSemanticColor(SemanticColor color) {
   }
 
   return palette.textDisabled;
+}
+
+ImVec4 GetThemeColor(ThemeColor color) {
+  const DarkEditorPalette &palette = Palette();
+  switch (color) {
+  case ThemeColor::PropertyRowBackground:
+    return palette.propertyRowBackground;
+  case ThemeColor::PropertyRowBackgroundAlternate:
+    return palette.propertyRowBackgroundAlternate;
+  case ThemeColor::FoldOutSectionBackground:
+    return palette.foldOutSectionBackground;
+  case ThemeColor::FoldOutSectionBackgroundHovered:
+    return palette.foldOutSectionBackgroundHovered;
+  case ThemeColor::FoldOutSectionBackgroundActive:
+    return palette.foldOutSectionBackgroundActive;
+  case ThemeColor::IconButtonSelected:
+    return palette.iconButtonSelected;
+  case ThemeColor::IconButtonSelectedHovered:
+    return palette.iconButtonSelectedHovered;
+  }
+
+  return palette.propertyRowBackground;
+}
+
+StatusBadgeStyle GetStatusBadgeStyle(StatusTone tone) {
+  const DarkEditorPalette &palette = Palette();
+  switch (tone) {
+  case StatusTone::Neutral:
+    return {Color(0x747B87, 0.16F), Color(0xAAB0BB)};
+  case StatusTone::Info:
+    return {Color(0x4C8DFF, 0.18F), palette.accentHovered};
+  case StatusTone::Success:
+    return {Color(0x63A177, 0.18F), Color(0x83BB91)};
+  case StatusTone::Warning:
+    return {Color(0xC49354, 0.18F), Color(0xD6A66A)};
+  case StatusTone::Error:
+    return {Color(0xC76969, 0.18F), Color(0xDB8585)};
+  }
+
+  return {Color(0x747B87, 0.16F), palette.textDisabled};
 }
 } // namespace FlightUI

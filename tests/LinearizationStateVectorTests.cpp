@@ -1,6 +1,6 @@
-#include "application/sim/Aircraft.hpp"
-#include "application/sim/FDMState.hpp"
-#include "application/sim/linearizer/LinearizationStateVector.hpp"
+#include "sim/Aircraft.hpp"
+#include "sim/FDMState.hpp"
+#include "sim/linearization/LinearizationStateVector.hpp"
 
 #include <cmath>
 #include <iostream>

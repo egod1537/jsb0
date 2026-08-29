@@ -72,6 +72,15 @@ Run the tests:
 ctest --test-dir build
 ```
 
+Simulation telemetry can also be persisted as standard MCAP files from the
+Simulation Control toolbar. See [MCAP Telemetry Recording](docs/MCAP_RECORDING.md)
+for the channel schema, metadata, and reader/playback boundary.
+
+The interactive GUI communicates with the simulation runtime through a
+type-safe, synchronous C++ publish/subscribe layer. See
+[In-Process Simulation Message Bus](docs/MESSAGE_BUS.md) for its contracts and
+dispatch/lifetime semantics.
+
 The configure step automatically downloads the required JSBSim source code.
 The equivalent `make configure`, `make build`, and `make test` commands remain
 available.
@@ -178,6 +187,22 @@ architecture, configuration variables, QGroundControl ports, and
 troubleshooting.
 
 ## Controls
+
+## Headless simulation runner
+
+Build the core runner without the interactive editor and execute a scenario at
+fixed simulation timestep:
+
+```powershell
+cmake -S . -B build-headless -G Ninja -DJSB_BUILD_EDITOR=OFF -DBUILD_DOCS=OFF
+cmake --build build-headless --target jsb-sim-runner
+build-headless/jsb-sim-runner.exe --scenario scenarios/c172_roll_hold_5deg.yaml --output results/roll_hold_5deg
+```
+
+The runner performs no realtime sleeping or GUI initialization and writes a
+contract-valid `run.json` plus Protobuf telemetry in `telemetry.mcap`. Runtime
+scenario, telemetry, metadata, signal semantics, generation, and compatibility
+rules are defined in [`contract/README.md`](contract/README.md).
 
 | Key | Action            |
 | --- | ----------------- |

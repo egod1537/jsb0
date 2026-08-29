@@ -1,4 +1,8 @@
+schema_version: 1
+scenario_type: roll_hold
 name: C172 Roll Hold 5deg
+aircraft: c172x
+autopilot: primary
 
 initial_condition:
   altitude_ft: 3000
