@@ -98,6 +98,7 @@ SimulationScenario ParseScenario(const YAML::Node &root,
           "name",
           "aircraft",
           "autopilot",
+          "controller_parameters",
           "initial_condition",
           "environment",
           "trim",
@@ -113,6 +114,32 @@ SimulationScenario ParseScenario(const YAML::Node &root,
       ReadRequired<std::string>(root, "scenario_type", "scenario_type");
   scenario.name = ReadRequired<std::string>(root, "name", "name");
   scenario.aircraft = ReadRequired<std::string>(root, "aircraft", "aircraft");
+
+  if (const YAML::Node controllerParameters = root["controller_parameters"]) {
+    if (!controllerParameters.IsSequence()) {
+      throw std::runtime_error("controller_parameters must be a sequence");
+    }
+    scenario.controllerParameters.clear();
+    for (std::size_t index = 0; index < controllerParameters.size(); ++index) {
+      const YAML::Node parameter = controllerParameters[index];
+      const std::string path =
+          "controller_parameters[" + std::to_string(index) + "]";
+      if (!parameter.IsScalar()) {
+        throw std::runtime_error(path + " must be a scalar value");
+      }
+      const std::string parameterId = parameter.as<std::string>();
+      if (parameterId.empty()) {
+        throw std::runtime_error(path + " must not be empty");
+      }
+      if (std::find(scenario.controllerParameters.begin(),
+              scenario.controllerParameters.end(),
+              parameterId)
+          != scenario.controllerParameters.end()) {
+        throw std::runtime_error(path + " must be unique");
+      }
+      scenario.controllerParameters.push_back(parameterId);
+    }
+  }
 
   if (const YAML::Node autopilot = root["autopilot"]) {
     std::string legacyValue;
@@ -257,6 +284,14 @@ std::string SimulationScenarioSerializer::Serialize(
          << scenario.scenarioType;
   output << YAML::Key << "name" << YAML::Value << scenario.name;
   output << YAML::Key << "aircraft" << YAML::Value << scenario.aircraft;
+  if (!scenario.controllerParameters.empty()) {
+    output << YAML::Key << "controller_parameters" << YAML::Value
+           << YAML::BeginSeq;
+    for (const std::string &parameterId : scenario.controllerParameters) {
+      output << parameterId;
+    }
+    output << YAML::EndSeq;
+  }
   const InitialCondition &initial = scenario.initialCondition;
   output << YAML::Key << "initial_condition" << YAML::Value << YAML::BeginMap
          << YAML::Key << "latitude_deg" << YAML::Value << initial.latitudeDeg

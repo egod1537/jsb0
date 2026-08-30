@@ -87,7 +87,13 @@ def load_yaml_mapping(path: Path) -> dict[str, Any]:
                     break
                 entry = content[2:].strip()
                 if ":" not in entry:
-                    raise ContractError(f"{path}:{line_number}: expected a mapping sequence item")
+                    container.append(parse_scalar(entry))
+                    index += 1
+                    if index < len(lines) and lines[index][1] > indent:
+                        raise ContractError(
+                            f"{path}:{lines[index][0]}: scalar sequence item cannot have children"
+                        )
+                    continue
                 key, value = entry.split(":", 1)
                 item: dict[str, Any] = {}
                 item[key.strip()] = parse_scalar(value) if value.strip() else None
@@ -174,6 +180,11 @@ def validate_instance(instance: Any, schema: dict[str, Any], location: str = "$"
     if isinstance(instance, list):
         if len(instance) < schema.get("minItems", 0):
             errors.append(f"{location}: array is shorter than minItems")
+        if schema.get("uniqueItems") is True:
+            for index, value in enumerate(instance):
+                if value in instance[:index]:
+                    errors.append(f"{location}: array items must be unique")
+                    break
         item_schema = schema.get("items")
         if item_schema:
             for index, value in enumerate(instance):

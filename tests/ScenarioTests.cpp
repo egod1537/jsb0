@@ -69,6 +69,14 @@ void TestScenarioValidation() {
   scenario = {};
   scenario.overshootLimitDeg = -1.0;
   requireInvalid(scenario, "acceptance.overshoot_limit_deg");
+
+  scenario = {};
+  scenario.controllerParameters = {"FW_RR_P", "FW_RR_P"};
+  requireInvalid(scenario, "controller_parameters[1]");
+
+  scenario = {};
+  scenario.controllerParameters = {"roll-rate-p"};
+  requireInvalid(scenario, "controller_parameters[0]");
 }
 
 std::filesystem::path MakeTemporaryScenarioDirectory() {
@@ -84,6 +92,7 @@ std::filesystem::path MakeTemporaryScenarioDirectory() {
 void TestYamlRoundTrip() {
   sim::SimulationScenario source;
   source.name = "Edited YAML Scenario";
+  source.controllerParameters = {"FW_RR_P", "FW_RR_I"};
   source.initialCondition.altitudeFt = 4250.5;
   source.initialCondition.airspeedKts = 87.25;
   source.initialCondition.rollDeg = -3.5;
@@ -102,6 +111,7 @@ void TestYamlRoundTrip() {
 
   const std::string yaml = sim::SimulationScenarioSerializer::Serialize(source);
   assert(yaml.find("initial_condition:") != std::string::npos);
+  assert(yaml.find("controller_parameters:") != std::string::npos);
   assert(yaml.find("mode: Ground") != std::string::npos);
 
   sim::SimulationScenario parsed;
@@ -231,6 +241,13 @@ void TestRepositoryScenarioAsset() {
   gui::ScenarioController controller;
   assert(controller.Load("roll_hold_5deg_30s.yaml"));
   RequireDefaultScenario(controller.GetModel().draft);
+  assert(controller.GetModel().draft.controllerParameters
+      == std::vector<std::string>({"FW_R_TC",
+          "FW_RR_P",
+          "FW_RR_I",
+          "FW_RR_D",
+          "FW_RR_FF",
+          "FW_RR_IMAX"}));
   assert(!controller.IsDirty());
 }
 

@@ -46,7 +46,10 @@ Runtime can publish it with verified semantics.
 `scenario/scenario.schema.json` describes the experiment-condition YAML
 accepted by the Runtime. Unit suffixes are authoritative and are used
 consistently for numeric Scenario fields. Scenario v1 exposes the supported
-`roll_hold` capability, C172x model, and the three Runtime trim modes.
+`roll_hold` capability, C172x model, and the three Runtime trim modes. Its
+optional `controller_parameters` array is a whitelist of canonical Runtime
+parameter IDs that an operator may tune for that Scenario; parameter values
+and metadata are not duplicated into Scenario YAML.
 
 `execution/capabilities.json` is the machine-readable JSB0 headless capability
 source for JSB1. It declares the `single` and `compare` modes, the canonical

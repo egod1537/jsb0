@@ -1,6 +1,8 @@
 #include "sim/scenario/SimulationScenario.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -21,6 +23,16 @@ bool IsSupportedTrimMode(gnc::TrimMode mode) {
     return true;
   }
   return false;
+}
+
+bool IsCanonicalControllerParameterId(std::string_view value) {
+  if (value.empty() || value.front() < 'A' || value.front() > 'Z') {
+    return false;
+  }
+  return std::all_of(value.begin(), value.end(), [](char character) {
+    return (character >= 'A' && character <= 'Z')
+           || (character >= '0' && character <= '9') || character == '_';
+  });
 }
 
 } // namespace
@@ -50,6 +62,23 @@ bool ValidateSimulationScenario(const SimulationScenario &scenario,
     return ValidationFailed(error,
         "aircraft",
         "unsupported aircraft '" + scenario.aircraft + "'");
+  }
+  for (std::size_t index = 0; index < scenario.controllerParameters.size();
+       ++index) {
+    const std::string &parameterId = scenario.controllerParameters[index];
+    const std::string path =
+        "controller_parameters[" + std::to_string(index) + "]";
+    if (!IsCanonicalControllerParameterId(parameterId)) {
+      return ValidationFailed(error, path, "must be a canonical parameter ID");
+    }
+    if (std::find(scenario.controllerParameters.begin(),
+            scenario.controllerParameters.begin()
+                + static_cast<std::ptrdiff_t>(index),
+            parameterId)
+        != scenario.controllerParameters.begin()
+               + static_cast<std::ptrdiff_t>(index)) {
+      return ValidationFailed(error, path, "must be unique");
+    }
   }
   if (!IsSupportedTrimMode(scenario.trimMode)) {
     return ValidationFailed(error, "trim.mode", "unsupported value");

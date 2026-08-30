@@ -29,6 +29,7 @@ struct SimulationScenario {
   std::string scenarioType = "roll_hold";
   std::string name = "Roll Hold 5deg 30s";
   std::string aircraft = "c172x";
+  std::vector<std::string> controllerParameters;
 
   // Experiment conditions
   InitialCondition initialCondition{

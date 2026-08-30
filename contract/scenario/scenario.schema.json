@@ -11,6 +11,16 @@
     "scenario_type": {"const": "roll_hold"},
     "name": {"type": "string", "minLength": 1},
     "aircraft": {"type": "string", "enum": ["c172x"]},
+    "controller_parameters": {
+      "type": "array",
+      "description": "Canonical JSB0 controller parameter IDs that an operator may tune for this Scenario. Values and metadata are resolved by the Runtime contract and frozen on the Run.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      }
+    },
     "initial_condition": {
       "type": "object",
       "additionalProperties": false,

@@ -41,9 +41,13 @@ void TestCanonicalScenarioIsExecutableInput() {
   assert(scenario.schemaVersion == 1);
   assert(scenario.scenarioType == "roll_hold");
   assert(scenario.aircraft == "c172x");
+  assert(scenario.controllerParameters.size() == 6);
+  assert(scenario.controllerParameters[0] == "FW_R_TC");
+  assert(scenario.controllerParameters[5] == "FW_RR_IMAX");
   const std::string serialized =
       sim::SimulationScenarioSerializer::Serialize(scenario);
   assert(serialized.find("autopilot") == std::string::npos);
+  assert(serialized.find("controller_parameters") != std::string::npos);
 }
 
 void TestUnsupportedScenarioVersionIsRejected() {
