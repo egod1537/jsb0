@@ -55,7 +55,7 @@ constexpr int TargetTimelineTickCount = 6;
 constexpr std::size_t MaximumPresetPlots = 16;
 constexpr std::size_t MaximumDisplayedModeStates = 6;
 constexpr std::size_t MinimumRenderedSamplesPerChannel = 512;
-constexpr std::size_t MaximumRenderedSamplesPerChannel = 8192;
+constexpr std::size_t MaximumRenderedSamplesPerChannel = 4096;
 constexpr double MinimumDisplayedParticipation = 0.05;
 
 const gnc::DynamicModeSnapshot *FindLatestDynamicModeAtOrBefore(
@@ -1960,7 +1960,14 @@ void MonitorView::DrawTelemetryPlot(const MonitorPlot &plot,
   });
 
   std::size_t renderedChannelCount = 0;
-  const auto addSource = [this, &plot, &plotBuilder, &renderedChannelCount](
+  std::vector<std::vector<telemetry::TelemetrySample>> renderedSeries;
+  renderedSeries.reserve(plot.channels.size() * 2);
+  const auto addSource = [this,
+                             &plot,
+                             &plotBuilder,
+                             &renderedChannelCount,
+                             &renderedSeries,
+                             maximumRenderedSampleCount](
                              const telemetry::TelemetrySnapshot *snapshot,
                              std::string_view sourceName) {
     if (snapshot == nullptr) {
@@ -1973,13 +1980,23 @@ void MonitorView::DrawTelemetryPlot(const MonitorPlot &plot,
         continue;
       }
 
-      const telemetry::TelemetrySample *data = channel->samples.data();
+      renderedSeries.push_back(telemetry::ReadTelemetrySamples(*channel,
+          visibleTimeRange_.minSec,
+          visibleTimeRange_.maxSec,
+          maximumRenderedSampleCount));
+      const std::vector<telemetry::TelemetrySample> &samples =
+          renderedSeries.back();
+      if (samples.empty()) {
+        renderedSeries.pop_back();
+        continue;
+      }
+      const telemetry::TelemetrySample *data = samples.data();
       plotBuilder.AddLine(MakeTelemetrySeriesLabel(path, sourceName),
           UI::DataView(&data->timeSec,
-              channel->samples.size(),
+              samples.size(),
               sizeof(telemetry::TelemetrySample)),
           UI::DataView(&data->value,
-              channel->samples.size(),
+              samples.size(),
               sizeof(telemetry::TelemetrySample)));
       ++renderedChannelCount;
     }
@@ -2024,77 +2041,9 @@ void MonitorView::DrawRollTrackingAcceptanceUnderlay(const MonitorPlot &plot,
     return;
   }
 
-  std::vector<double> times;
-  std::vector<double> settlingUpper;
-  std::vector<double> settlingLower;
-  std::vector<double> overshootLimit;
-  std::vector<double> undershootLimit;
-  times.reserve(samples.size());
-  settlingUpper.reserve(samples.size());
-  settlingLower.reserve(samples.size());
-  overshootLimit.reserve(samples.size());
-  undershootLimit.reserve(samples.size());
-  for (const telemetry::TelemetrySample &sample : samples) {
-    if (!std::isfinite(sample.timeSec) || !std::isfinite(sample.value)) {
-      continue;
-    }
-    const RollTrackingAcceptance acceptance =
-        MakeRollTrackingAcceptance(sample.value);
-    times.push_back(sample.timeSec);
-    settlingUpper.push_back(acceptance.settlingUpperDeg);
-    settlingLower.push_back(acceptance.settlingLowerDeg);
-    overshootLimit.push_back(acceptance.overshootLimitDeg);
-    undershootLimit.push_back(acceptance.undershootLimitDeg);
-  }
-  if (times.size() < 2) {
-    return;
-  }
-
-  const int sampleCount = static_cast<int>(times.size());
-  ImPlotSpec bandSpec;
-  bandSpec.LineColor = ImVec4(0.25F, 0.72F, 0.52F, 0.0F);
-  bandSpec.LineWeight = 0.0F;
-  bandSpec.FillColor = ImVec4(0.25F, 0.72F, 0.52F, 0.10F);
-  bandSpec.Flags = ImPlotItemFlags_NoLegend;
-  ImPlot::PlotShaded("Settling Band##RollAcceptance",
-      times.data(),
-      settlingUpper.data(),
-      settlingLower.data(),
-      sampleCount,
-      bandSpec);
-
-  ImPlotSpec fitSpec;
-  fitSpec.LineColor = ImVec4(0.0F, 0.0F, 0.0F, 0.0F);
-  fitSpec.LineWeight = 0.0F;
-  fitSpec.Flags = ImPlotItemFlags_NoLegend;
-  ImPlot::PlotLine("Overshoot Limit##RollAcceptanceFit",
-      times.data(),
-      overshootLimit.data(),
-      sampleCount,
-      fitSpec);
-  ImPlot::PlotLine("Undershoot Limit##RollAcceptanceFit",
-      times.data(),
-      undershootLimit.data(),
-      sampleCount,
-      fitSpec);
-
-  const ImU32 settlingBoundaryColor =
-      ImGui::ColorConvertFloat4ToU32(ImVec4(0.38F, 0.82F, 0.62F, 0.38F));
   const ImU32 limitBoundaryColor =
       ImGui::ColorConvertFloat4ToU32(ImVec4(0.90F, 0.68F, 0.34F, 0.22F));
   ImPlot::PushPlotClipRect();
-  DrawDashedPlotLine(samples,
-      RollSettlingToleranceDeg,
-      settlingBoundaryColor,
-      UI::Ui(5.0F),
-      UI::Ui(4.0F),
-      std::max(1.0F, UI::Ui(0.8F)));
-  DrawDashedPlotLine(samples,
-      -RollSettlingToleranceDeg,
-      settlingBoundaryColor,
-      UI::Ui(5.0F),
-      UI::Ui(4.0F),
-      std::max(1.0F, UI::Ui(0.8F)));
   DrawDashedPlotLine(samples,
       RollLimitToleranceDeg,
       limitBoundaryColor,

@@ -1,8 +1,5 @@
 #pragma once
 
-#include "ExecutionMode.hpp"
-#include "sim/execution/ExecutionVariant.hpp"
-
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -13,8 +10,6 @@ namespace runner {
 struct RunnerOptions {
   std::filesystem::path scenarioPath;
   std::filesystem::path outputDirectory;
-  ExecutionMode mode = ExecutionMode::Single;
-  std::optional<sim::ExecutionVariant> variant;
 };
 
 struct RunnerParseResult {

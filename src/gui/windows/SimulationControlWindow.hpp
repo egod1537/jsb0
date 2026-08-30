@@ -29,6 +29,7 @@ protected:
 private:
   // Simulation transport controls
   void HandleTransportShortcut();
+  void HandleSimulationSpeedShortcut(bool enabled);
 
   // Layout preset controls
   void HandleLayoutShortcuts();

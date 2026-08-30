@@ -6,11 +6,13 @@
 #include "sim/runtime/SimulationRuntime.hpp"
 #include "sim/scenario/SimulationScenario.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace {
 struct Harness {
@@ -159,6 +161,55 @@ void TestTrimAndScenarioRequestResults() {
   assert(harness.client.GetTelemetrySnapshot(sim::SimulationSlot::Baseline)
           ->available);
 }
+
+void TestTelemetryCacheRetainsFullSessionRangeEfficiently() {
+  application::messaging::MessageBus bus;
+  application::SimulationMessageClient client(bus);
+  constexpr std::size_t SampleCount = 10'000;
+  for (std::size_t index = 0; index < SampleCount; ++index) {
+    bus.Publish(application::messaging::TelemetryFrameEvent{
+        .slot = sim::SimulationSlot::Primary,
+        .frame =
+            {
+                .available = true,
+                .sequence = index + 1,
+                .timestamp = static_cast<double>(index),
+                .values = {{
+                    .path = "test/long_history",
+                    .value = index % 2 == 0 ? -1000.0 : 1000.0,
+                }},
+            },
+    });
+  }
+
+  const auto snapshot =
+      client.GetTelemetrySnapshot(sim::SimulationSlot::Primary);
+  assert(snapshot != nullptr && snapshot->publishedTimeRange.has_value());
+  assert(snapshot->publishedTimeRange->minSec == 0.0);
+  assert(snapshot->publishedTimeRange->maxSec
+         == static_cast<double>(SampleCount - 1));
+  const telemetry::TelemetrySeries *series =
+      snapshot->Find("test/long_history");
+  assert(series != nullptr && !series->samples.empty());
+  assert(series->samples.size() <= 4096);
+  assert(series->samples.front().timeSec == 0.0);
+  assert(
+      series->samples.back().timeSec == static_cast<double>(SampleCount - 1));
+  for (std::size_t index = 1; index < series->samples.size(); ++index) {
+    assert(series->samples[index - 1].timeSec < series->samples[index].timeSec);
+  }
+  const bool retainedMinimum = std::any_of(series->samples.begin(),
+      series->samples.end(),
+      [](const telemetry::TelemetrySample &sample) {
+        return sample.value == -1000.0;
+      });
+  const bool retainedMaximum = std::any_of(series->samples.begin(),
+      series->samples.end(),
+      [](const telemetry::TelemetrySample &sample) {
+        return sample.value == 1000.0;
+      });
+  assert(retainedMinimum && retainedMaximum);
+}
 } // namespace
 
 int main() {
@@ -166,5 +217,6 @@ int main() {
   TestFailedRequestPreservesErrorAndSuccessClearsIt();
   TestMissingSynchronousResultFailsCleanly();
   TestTrimAndScenarioRequestResults();
+  TestTelemetryCacheRetainsFullSessionRangeEfficiently();
   return 0;
 }

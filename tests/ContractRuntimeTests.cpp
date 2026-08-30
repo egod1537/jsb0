@@ -133,7 +133,6 @@ void TestExecutionVariantContractAndResolution() {
   const std::string executionCapabilities(
       std::istreambuf_iterator<char>(executionCapabilitiesInput),
       {});
-  assert(executionCapabilities.find("\"single\"") != std::string::npos);
   assert(executionCapabilities.find("\"compare\"") != std::string::npos);
   assert(executionCapabilities.find("\"baseline\"") != std::string::npos);
   assert(executionCapabilities.find("\"primary\"") != std::string::npos);

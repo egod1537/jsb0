@@ -1,5 +1,4 @@
 add_library(jsb_runner STATIC
-  ExecutionMode.cpp
   McapRunObserver.cpp
   RunnerOptions.cpp
   SimulationRunner.cpp
@@ -11,7 +10,9 @@ target_include_directories(jsb_runner PUBLIC
 )
 target_link_libraries(jsb_runner
   PUBLIC jsb_sim_runtime
-  PRIVATE jsb_contract
+  PRIVATE
+    jsb_contract
+    yaml-cpp::yaml-cpp
 )
 target_compile_definitions(jsb_runner PRIVATE
   JSB_APPLICATION_VERSION="${PROJECT_VERSION}"

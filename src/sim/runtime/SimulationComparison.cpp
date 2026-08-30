@@ -26,10 +26,11 @@ bool SameEvent(const telemetry::recording::ScenarioEvent &left,
 
 ResolvedExecutionSpec Resolve(const SimulationScenario &scenario,
     const ScenarioSource &source, ExecutionVariant variant,
-    std::string &error) {
+    const ExecutionParameterSet &parameters, std::string &error) {
   ResolvedExecutionSpec resolved;
   error.clear();
-  if (!ExecutionVariantResolver::Resolve({scenario, variant, source},
+  if (!ExecutionVariantResolver::Resolve(
+          {scenario, variant, source, parameters},
           resolved,
           error)
       && error.empty()) {
@@ -51,15 +52,41 @@ SimulationComparison::~SimulationComparison() { Shutdown(); }
 
 std::unique_ptr<SimulationComparison> SimulationComparison::Create(
     const SimulationScenario &scenario, const ScenarioSource &source,
-    std::string &error, RuntimeFactory runtimeFactory) {
-  ResolvedExecutionSpec baselineSpec =
-      Resolve(scenario, source, ExecutionVariant::Baseline, error);
+    std::string &error, RuntimeFactory runtimeFactory,
+    std::optional<ExecutionVariant> *failedVariant) {
+  return Create({.scenario = scenario, .source = source},
+      error,
+      std::move(runtimeFactory),
+      failedVariant);
+}
+
+std::unique_ptr<SimulationComparison> SimulationComparison::Create(
+    const ComparisonExecutionRequest &request, std::string &error,
+    RuntimeFactory runtimeFactory,
+    std::optional<ExecutionVariant> *failedVariant) {
+  if (failedVariant != nullptr) {
+    failedVariant->reset();
+  }
+  ResolvedExecutionSpec baselineSpec = Resolve(request.scenario,
+      request.source,
+      ExecutionVariant::Baseline,
+      request.baselineParameters,
+      error);
   if (!error.empty()) {
+    if (failedVariant != nullptr) {
+      *failedVariant = ExecutionVariant::Baseline;
+    }
     return nullptr;
   }
-  ResolvedExecutionSpec primarySpec =
-      Resolve(scenario, source, ExecutionVariant::Primary, error);
+  ResolvedExecutionSpec primarySpec = Resolve(request.scenario,
+      request.source,
+      ExecutionVariant::Primary,
+      request.primaryParameters,
+      error);
   if (!error.empty()) {
+    if (failedVariant != nullptr) {
+      *failedVariant = ExecutionVariant::Primary;
+    }
     return nullptr;
   }
 
@@ -71,16 +98,25 @@ std::unique_ptr<SimulationComparison> SimulationComparison::Create(
   }
   auto baseline = runtimeFactory(baselineSpec, error);
   if (baseline == nullptr) {
+    if (failedVariant != nullptr) {
+      *failedVariant = ExecutionVariant::Baseline;
+    }
     error = "baseline initialization failed: " + error;
     return nullptr;
   }
   auto primary = runtimeFactory(primarySpec, error);
   if (primary == nullptr) {
+    if (failedVariant != nullptr) {
+      *failedVariant = ExecutionVariant::Primary;
+    }
     baseline->Shutdown();
     error = "primary initialization failed: " + error;
     return nullptr;
   }
   if (!baseline->RunExecution(baselineSpec)) {
+    if (failedVariant != nullptr) {
+      *failedVariant = ExecutionVariant::Baseline;
+    }
     error =
         "baseline initialization failed: " + baseline->GetStatus().lastError;
     primary->Shutdown();
@@ -88,6 +124,9 @@ std::unique_ptr<SimulationComparison> SimulationComparison::Create(
     return nullptr;
   }
   if (!primary->RunExecution(primarySpec)) {
+    if (failedVariant != nullptr) {
+      *failedVariant = ExecutionVariant::Primary;
+    }
     error = "primary initialization failed: " + primary->GetStatus().lastError;
     baseline->Stop();
     primary->Shutdown();
@@ -98,9 +137,12 @@ std::unique_ptr<SimulationComparison> SimulationComparison::Create(
   auto comparison = std::unique_ptr<SimulationComparison>(
       new SimulationComparison(std::move(baseline),
           std::move(primary),
-          scenario.dtSec,
-          scenario.durationSec));
+          request.scenario.dtSec,
+          request.scenario.durationSec));
   if (!comparison->CollectEvents()) {
+    if (failedVariant != nullptr) {
+      *failedVariant = ExecutionVariant::Primary;
+    }
     error = comparison->GetLastError();
     comparison->Shutdown();
     return nullptr;
@@ -126,8 +168,8 @@ bool SimulationComparison::Tick() {
         primaryRuntime_->GetStatus().lastError);
   }
   ++stepCount_;
-  if (!ValidateClock()) {
-    return Fail(ExecutionVariant::Primary,
+  if (const auto divergedVariant = FindDivergedClockVariant()) {
+    return Fail(*divergedVariant,
         "variant simulation clocks diverged from the shared step clock");
   }
   if (!CollectEvents()) {
@@ -141,7 +183,8 @@ bool SimulationComparison::Tick() {
   const bool baselineActive = baselineRuntime_->GetScenarioStatus().has_value();
   const bool primaryActive = primaryRuntime_->GetScenarioStatus().has_value();
   if (baselineActive != primaryActive) {
-    return Fail(ExecutionVariant::Primary,
+    return Fail(baselineActive ? ExecutionVariant::Primary
+                               : ExecutionVariant::Baseline,
         "variant runtimes completed on different simulation steps");
   }
   if (!baselineActive) {
@@ -227,12 +270,18 @@ bool SimulationComparison::CollectEvents() {
   return true;
 }
 
-bool SimulationComparison::ValidateClock() const {
+std::optional<ExecutionVariant>
+SimulationComparison::FindDivergedClockVariant() const {
   const double expected = GetSimulationTimeSec();
-  return std::abs(baselineRuntime_->GetSimulationTimeSec() - expected)
-             <= ClockToleranceSec
-         && std::abs(primaryRuntime_->GetSimulationTimeSec() - expected)
-                <= ClockToleranceSec;
+  if (std::abs(baselineRuntime_->GetSimulationTimeSec() - expected)
+      > ClockToleranceSec) {
+    return ExecutionVariant::Baseline;
+  }
+  if (std::abs(primaryRuntime_->GetSimulationTimeSec() - expected)
+      > ClockToleranceSec) {
+    return ExecutionVariant::Primary;
+  }
+  return std::nullopt;
 }
 
 bool SimulationComparison::Fail(ExecutionVariant variant, std::string error) {

@@ -10,6 +10,7 @@
 
 #include <google/protobuf/descriptor.pb.h>
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <filesystem>
@@ -30,6 +31,7 @@ using runner::RunnerOptions;
 using runner::RunnerResult;
 using runner::SimulationRunner;
 using telemetry::recording::McapRecordingReader;
+using telemetry::recording::RecordedChannelInfo;
 using telemetry::recording::RecordedSample;
 
 void Require(bool condition, const std::string &message) {
@@ -70,7 +72,6 @@ RunnerOptions MakeOptions(const std::filesystem::path &output) {
   RunnerOptions options;
   options.scenarioPath = JSB_TEST_HEADLESS_SCENARIO_PATH;
   options.outputDirectory = output;
-  options.variant = sim::ExecutionVariant::Primary;
   return options;
 }
 
@@ -110,6 +111,16 @@ void RequireSameSamples(const std::vector<RecordedSample> &first,
   }
 }
 
+const RecordedChannelInfo &FindChannel(const McapRecordingReader &reader,
+    std::string_view topic) {
+  for (const RecordedChannelInfo &channel : reader.GetChannels()) {
+    if (channel.topic == topic) {
+      return channel;
+    }
+  }
+  throw std::runtime_error("missing MCAP channel " + std::string(topic));
+}
+
 void TestSuccessfulRunArtifactsAndSignals() {
   TemporaryDirectory temporary;
   const std::filesystem::path output = temporary.GetPath() / "completed";
@@ -135,10 +146,12 @@ void TestSuccessfulRunArtifactsAndSignals() {
   const std::string manifest = ReadTextFile(manifestPath);
   Require(manifest.find("\"status\": \"completed\"") != std::string::npos,
       "run.json status is not completed");
-  Require(manifest.find("\"autopilot\": \"primary\"") != std::string::npos,
-      "run.json autopilot is missing");
-  Require(manifest.find("\"variant\": \"primary\"") != std::string::npos,
-      "run.json execution variant is missing");
+  Require(manifest.find("\"variants\": [\"baseline\", \"primary\"]")
+              != std::string::npos,
+      "run.json dual execution provenance is missing");
+  Require(manifest.find("\"autopilot\"") == std::string::npos
+              && manifest.find("\"variant\":") == std::string::npos,
+      "run.json contains a legacy single-variant selector");
 
   McapRecordingReader reader;
   Require(reader.Open(mcapPath),
@@ -149,8 +162,9 @@ void TestSuccessfulRunArtifactsAndSignals() {
       "runner MCAP timestep metadata is incorrect");
   Require(reader.GetRunInfo().contractVersion == "2.0.0",
       "runner MCAP contract version is incorrect");
-  Require(reader.GetRunInfo().executionVariant == "primary",
-      "runner MCAP execution variant is incorrect");
+  Require(reader.GetRunInfo().executionMode == "compare"
+              && reader.GetRunInfo().executionVariants == "baseline,primary",
+      "runner MCAP dual execution provenance is incorrect");
   Require(reader.GetRunInfo().telemetrySchemaVersion == 1,
       "runner MCAP telemetry schema version is incorrect");
   Require(reader.GetRunInfo().gitCommit.size() == 40,
@@ -160,12 +174,23 @@ void TestSuccessfulRunArtifactsAndSignals() {
 
   const std::vector<RecordedSample> diagnostics =
       reader.ReadMessages("/jsb/primary/control/roll");
+  const std::vector<RecordedSample> baselineDiagnostics =
+      reader.ReadMessages("/jsb/baseline/control/roll");
   const std::vector<RecordedSample> aircraft =
       reader.ReadMessages("/jsb/primary/aircraft/state");
   const std::vector<RecordedSample> simulationEvents =
       reader.ReadMessages("/jsb/simulation/event");
   RequireMonotonicSimulationTimestamps(diagnostics,
       "/jsb/primary/control/roll");
+  RequireMonotonicSimulationTimestamps(baselineDiagnostics,
+      "/jsb/baseline/control/roll");
+  Require(baselineDiagnostics.size() == diagnostics.size(),
+      "baseline and primary sample counts differ");
+  for (std::size_t index = 0; index < diagnostics.size(); ++index) {
+    Require(baselineDiagnostics[index].logTimeNanoseconds
+                == diagnostics[index].logTimeNanoseconds,
+        "baseline and primary timestamps are not aligned");
+  }
   RequireMonotonicSimulationTimestamps(aircraft, "/jsb/primary/aircraft/state");
   Require(!simulationEvents.empty(), "/jsb/simulation/event has no samples");
   bool foundScheduledCommand = false;
@@ -194,6 +219,7 @@ void TestSuccessfulRunArtifactsAndSignals() {
       "runner roll-hold payload is invalid");
   for (const auto &channel : reader.GetChannels()) {
     if (channel.topic == "/jsb/primary/control/roll"
+        || channel.topic == "/jsb/baseline/control/roll"
         || channel.topic == "/jsb/primary/aircraft/state"
         || channel.topic == "/jsb/simulation/event") {
       Require(channel.messageEncoding == "protobuf",
@@ -220,12 +246,78 @@ void TestSuccessfulRunArtifactsAndSignals() {
   RequireSameSamples(diagnostics,
       repeatedReader.ReadMessages("/jsb/primary/control/roll"),
       "/jsb/primary/control/roll");
+  RequireSameSamples(baselineDiagnostics,
+      repeatedReader.ReadMessages("/jsb/baseline/control/roll"),
+      "/jsb/baseline/control/roll");
   RequireSameSamples(aircraft,
       repeatedReader.ReadMessages("/jsb/primary/aircraft/state"),
       "/jsb/primary/aircraft/state");
   RequireSameSamples(simulationEvents,
       repeatedReader.ReadMessages("/jsb/simulation/event"),
       "/jsb/simulation/event");
+}
+
+void TestOutputParameterFileConfiguresBaselineOnly() {
+  TemporaryDirectory temporary;
+  const std::filesystem::path scenarioPath =
+      temporary.GetPath() / "parameterized-scenario.yaml";
+  {
+    std::ofstream scenario(scenarioPath);
+    scenario << ReadTextFile(JSB_TEST_HEADLESS_SCENARIO_PATH)
+             << "\ncontroller_parameters:\n  - FW_RR_FF\n";
+  }
+  const std::filesystem::path defaultOutput = temporary.GetPath() / "default";
+  const std::filesystem::path tunedOutput = temporary.GetPath() / "tuned";
+  RunnerOptions defaultOptions = MakeOptions(defaultOutput);
+  defaultOptions.scenarioPath = scenarioPath;
+  const RunnerResult defaultResult = RunWithMcap(defaultOptions);
+  Require(defaultResult.exitCode == RunnerExitCode::Success,
+      "default runner failed: " + defaultResult.error);
+  std::filesystem::create_directories(tunedOutput);
+  {
+    std::ofstream parameters(tunedOutput / "parameters.yaml");
+    parameters << "controller_parameters:\n  FW_RR_FF: 2.7\n";
+  }
+  RunnerOptions tunedOptions = MakeOptions(tunedOutput);
+  tunedOptions.scenarioPath = scenarioPath;
+  const RunnerResult tunedResult = RunWithMcap(tunedOptions);
+  Require(tunedResult.exitCode == RunnerExitCode::Success,
+      "parameterized runner failed: " + tunedResult.error);
+
+  McapRecordingReader defaultReader;
+  McapRecordingReader tunedReader;
+  Require(defaultReader.Open(defaultOutput / "telemetry.mcap"),
+      "failed to open default parameter MCAP");
+  Require(tunedReader.Open(tunedOutput / "telemetry.mcap"),
+      "failed to open tuned parameter MCAP");
+  const auto defaultBaseline =
+      defaultReader.ReadMessages("/jsb/baseline/control/roll");
+  const auto tunedBaseline =
+      tunedReader.ReadMessages("/jsb/baseline/control/roll");
+  const auto defaultPrimary =
+      defaultReader.ReadMessages("/jsb/primary/control/roll");
+  const auto tunedPrimary =
+      tunedReader.ReadMessages("/jsb/primary/control/roll");
+  Require(defaultBaseline.size() == tunedBaseline.size()
+              && !defaultBaseline.empty(),
+      "parameterized baseline sample count changed");
+  Require(defaultPrimary.size() == tunedPrimary.size()
+              && !defaultPrimary.empty(),
+      "parameterized primary sample count changed");
+  Require(std::equal(defaultPrimary.begin(),
+              defaultPrimary.end(),
+              tunedPrimary.begin(),
+              [](const RecordedSample &left, const RecordedSample &right) {
+                return left.payload == right.payload;
+              }),
+      "baseline parameter changed primary telemetry");
+  Require(!std::equal(defaultBaseline.begin(),
+              defaultBaseline.end(),
+              tunedBaseline.begin(),
+              [](const RecordedSample &left, const RecordedSample &right) {
+                return left.payload == right.payload;
+              }),
+      "baseline parameter did not change baseline telemetry");
 }
 
 void TestFailureManifestAndMcapOpenFailure() {
@@ -252,18 +344,9 @@ void TestFailureManifestAndMcapOpenFailure() {
   Require(manifest.find("\"status\": \"failed\"") != std::string::npos,
       "MCAP open failure manifest is not failed");
 
-  const std::filesystem::path blockedComparison =
-      temporary.GetPath() / "blocked-comparison";
-  std::filesystem::create_directories(blockedComparison / "telemetry.mcap");
-  RunnerOptions comparisonOptions = MakeOptions(blockedComparison);
-  comparisonOptions.mode = runner::ExecutionMode::Compare;
-  comparisonOptions.variant.reset();
-  const RunnerResult comparisonResult = RunWithMcap(comparisonOptions);
-  Require(comparisonResult.exitCode == RunnerExitCode::OutputFailure,
-      "comparison MCAP open failure returned an unexpected exit code");
-  Require(comparisonResult.baselineStatus == "failed"
-              && comparisonResult.primaryStatus == "failed",
-      "comparison MCAP failure did not stop both variants");
+  Require(recorderResult.baselineStatus == "failed"
+              && recorderResult.primaryStatus == "failed",
+      "MCAP failure did not stop both variants");
 }
 
 void TestInterruptedRunFinalizesMcap() {
@@ -282,57 +365,10 @@ void TestInterruptedRunFinalizesMcap() {
       "interrupted run did not produce run.json");
 }
 
-void TestSameScenarioExecutesBothVariants() {
-  TemporaryDirectory temporary;
-  RunnerOptions baselineOptions =
-      MakeOptions(temporary.GetPath() / "baseline-run");
-  baselineOptions.variant = sim::ExecutionVariant::Baseline;
-  RunnerOptions primaryOptions =
-      MakeOptions(temporary.GetPath() / "primary-run");
-
-  const RunnerResult baselineResult = RunWithMcap(baselineOptions);
-  const RunnerResult primaryResult = RunWithMcap(primaryOptions);
-  Require(baselineResult.exitCode == RunnerExitCode::Success,
-      "baseline execution failed: " + baselineResult.error);
-  Require(primaryResult.exitCode == RunnerExitCode::Success,
-      "primary execution failed: " + primaryResult.error);
-
-  const std::string baselineManifest =
-      ReadTextFile(baselineOptions.outputDirectory / "run.json");
-  const std::string primaryManifest =
-      ReadTextFile(primaryOptions.outputDirectory / "run.json");
-  Require(baselineManifest.find("\"variant\": \"baseline\"")
-              != std::string::npos,
-      "baseline metadata is missing its variant");
-  Require(primaryManifest.find("\"variant\": \"primary\"") != std::string::npos,
-      "primary metadata is missing its variant");
-
-  McapRecordingReader baselineReader;
-  McapRecordingReader primaryReader;
-  Require(
-      baselineReader.Open(baselineOptions.outputDirectory / "telemetry.mcap"),
-      "failed to read baseline MCAP");
-  Require(primaryReader.Open(primaryOptions.outputDirectory / "telemetry.mcap"),
-      "failed to read primary MCAP");
-  Require(baselineReader.GetRunInfo().executionVariant == "baseline",
-      "baseline MCAP variant is incorrect");
-  Require(primaryReader.GetRunInfo().executionVariant == "primary",
-      "primary MCAP variant is incorrect");
-  Require(!baselineReader.ReadMessages("/jsb/primary/control/roll").empty(),
-      "baseline execution did not use the canonical single-run topic");
-  Require(!primaryReader.ReadMessages("/jsb/primary/control/roll").empty(),
-      "primary execution did not use the canonical single-run topic");
-  Require(baselineReader.GetRunInfo().scenarioDigest
-              == primaryReader.GetRunInfo().scenarioDigest,
-      "the two variants did not use identical Scenario bytes");
-}
-
 void TestComparisonExecutionArtifactsAndSynchronization() {
   TemporaryDirectory temporary;
   RunnerOptions options = MakeOptions(temporary.GetPath() / "comparison");
   options.scenarioPath = JSB_TEST_CANONICAL_SCENARIO_PATH;
-  options.mode = runner::ExecutionMode::Compare;
-  options.variant.reset();
 
   const RunnerResult result = RunWithMcap(options);
   Require(result.exitCode == RunnerExitCode::Success,
@@ -371,8 +407,14 @@ void TestComparisonExecutionArtifactsAndSynchronization() {
 
   const auto baseline = reader.ReadMessages("/jsb/baseline/control/roll");
   const auto primary = reader.ReadMessages("/jsb/primary/control/roll");
+  const auto baselineAircraft =
+      reader.ReadMessages("/jsb/baseline/aircraft/state");
+  const auto primaryAircraft =
+      reader.ReadMessages("/jsb/primary/aircraft/state");
   Require(baseline.size() == 900 && primary.size() == 900,
       "comparison MCAP does not contain both complete trajectories");
+  Require(baselineAircraft.size() == 900 && primaryAircraft.size() == 900,
+      "comparison MCAP does not contain both aircraft trajectories");
   for (std::size_t index = 0; index < baseline.size(); ++index) {
     Require(baseline[index].logTimeNanoseconds
                 == primary[index].logTimeNanoseconds,
@@ -387,7 +429,27 @@ void TestComparisonExecutionArtifactsAndSynchronization() {
         "comparison control channel is not decodable with the common schema");
     Require(baselineState->commandedRollRad == primaryState->commandedRollRad,
         "variant commanded-roll schedules differ");
+    Require(baselineAircraft[index].logTimeNanoseconds
+                == primaryAircraft[index].logTimeNanoseconds,
+        "variant aircraft timestamps differ at the same shared step");
   }
+  const RecordedChannelInfo &baselineControlChannel =
+      FindChannel(reader, "/jsb/baseline/control/roll");
+  const RecordedChannelInfo &primaryControlChannel =
+      FindChannel(reader, "/jsb/primary/control/roll");
+  Require(baselineControlChannel.schemaName == primaryControlChannel.schemaName
+              && baselineControlChannel.schemaData
+                     == primaryControlChannel.schemaData,
+      "variant control channels do not use the same protobuf schema");
+  const RecordedChannelInfo &baselineAircraftChannel =
+      FindChannel(reader, "/jsb/baseline/aircraft/state");
+  const RecordedChannelInfo &primaryAircraftChannel =
+      FindChannel(reader, "/jsb/primary/aircraft/state");
+  Require(baselineAircraftChannel.schemaName
+                  == primaryAircraftChannel.schemaName
+              && baselineAircraftChannel.schemaData
+                     == primaryAircraftChannel.schemaData,
+      "variant aircraft channels do not use the same protobuf schema");
   Require(
       telemetry::recording::mcap_schema::DeserializeRollHoldDiagnostics(
           baseline.front().payload)
@@ -413,7 +475,7 @@ void TestComparisonExecutionArtifactsAndSynchronization() {
       "comparison MCAP is missing the shared 5-second command event");
 }
 
-void TestLegacyVariantConflictIsRejected() {
+void TestLegacyVariantIsRejected() {
   TemporaryDirectory temporary;
   const std::string legacyYaml =
       "autopilot: baseline\n" + ReadTextFile(JSB_TEST_HEADLESS_SCENARIO_PATH);
@@ -422,100 +484,38 @@ void TestLegacyVariantConflictIsRejected() {
     std::ofstream output(legacyPath, std::ios::binary);
     output << legacyYaml;
   }
-  RunnerOptions options = MakeOptions(temporary.GetPath() / "conflict");
+  RunnerOptions options = MakeOptions(temporary.GetPath() / "legacy");
   options.scenarioPath = legacyPath;
-  options.variant = sim::ExecutionVariant::Primary;
   const RunnerResult result = RunWithMcap(options);
   Require(result.exitCode == RunnerExitCode::ScenarioLoadFailure,
-      "conflicting legacy variant was not rejected");
-  Require(result.error
-              == "Scenario autopilot 'baseline' conflicts with execution "
-                 "variant 'primary'.",
-      "legacy conflict error is not explicit");
+      "legacy variant was not rejected");
+  Require(result.error.find("baseline and primary are always run together")
+              != std::string::npos,
+      "legacy variant rejection is not actionable");
   Require(!std::filesystem::exists(options.outputDirectory / "telemetry.mcap"),
-      "legacy conflict started simulation telemetry");
-
-  options.outputDirectory = temporary.GetPath() / "matching";
-  options.variant = sim::ExecutionVariant::Baseline;
-  const RunnerResult matching = RunWithMcap(options);
-  Require(matching.exitCode == RunnerExitCode::Success,
-      "matching legacy variant did not migrate: " + matching.error);
-  Require(ReadTextFile(options.outputDirectory / "run.json")
-                  .find("\"variant\": \"baseline\"")
-              != std::string::npos,
-      "matching legacy variant was not resolved into metadata");
-
-  options.mode = runner::ExecutionMode::Compare;
-  options.variant.reset();
-  options.outputDirectory = temporary.GetPath() / "compare-legacy";
-  const RunnerResult comparison = RunWithMcap(options);
-  Require(comparison.exitCode == RunnerExitCode::ScenarioLoadFailure,
-      "compare mode accepted a legacy autopilot selector");
-  Require(comparison.error.find("cannot be used in compare mode")
-              != std::string::npos,
-      "compare legacy selector rejection is not actionable");
+      "legacy variant started simulation telemetry");
 }
 
-void TestVariantCliParsing() {
-  const runner::RunnerParseResult baseline =
-      runner::ParseRunnerOptions({"--scenario",
-          "scenario.yaml",
-          "--variant",
-          "baseline",
-          "--output",
-          "out"});
-  Require(baseline.options.has_value()
-              && baseline.options->variant == sim::ExecutionVariant::Baseline,
-      "baseline CLI variant did not parse");
-  const runner::RunnerParseResult primary =
-      runner::ParseRunnerOptions({"--scenario",
-          "scenario.yaml",
-          "--variant",
-          "primary",
-          "--output",
-          "out"});
-  Require(primary.options.has_value()
-              && primary.options->variant == sim::ExecutionVariant::Primary,
-      "primary CLI variant did not parse");
-  for (std::string_view unsupported : {"foo", "Primary"}) {
-    const runner::RunnerParseResult parsed =
-        runner::ParseRunnerOptions({"--scenario",
-            "scenario.yaml",
-            "--variant",
-            unsupported,
-            "--output",
-            "out"});
-    Require(!parsed.options.has_value(),
-        "unsupported CLI variant was accepted");
-    Require(parsed.error
-                == "Unsupported execution variant: " + std::string(unsupported),
-        "unsupported CLI variant error is not explicit");
-  }
-  const runner::RunnerParseResult missing = runner::ParseRunnerOptions(
+void TestDualExecutionCliParsing() {
+  const runner::RunnerParseResult parsed = runner::ParseRunnerOptions(
       {"--scenario", "scenario.yaml", "--output", "out"});
-  Require(missing.error == "--variant is required in single mode",
-      "missing CLI variant was not rejected");
-  const runner::RunnerParseResult comparison = runner::ParseRunnerOptions(
-      {"--scenario", "scenario.yaml", "--mode", "compare", "--output", "out"});
-  Require(comparison.options.has_value()
-              && comparison.options->mode == runner::ExecutionMode::Compare
-              && !comparison.options->variant,
-      "compare CLI mode did not parse");
-  const runner::RunnerParseResult ambiguous =
-      runner::ParseRunnerOptions({"--scenario",
-          "scenario.yaml",
-          "--mode",
-          "compare",
-          "--variant",
-          "baseline",
-          "--output",
-          "out"});
-  Require(ambiguous.error == "--variant must not be specified in compare mode",
-      "compare mode did not reject an ambiguous variant");
-  const runner::RunnerParseResult invalidMode = runner::ParseRunnerOptions(
-      {"--scenario", "scenario.yaml", "--mode", "Compare", "--output", "out"});
-  Require(invalidMode.error == "Unsupported execution mode: Compare",
-      "unsupported execution mode error is not explicit");
+  Require(parsed.options.has_value(), "canonical dual-run CLI did not parse");
+  for (const std::vector<std::string_view> legacyOption : {
+           std::vector<std::string_view>{"--variant", "baseline"},
+           std::vector<std::string_view>{"--mode", "compare"},
+       }) {
+    std::vector<std::string_view> arguments = {"--scenario",
+        "scenario.yaml",
+        "--output",
+        "out"};
+    arguments.insert(arguments.end(), legacyOption.begin(), legacyOption.end());
+    const runner::RunnerParseResult rejected =
+        runner::ParseRunnerOptions(arguments);
+    Require(!rejected.options.has_value()
+                && rejected.error.find("always runs baseline and primary")
+                       != std::string::npos,
+        "legacy headless selection option was accepted");
+  }
 }
 
 void TestSemanticCliOverridesAreRejected() {
@@ -529,8 +529,6 @@ void TestSemanticCliOverridesAreRejected() {
   for (const auto &override : overrides) {
     std::vector<std::string_view> arguments = {"--scenario",
         "primary.yaml",
-        "--variant",
-        "primary",
         "--output",
         "out"};
     arguments.insert(arguments.end(), override.begin(), override.end());
@@ -576,7 +574,9 @@ void TestOneComparisonRuntimeInitializationFailure() {
           scenario,
           error),
       "failed to load comparison initialization fixture");
-  const auto comparison = sim::SimulationComparison::Create(scenario,
+  std::optional<sim::ExecutionVariant> failedVariant;
+  const auto comparison = sim::SimulationComparison::Create(
+      scenario,
       {},
       error,
       [](const sim::ResolvedExecutionSpec &execution,
@@ -587,26 +587,108 @@ void TestOneComparisonRuntimeInitializationFailure() {
         }
         return sim::SimulationRuntime::CreateForExecution(execution,
             factoryError);
-      });
+      },
+      &failedVariant);
   Require(comparison == nullptr,
       "comparison survived one runtime initialization failure");
   Require(error
               == "primary initialization failed: injected primary creation "
                  "failure",
       "comparison did not aggregate the variant initialization error");
+  Require(failedVariant == sim::ExecutionVariant::Primary,
+      "comparison did not identify the failed variant");
+}
+
+void TestOneVariantFailureStopsComparison() {
+  sim::SimulationScenario scenario;
+  std::string error;
+  Require(
+      sim::SimulationScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
+          scenario,
+          error),
+      "failed to load variant-failure fixture");
+  sim::SimulationRuntime *primaryRuntime = nullptr;
+  auto comparison = sim::SimulationComparison::Create(scenario,
+      {},
+      error,
+      [&](const sim::ResolvedExecutionSpec &execution,
+          std::string &factoryError) {
+        auto runtime =
+            sim::SimulationRuntime::CreateForExecution(execution, factoryError);
+        if (execution.variant == sim::ExecutionVariant::Primary) {
+          primaryRuntime = runtime.get();
+        }
+        return runtime;
+      });
+  Require(comparison != nullptr && primaryRuntime != nullptr,
+      "failed to create variant-failure comparison: " + error);
+
+  primaryRuntime->Shutdown();
+  Require(!comparison->Tick(),
+      "comparison survived a fatal primary runtime clock failure");
+  Require(comparison->GetState() == sim::ComparisonExecutionState::Failed,
+      "comparison did not enter failed state");
+  Require(
+      comparison->GetVariantResult(sim::ExecutionVariant::Primary).state
+              == sim::ComparisonExecutionState::Failed
+          && comparison->GetVariantResult(sim::ExecutionVariant::Baseline).state
+                 == sim::ComparisonExecutionState::Stopped,
+      "comparison did not attribute the failure and stop its peer");
+  Require(comparison->GetLastError().starts_with("primary:"),
+      "comparison failure does not identify the primary variant");
+  comparison->Shutdown();
+}
+
+void TestVariantParameterBoundary() {
+  sim::SimulationScenario scenario;
+  std::string error;
+  Require(
+      sim::SimulationScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
+          scenario,
+          error),
+      "failed to load parameter-boundary fixture");
+  scenario.controllerParameters = {"FW_RR_FF"};
+  bool sawBaselineParameters = false;
+  bool sawPrimaryParameters = false;
+  const sim::ComparisonExecutionRequest request{
+      .scenario = scenario,
+      .source = {},
+      .baselineParameters = {{"FW_RR_FF", 2.7}},
+      .primaryParameters = {},
+  };
+  auto comparison = sim::SimulationComparison::Create(request,
+      error,
+      [&](const sim::ResolvedExecutionSpec &execution,
+          std::string &factoryError) {
+        if (execution.variant == sim::ExecutionVariant::Baseline) {
+          sawBaselineParameters =
+              execution.parameters == request.baselineParameters;
+        } else {
+          sawPrimaryParameters =
+              execution.parameters == request.primaryParameters;
+        }
+        return sim::SimulationRuntime::CreateForExecution(execution,
+            factoryError);
+      });
+  Require(comparison != nullptr, "parameterized comparison failed: " + error);
+  Require(sawBaselineParameters && sawPrimaryParameters,
+      "variant parameter sets did not reach runtime creation");
+  comparison->Shutdown();
 }
 } // namespace
 
 int main() {
   TestSuccessfulRunArtifactsAndSignals();
+  TestOutputParameterFileConfiguresBaselineOnly();
   TestFailureManifestAndMcapOpenFailure();
   TestInterruptedRunFinalizesMcap();
-  TestSameScenarioExecutesBothVariants();
   TestComparisonExecutionArtifactsAndSynchronization();
-  TestLegacyVariantConflictIsRejected();
-  TestVariantCliParsing();
+  TestLegacyVariantIsRejected();
+  TestDualExecutionCliParsing();
   TestSemanticCliOverridesAreRejected();
   TestInvalidScenarioFailsBeforeSimulationStarts();
   TestOneComparisonRuntimeInitializationFailure();
+  TestOneVariantFailureStopsComparison();
+  TestVariantParameterBoundary();
   return 0;
 }

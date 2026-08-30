@@ -52,37 +52,27 @@ parameter IDs that an operator may tune for that Scenario; parameter values
 and metadata are not duplicated into Scenario YAML.
 
 `execution/capabilities.json` is the machine-readable JSB0 headless capability
-source for JSB1. It declares the `single` and `compare` modes, the canonical
-`baseline` and `primary` variants, and the fixed comparison pair. The narrower
-`execution/variants.json` remains the Execution Variant contract. JSB1 must
-read these JSB0-owned artifacts rather than maintaining an authoritative list.
+source for JSB1. It declares the `compare` mode and its fixed `baseline` and
+`primary` pair. The narrower `execution/variants.json` remains the Execution
+Variant contract. JSB1 must read these JSB0-owned artifacts rather than
+maintaining an authoritative list.
 
 A Scenario owns aircraft, complete initial condition, fixed timestep,
 duration, trim/environment choice, ordered typed events, and common acceptance
-criteria. An Execution Variant owns the runtime/control implementation. A
-single headless run requires one explicit variant and accepts no CLI override
-for other Scenario semantics. The mode defaults to `single` for CLI
-compatibility:
+criteria. An Execution Variant owns the runtime/control implementation. Every
+headless invocation is one dual-variant Run and accepts no CLI override for
+Scenario semantics or variant selection:
 
 ```text
-jsb-sim-runner --scenario scenarios/roll_hold_5deg_30s.yaml --mode single --variant baseline --output out/baseline
-jsb-sim-runner --scenario scenarios/roll_hold_5deg_30s.yaml --mode single --variant primary --output out/primary
+jsb-sim-runner --scenario scenarios/roll_hold_5deg_30s.yaml --output out/comparison
 ```
 
-Both commands use the same binary and Scenario bytes. `run.json` records
-`execution.variant`; MCAP Metadata named `jsb0.run` records
-`execution_variant`. The compatibility provenance fields `autopilot` and
-`resolved_autopilot` remain present but are not Scenario inputs. Each output
-directory contains `telemetry.mcap`, `run.json`, and an exact `scenario.yaml`
-snapshot.
-Concurrent processes must receive distinct output directories; the runner has
-no global output path, port, IPC endpoint, or shared mutable runtime state.
-
-A comparison execution is one Run and one process:
-
-```text
-jsb-sim-runner --scenario scenarios/roll_hold_5deg_30s.yaml --mode compare --output out/comparison
-```
+When controller tuning is requested, the caller prepares
+`out/comparison/parameters.yaml` before launch. The file contains one
+`controller_parameters` mapping. The runner reads it by convention without
+adding a CLI option, rejects IDs not declared by the Scenario whitelist, and
+applies the values only to their supported variant. The file remains separate
+from the exact Scenario snapshot and can be retained as Run provenance.
 
 It creates independent baseline and primary JSBSim/controller runtimes from
 the same parsed Scenario and steps them sequentially on one authoritative
@@ -100,16 +90,12 @@ at the same shared step use the same simulation-time log/publish timestamp.
 results. MCAP Metadata records `execution_mode=compare` and
 `execution_variants=baseline,primary`.
 
-The runtime loader temporarily accepts legacy Scenario `autopilot` fields in
-either scalar form or the former `{type: ...}` mapping and emits a deprecation
-warning. `--variant` remains required in single mode. A mismatch between the
-legacy value and the CLI variant is rejected before simulation starts. Compare
-mode rejects the legacy selector because one value cannot describe the pair;
-saving the Scenario produces canonical YAML without the legacy field.
+The runtime loader can parse a legacy Scenario `autopilot` field for desktop
+migration, but headless execution rejects it because one value cannot describe
+the required pair. Saving the Scenario produces canonical YAML without that
+legacy field.
 
-Headless single-run recordings always publish the active execution on the
-existing `/jsb/primary/...` topics, regardless of variant. Therefore baseline
-and primary artifacts use identical topic names, Protobuf schemas, units, and
+Baseline and primary channels use identical Protobuf schemas, units, and
 timing semantics and can be overlaid directly. Desktop `SimulationSlot`
 namespaces remain unchanged and are mapped explicitly to Execution Variants.
 

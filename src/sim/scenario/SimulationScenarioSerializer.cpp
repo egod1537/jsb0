@@ -158,9 +158,9 @@ SimulationScenario ParseScenario(const YAML::Node &root,
           "autopilot: unsupported legacy value '" + legacyValue + "'");
     }
     metadata.legacyVariant = legacyVariant;
-    metadata.warnings.push_back("Deprecated scenario field 'autopilot'. Use "
-                                "--variant "
-        + legacyValue + ".");
+    metadata.warnings.push_back(
+        "Deprecated scenario field 'autopilot' (" + legacyValue
+        + "). Execution variants are not Scenario inputs.");
   }
 
   const YAML::Node initial =

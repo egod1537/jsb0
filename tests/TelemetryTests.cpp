@@ -161,6 +161,25 @@ void TestRegistryCreatesImmutableTransportContracts() {
   Require(rates->samples.size() == 2,
       "Captured telemetry contract changed with its source registry");
 }
+
+void TestTelemetryRangeReadLimitsPlotData() {
+  telemetry::TelemetrySeries series{.path = "test/long_plot"};
+  constexpr std::size_t SourceSampleCount = 10'000;
+  series.samples.reserve(SourceSampleCount);
+  for (std::size_t index = 0; index < SourceSampleCount; ++index) {
+    series.samples.push_back({
+        .timeSec = static_cast<double>(index),
+        .value = static_cast<double>(index),
+    });
+  }
+
+  const std::vector<telemetry::TelemetrySample> visible =
+      telemetry::ReadTelemetrySamples(series, 2000.0, 8000.0, 512);
+  Require(visible.size() == 512,
+      "Telemetry range read did not enforce the plot sample budget");
+  Require(visible.front().timeSec == 2000.0 && visible.back().timeSec == 8000.0,
+      "Telemetry range read did not retain visible endpoints");
+}
 } // namespace
 
 int main() {
@@ -171,6 +190,7 @@ int main() {
     TestClosestSampleSearchIncludesArchivedHistory();
     TestRegistryInspectionAndClear();
     TestRegistryCreatesImmutableTransportContracts();
+    TestTelemetryRangeReadLimitsPlotData();
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';
     return 1;

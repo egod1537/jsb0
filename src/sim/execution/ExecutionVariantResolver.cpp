@@ -26,13 +26,14 @@ bool ExecutionVariantResolver::Resolve(const ExecutionRequest &request,
       .scenario = request.scenario,
       .variant = request.variant,
       .source = request.source,
+      .parameters = request.parameters,
   };
   error.clear();
   return true;
 }
 
-std::unique_ptr<gnc::IAutopilot>
-ExecutionVariantResolver::CreateAutopilot(ExecutionVariant variant) {
+std::unique_ptr<gnc::IAutopilot> ExecutionVariantResolver::CreateAutopilot(
+    ExecutionVariant variant) {
   switch (variant) {
   case ExecutionVariant::Baseline:
     return gnc::CreateAutopilot(gnc::AutopilotKind::Baseline);

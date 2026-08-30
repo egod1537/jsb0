@@ -6,14 +6,8 @@
 #include <csignal>
 #include <cstdint>
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <vector>
-
-namespace sim {
-class SimulationRuntime;
-struct SimulationScenario;
-} // namespace sim
 
 namespace runner {
 enum class RunnerExitCode : int {
@@ -50,8 +44,6 @@ struct SimulationRunInfo {
   std::string aircraft = "c172x";
   std::string startedAt;
   std::filesystem::path outputDirectory;
-  ExecutionMode mode = ExecutionMode::Single;
-  std::optional<sim::ExecutionVariant> variant;
   double dtSec = 0.0;
   double durationSec = 0.0;
 };

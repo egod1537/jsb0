@@ -1,6 +1,5 @@
 #include "McapRunObserver.hpp"
 
-#include "sim/execution/ExecutionVariant.hpp"
 #include "contract/telemetry/RecordingTypes.hpp"
 
 #include <string>
@@ -34,20 +33,15 @@ bool McapRunObserver::OnRunStarted(const SimulationRunInfo &info,
   metadata.scenarioType = info.scenarioType;
   metadata.scenarioDurationSec = info.durationSec;
   metadata.simulationDtSec = info.dtSec;
-  metadata.executionMode = std::string(ToString(info.mode));
-  if (info.mode == ExecutionMode::Compare) {
-    metadata.executionVariants = "baseline,primary";
-    metadata.primaryAutopilot = "primary";
-    metadata.baselineAutopilot = "baseline";
-  } else if (info.variant) {
-    metadata.executionVariant = std::string(sim::ToString(*info.variant));
-    metadata.primaryAutopilot = metadata.executionVariant;
-  }
+  metadata.executionMode = "compare";
+  metadata.executionVariants = "baseline,primary";
+  metadata.primaryAutopilot = "primary";
+  metadata.baselineAutopilot = "baseline";
 
   telemetry::recording::TelemetryRecordingConfig config;
   config.outputPath = info.outputDirectory / "telemetry.mcap";
   config.recordPrimary = true;
-  config.recordBaseline = info.mode == ExecutionMode::Compare;
+  config.recordBaseline = true;
   if (!recording_.Start(config, metadata)) {
     error = RecordingError(recording_.GetStatus(),
         "failed to initialize MCAP recorder for telemetry.mcap");

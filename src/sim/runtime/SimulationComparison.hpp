@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -40,8 +41,13 @@ public:
   SimulationComparison &operator=(const SimulationComparison &) = delete;
 
   static std::unique_ptr<SimulationComparison> Create(
+      const ComparisonExecutionRequest &request, std::string &error,
+      RuntimeFactory runtimeFactory = {},
+      std::optional<ExecutionVariant> *failedVariant = nullptr);
+  static std::unique_ptr<SimulationComparison> Create(
       const SimulationScenario &scenario, const ScenarioSource &source,
-      std::string &error, RuntimeFactory runtimeFactory = {});
+      std::string &error, RuntimeFactory runtimeFactory = {},
+      std::optional<ExecutionVariant> *failedVariant = nullptr);
 
   // Synchronized execution lifecycle
   bool Tick();
@@ -65,7 +71,7 @@ private:
       double durationSec);
 
   bool CollectEvents();
-  bool ValidateClock() const;
+  std::optional<ExecutionVariant> FindDivergedClockVariant() const;
   bool Fail(ExecutionVariant variant, std::string error);
 
   // Independent variant runtimes

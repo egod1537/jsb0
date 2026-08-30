@@ -212,16 +212,7 @@ def validate_execution_metadata(metadata: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     mode = metadata.get("mode")
     execution = metadata.get("execution", {})
-    if mode == "single":
-        if (
-            set(execution) != {"variant"}
-            or "autopilot" not in metadata
-            or "results" in metadata
-        ):
-            errors.append(
-                "single metadata must contain one variant/autopilot and no comparison results"
-            )
-    elif mode == "compare":
+    if mode == "compare":
         if (
             execution != {"variants": ["baseline", "primary"]}
             or "autopilot" in metadata
@@ -293,7 +284,7 @@ def validate_contract(root: Path, protoc: Path, output: Path) -> None:
     if variants.get("variants") != ["baseline", "primary"]:
         errors.append("$.variants must expose baseline and primary in canonical order")
     if capabilities != {
-        "modes": ["single", "compare"],
+        "modes": ["compare"],
         "variants": ["baseline", "primary"],
         "compare_variants": ["baseline", "primary"],
     }:

@@ -24,6 +24,18 @@ constexpr float ToolbarButtonSpacing = 5.0F;
 constexpr float ToolbarSectionSpacing = 10.0F;
 constexpr float ToolbarButtonCornerRadius = 4.0F;
 constexpr std::array<int, 3> SimulationSpeeds = {1, 2, 3};
+constexpr std::array<ImGuiKey, 4> SimulationSpeedShortcutKeys = {
+    ImGuiKey_1,
+    ImGuiKey_2,
+    ImGuiKey_3,
+    ImGuiKey_4,
+};
+constexpr std::array<ImGuiKey, 4> SimulationSpeedKeypadShortcutKeys = {
+    ImGuiKey_Keypad1,
+    ImGuiKey_Keypad2,
+    ImGuiKey_Keypad3,
+    ImGuiKey_Keypad4,
+};
 constexpr std::array<ImGuiKey, 12> LayoutShortcutKeys = {
     ImGuiKey_F1,
     ImGuiKey_F2,
@@ -301,6 +313,7 @@ void SimulationControlWindow::OnRender(
   const std::optional<sim::ScenarioExecutionStatus> &scenarioStatus =
       props.scenarioStatus;
   const bool scenarioInactive = !scenarioStatus.has_value();
+  HandleSimulationSpeedShortcut(scenarioInactive);
   const bool showScenarioStatus = !isStopped && scenarioStatus.has_value();
   const telemetry::recording::RecordingStatus &recordingStatus =
       props.recordingStatus;
@@ -370,7 +383,8 @@ void SimulationControlWindow::OnRender(
       ImGui::SameLine(0.0F, buttonSpacing);
       const double speedHz = sim::DefaultSimulationHz * speed;
       const std::string label = std::to_string(speed) + "x";
-      const std::string tooltip = "Run at " + std::to_string(speed) + "x speed";
+      const std::string tooltip = "Run at " + std::to_string(speed)
+                                  + "x speed (" + std::to_string(speed) + ")";
       if (DrawSpeedButton(label.c_str(),
               !maximumSpeed && std::abs(automaticHz - speedHz) < 0.5,
               tooltip.c_str())) {
@@ -379,7 +393,9 @@ void SimulationControlWindow::OnRender(
     }
 
     ImGui::SameLine(0.0F, buttonSpacing);
-    if (DrawSpeedButton("Max", maximumSpeed, "Run as fast as the CPU allows")) {
+    if (DrawSpeedButton("Max",
+            maximumSpeed,
+            "Run as fast as the CPU allows (4)")) {
       simulation_.Handle(MaximumSimulationSpeedChanged{true});
     }
     ImGui::EndDisabled();
@@ -462,6 +478,31 @@ void SimulationControlWindow::HandleTransportShortcut() {
   }
   if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
     simulation_.Handle(SimulationPlaybackToggled{});
+  }
+}
+
+void SimulationControlWindow::HandleSimulationSpeedShortcut(bool enabled) {
+  const ImGuiIO &io = ImGui::GetIO();
+  if (!enabled || io.WantTextInput || io.KeyCtrl || io.KeyShift || io.KeyAlt
+      || io.KeySuper || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+    return;
+  }
+
+  for (std::size_t index = 0; index < SimulationSpeedShortcutKeys.size();
+      ++index) {
+    const bool pressed =
+        ImGui::IsKeyPressed(SimulationSpeedShortcutKeys[index], false)
+        || ImGui::IsKeyPressed(SimulationSpeedKeypadShortcutKeys[index], false);
+    if (!pressed) {
+      continue;
+    }
+    if (index < SimulationSpeeds.size()) {
+      simulation_.Handle(SimulationRateChanged{
+          sim::DefaultSimulationHz * SimulationSpeeds[index]});
+    } else {
+      simulation_.Handle(MaximumSimulationSpeedChanged{true});
+    }
+    break;
   }
 }
 

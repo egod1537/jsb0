@@ -7,7 +7,7 @@
   "required": [
     "contract_version", "runtime", "scenario", "telemetry_schema_version",
     "aircraft", "mode", "execution", "started_at", "ended_at",
-    "duration_s", "status"
+    "duration_s", "status", "results"
   ],
   "properties": {
     "contract_version": {"const": "2.0.0"},
@@ -35,16 +35,15 @@
     },
     "telemetry_schema_version": {"const": 1},
     "aircraft": {"const": "c172x"},
-    "mode": {"type": "string", "enum": ["single", "compare"]},
+    "mode": {"const": "compare"},
     "execution": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "variant": {"type": "string", "enum": ["baseline", "primary"]},
         "variants": {"type": "array", "const": ["baseline", "primary"]}
-      }
+      },
+      "required": ["variants"]
     },
-    "autopilot": {"type": "string", "enum": ["primary", "baseline"]},
     "results": {
       "type": "object",
       "additionalProperties": false,
@@ -75,23 +74,5 @@
         "error": {"type": "string"}
       }
     }
-  },
-  "oneOf": [
-    {
-      "properties": {
-        "mode": {"const": "single"},
-        "execution": {"required": ["variant"], "not": {"required": ["variants"]}}
-      },
-      "required": ["autopilot"],
-      "not": {"required": ["results"]}
-    },
-    {
-      "properties": {
-        "mode": {"const": "compare"},
-        "execution": {"required": ["variants"], "not": {"required": ["variant"]}}
-      },
-      "required": ["results"],
-      "not": {"required": ["autopilot"]}
-    }
-  ]
+  }
 }

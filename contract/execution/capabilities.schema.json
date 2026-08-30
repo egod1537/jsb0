@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["modes", "variants", "compare_variants"],
   "properties": {
-    "modes": {"type": "array", "const": ["single", "compare"]},
+    "modes": {"type": "array", "const": ["compare"]},
     "variants": {"type": "array", "const": ["baseline", "primary"]},
     "compare_variants": {"type": "array", "const": ["baseline", "primary"]}
   }

@@ -1,13 +1,13 @@
 #include "SimulationRunner.hpp"
 
 #include "common/crypto/Sha256.hpp"
-#include "sim/execution/ExecutionVariantResolver.hpp"
 #include "sim/runtime/SimulationComparison.hpp"
-#include "sim/runtime/SimulationRuntime.hpp"
 #include "sim/scenario/SimulationScenarioSerializer.hpp"
 
-#include <chrono>
+#include <yaml-cpp/yaml.h>
+
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <ctime>
 #include <fstream>
@@ -123,6 +123,45 @@ bool WriteScenarioSnapshot(const std::filesystem::path &directory,
   return true;
 }
 
+bool LoadControllerParameters(const std::filesystem::path &directory,
+    const sim::SimulationScenario &scenario,
+    sim::ExecutionParameterSet &parameters, std::string &error) {
+  const std::filesystem::path path = directory / "parameters.yaml";
+  if (!std::filesystem::is_regular_file(path)) {
+    return true;
+  }
+  try {
+    const YAML::Node root = YAML::LoadFile(path.string());
+    const YAML::Node values = root["controller_parameters"];
+    if (!root.IsMap() || !values || !values.IsMap()) {
+      error = "parameters.yaml must contain a controller_parameters mapping";
+      return false;
+    }
+    for (const auto &entry : values) {
+      const std::string id = entry.first.as<std::string>();
+      if (std::find(scenario.controllerParameters.begin(),
+              scenario.controllerParameters.end(),
+              id)
+          == scenario.controllerParameters.end()) {
+        error = "controller parameter '" + id
+                + "' is not declared by the Scenario";
+        return false;
+      }
+      const double value = entry.second.as<double>();
+      if (!std::isfinite(value)) {
+        error = "controller parameter '" + id + "' must be finite";
+        return false;
+      }
+      parameters[id] = value;
+    }
+  } catch (const YAML::Exception &exception) {
+    error =
+        "could not parse parameters.yaml: " + std::string(exception.what());
+    return false;
+  }
+  return true;
+}
+
 bool WriteManifest(const std::filesystem::path &directory,
     const SimulationRunInfo &info, const RunnerResult &result,
     std::string &error) {
@@ -171,22 +210,12 @@ bool WriteManifest(const std::filesystem::path &directory,
             "  \"aircraft\": \""
          << JsonEscape(info.aircraft)
          << "\",\n"
-            "  \"mode\": \""
-         << ToString(info.mode)
-         << "\",\n"
-            "  \"execution\": {\n";
-  if (info.mode == ExecutionMode::Compare) {
-    output << "    \"variants\": [\"baseline\", \"primary\"]\n";
-  } else {
-    output << "    \"variant\": \""
-           << (info.variant ? sim::ToString(*info.variant) : std::string_view{})
-           << "\"\n";
-  }
-  output << "  },\n";
-  if (info.mode == ExecutionMode::Single && info.variant) {
-    output << "  \"autopilot\": \"" << sim::ToString(*info.variant) << "\",\n";
-  }
-  output << "  \"started_at\": \"" << JsonEscape(info.startedAt)
+            "  \"mode\": \"compare\",\n"
+            "  \"execution\": {\n"
+            "    \"variants\": [\"baseline\", \"primary\"]\n"
+            "  },\n"
+            "  \"started_at\": \""
+         << JsonEscape(info.startedAt)
          << "\",\n"
             "  \"ended_at\": \""
          << JsonEscape(result.endedAt)
@@ -195,31 +224,27 @@ bool WriteManifest(const std::filesystem::path &directory,
          << info.durationSec
          << ",\n"
             "  \"status\": \""
-         << JsonEscape(result.status) << "\"";
-  if (info.mode == ExecutionMode::Compare) {
-    const std::string_view baselineStatus =
-        result.baselineStatus.empty() ? std::string_view(result.status)
-                                      : std::string_view(result.baselineStatus);
-    const std::string_view primaryStatus =
-        result.primaryStatus.empty() ? std::string_view(result.status)
-                                     : std::string_view(result.primaryStatus);
-    output << ",\n"
-              "  \"results\": {\n"
-              "    \"baseline\": {\"status\": \""
-           << JsonEscape(baselineStatus) << '"';
-    if (!result.baselineError.empty()) {
-      output << ", \"error\": \"" << JsonEscape(result.baselineError) << '"';
-    }
-    output << "},\n"
-              "    \"primary\": {\"status\": \""
-           << JsonEscape(primaryStatus) << '"';
-    if (!result.primaryError.empty()) {
-      output << ", \"error\": \"" << JsonEscape(result.primaryError) << '"';
-    }
-    output << "}\n"
-              "  }";
+         << JsonEscape(result.status) << "\",\n";
+  const std::string_view baselineStatus =
+      result.baselineStatus.empty() ? std::string_view(result.status)
+                                    : std::string_view(result.baselineStatus);
+  const std::string_view primaryStatus =
+      result.primaryStatus.empty() ? std::string_view(result.status)
+                                   : std::string_view(result.primaryStatus);
+  output << "  \"results\": {\n"
+            "    \"baseline\": {\"status\": \""
+         << JsonEscape(baselineStatus) << '"';
+  if (!result.baselineError.empty()) {
+    output << ", \"error\": \"" << JsonEscape(result.baselineError) << '"';
   }
-  output << ",\n"
+  output << "},\n"
+            "    \"primary\": {\"status\": \""
+         << JsonEscape(primaryStatus) << '"';
+  if (!result.primaryError.empty()) {
+    output << ", \"error\": \"" << JsonEscape(result.primaryError) << '"';
+  }
+  output << "}\n"
+            "  },\n"
             "  \"simulation_dt_s\": "
          << info.dtSec
          << ",\n"
@@ -288,73 +313,6 @@ public:
   virtual void PopulateVariantResults(RunnerResult &result) const = 0;
 };
 
-class SingleExecutionSession final : public IExecutionSession {
-public:
-  static std::unique_ptr<SingleExecutionSession> Create(
-      const sim::ResolvedExecutionSpec &execution, std::string &error) {
-    auto runtime = sim::SimulationRuntime::CreateForExecution(execution, error);
-    if (runtime == nullptr) {
-      return nullptr;
-    }
-    if (!runtime->RunExecution(execution)) {
-      error = runtime->GetStatus().lastError;
-      runtime->Shutdown();
-      return nullptr;
-    }
-    return std::unique_ptr<SingleExecutionSession>(
-        new SingleExecutionSession(std::move(runtime),
-            execution.scenario.dtSec,
-            execution.scenario.durationSec));
-  }
-
-  bool IsRunning() const override {
-    return runtime_->GetScenarioStatus().has_value();
-  }
-
-  bool Tick() override {
-    observation_ = {};
-    if (!runtime_->Tick()) {
-      lastError_ = runtime_->GetStatus().lastError;
-      return false;
-    }
-    ++stepCount_;
-    observation_.telemetry.simulationTimeSec = GetSimulationTimeSec();
-    observation_.telemetry.primary = runtime_->CaptureRecordingSource();
-    observation_.scenarioEvents = runtime_->TakeScenarioEvents();
-    return true;
-  }
-
-  void Stop() override { runtime_->Stop(); }
-  void Shutdown() override { runtime_->Shutdown(); }
-
-  double GetSimulationTimeSec() const override {
-    return std::min(durationSec_, static_cast<double>(stepCount_) * dtSec_);
-  }
-
-  std::uint64_t GetStepCount() const override { return stepCount_; }
-  const std::string &GetLastError() const override { return lastError_; }
-
-  SimulationRunObservation TakeObservation() override {
-    return std::exchange(observation_, {});
-  }
-
-  void PopulateVariantResults(RunnerResult &) const override {}
-
-private:
-  SingleExecutionSession(std::unique_ptr<sim::SimulationRuntime> runtime,
-      double dtSec, double durationSec)
-      : runtime_(std::move(runtime)), dtSec_(dtSec), durationSec_(durationSec) {
-    observation_.scenarioEvents = runtime_->TakeScenarioEvents();
-  }
-
-  std::unique_ptr<sim::SimulationRuntime> runtime_;
-  double dtSec_ = 0.0;
-  double durationSec_ = 0.0;
-  std::uint64_t stepCount_ = 0;
-  SimulationRunObservation observation_;
-  std::string lastError_;
-};
-
 std::string ComparisonStatus(sim::ComparisonExecutionState state,
     std::string_view runStatus) {
   switch (state) {
@@ -373,10 +331,10 @@ std::string ComparisonStatus(sim::ComparisonExecutionState state,
 class ComparisonExecutionSession final : public IExecutionSession {
 public:
   static std::unique_ptr<ComparisonExecutionSession> Create(
-      const sim::SimulationScenario &scenario,
-      const sim::ScenarioSource &source, std::string &error) {
+      const sim::ComparisonExecutionRequest &request, std::string &error,
+      std::optional<sim::ExecutionVariant> &failedVariant) {
     auto comparison =
-        sim::SimulationComparison::Create(scenario, source, error);
+        sim::SimulationComparison::Create(request, error, {}, &failedVariant);
     return comparison == nullptr
                ? nullptr
                : std::unique_ptr<ComparisonExecutionSession>(
@@ -421,11 +379,27 @@ public:
     result.primaryStatus = ComparisonStatus(primary.state, result.status);
     result.primaryError = primary.error;
     if (result.status != "completed") {
-      if (result.baselineError.empty() && result.baselineStatus == "failed") {
+      if (result.baselineError.empty()
+          && baseline.state == sim::ComparisonExecutionState::Failed) {
         result.baselineError = result.error;
       }
-      if (result.primaryError.empty() && result.primaryStatus == "failed") {
+      if (result.primaryError.empty()
+          && primary.state == sim::ComparisonExecutionState::Failed) {
         result.primaryError = result.error;
+      }
+      if (result.baselineError.empty()
+          && baseline.state == sim::ComparisonExecutionState::Stopped) {
+        result.baselineError =
+            primary.state == sim::ComparisonExecutionState::Failed
+                ? "stopped because primary failed"
+                : result.error;
+      }
+      if (result.primaryError.empty()
+          && primary.state == sim::ComparisonExecutionState::Stopped) {
+        result.primaryError =
+            baseline.state == sim::ComparisonExecutionState::Failed
+                ? "stopped because baseline failed"
+                : result.error;
       }
     }
   }
@@ -463,8 +437,6 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
           (pathError ? options.scenarioPath : absoluteScenarioPath).string(),
       .startedAt = GetWallClockTimestamp(),
       .outputDirectory = options.outputDirectory,
-      .mode = options.mode,
-      .variant = options.variant,
   };
 
   std::string scenarioBytes;
@@ -499,20 +471,11 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
   for (const std::string &warning : loadMetadata.warnings) {
     std::cerr << "[runner] warning: " << warning << '\n';
   }
-  if (loadMetadata.legacyVariant && options.mode == ExecutionMode::Compare) {
+  if (loadMetadata.legacyVariant) {
     result.exitCode = RunnerExitCode::ScenarioLoadFailure;
     result.error = "Deprecated scenario field 'autopilot' cannot be used in "
-                   "compare mode. Remove it from the Scenario.";
-    WriteFinalManifest(info, result);
-    return result;
-  }
-  if (loadMetadata.legacyVariant && options.variant
-      && *loadMetadata.legacyVariant != *options.variant) {
-    result.exitCode = RunnerExitCode::ScenarioLoadFailure;
-    result.error = "Scenario autopilot '"
-                   + std::string(ToString(*loadMetadata.legacyVariant))
-                   + "' conflicts with execution variant '"
-                   + std::string(ToString(*options.variant)) + "'.";
+                   "headless execution. Remove it from the Scenario; baseline "
+                   "and primary are always run together.";
     WriteFinalManifest(info, result);
     return result;
   }
@@ -536,34 +499,39 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
       .file = info.scenarioFile,
       .digestSha256 = info.scenarioDigest,
   };
-  std::unique_ptr<IExecutionSession> session;
-  if (options.mode == ExecutionMode::Compare) {
-    session = ComparisonExecutionSession::Create(scenario, source, error);
-  } else {
-    sim::ResolvedExecutionSpec execution;
-    if (!options.variant
-        || !sim::ExecutionVariantResolver::Resolve(
-            {
-                .scenario = scenario,
-                .variant = *options.variant,
-                .source = source,
-            },
-            execution,
-            error)) {
-      result.exitCode = RunnerExitCode::ScenarioLoadFailure;
-      result.error = error.empty() ? "single execution variant is missing"
-                                   : std::move(error);
-      WriteFinalManifest(info, result);
-      return result;
-    }
-    session = SingleExecutionSession::Create(execution, error);
+  sim::ExecutionParameterSet baselineParameters;
+  if (!LoadControllerParameters(options.outputDirectory,
+          scenario,
+          baselineParameters,
+          error)) {
+    result.exitCode = RunnerExitCode::ScenarioLoadFailure;
+    result.error = std::move(error);
+    WriteFinalManifest(info, result);
+    return result;
   }
+  const sim::ComparisonExecutionRequest executionRequest{
+      .scenario = scenario,
+      .source = source,
+      .baselineParameters = std::move(baselineParameters),
+      .primaryParameters = {},
+  };
+  std::optional<sim::ExecutionVariant> failedVariant;
+  std::unique_ptr<IExecutionSession> session =
+      ComparisonExecutionSession::Create(executionRequest,
+          error,
+          failedVariant);
   if (session == nullptr) {
     result.exitCode = RunnerExitCode::SimulationInitializationFailure;
     result.error = std::move(error);
-    if (options.mode == ExecutionMode::Compare) {
-      result.baselineStatus = "failed";
-      result.primaryStatus = "failed";
+    result.baselineStatus = "failed";
+    result.primaryStatus = "failed";
+    if (failedVariant == sim::ExecutionVariant::Baseline) {
+      result.baselineError = result.error;
+      result.primaryError = "stopped because baseline initialization failed";
+    } else if (failedVariant == sim::ExecutionVariant::Primary) {
+      result.baselineError = "stopped because primary initialization failed";
+      result.primaryError = result.error;
+    } else {
       result.baselineError = result.error;
       result.primaryError = result.error;
     }
@@ -599,12 +567,7 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
   }
 
   std::cout << "[runner] scenario: " << scenario.name << '\n'
-            << "[runner] mode: " << ToString(info.mode) << '\n';
-  if (info.variant) {
-    std::cout << "[runner] variant: " << sim::ToString(*info.variant) << '\n';
-  } else {
-    std::cout << "[runner] variants: baseline, primary\n";
-  }
+            << "[runner] variants: baseline, primary\n";
   std::cout << "[runner] dt: " << std::fixed << std::setprecision(6)
             << scenario.dtSec << '\n'
             << "[runner] duration: " << std::setprecision(3)

@@ -14,15 +14,18 @@
   },
   "telemetry_schema_version": 1,
   "aircraft": "c172x",
-  "mode": "single",
+  "mode": "compare",
   "execution": {
-    "variant": "baseline"
+    "variants": ["baseline", "primary"]
   },
-  "autopilot": "baseline",
   "started_at": "2026-01-01T00:00:00Z",
   "ended_at": "2026-01-01T00:00:01Z",
   "duration_s": 0.1,
   "status": "completed",
+  "results": {
+    "baseline": {"status": "completed"},
+    "primary": {"status": "completed"}
+  },
   "simulation_dt_s": 0.01,
   "simulation_time_s": 0.1,
   "wall_time_s": 1.0,

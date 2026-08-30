@@ -7,8 +7,10 @@
 #include "sim/gnc/autopilot/IAutopilotAnalysis.hpp"
 #include "sim/gnc/autopilot/MyAutopilot.hpp"
 #include "sim/gnc/autopilot/PX4Autopilot.hpp"
+#include "sim/gnc/hold/Px4RollHoldParameterMetadata.hpp"
 #include "sim/scenario/ScenarioExecutor.hpp"
 #include "sim/scenario/SimulationScenario.hpp"
+#include "common/math/Math.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -34,6 +36,80 @@ std::string GetSimulationError(const Simulation *simulation,
   }
   return simulation->GetErrorTracker().GetLastError().value_or(
       std::move(fallback));
+}
+
+bool ApplyExecutionParameters(Simulation &simulation,
+    const ResolvedExecutionSpec &execution, std::string &error) {
+  if (execution.parameters.empty()) {
+    return true;
+  }
+  if (execution.variant != ExecutionVariant::Baseline) {
+    error = "controller parameters are not supported by execution variant '"
+            + std::string(ToString(execution.variant)) + "'";
+    return false;
+  }
+  auto *manager = simulation.GetComponent<control::FlightControlManager>();
+  auto *autopilot = manager != nullptr ? dynamic_cast<gnc::PX4Autopilot *>(
+                                             &manager->GetAutopilot())
+                                       : nullptr;
+  if (autopilot == nullptr) {
+    error = "baseline controller parameters require PX4Autopilot";
+    return false;
+  }
+
+  gnc::Px4RollHoldReferenceSettings settings = autopilot->GetRollHoldSettings();
+  for (const auto &[id, value] : execution.parameters) {
+    const auto declared = std::find(
+        execution.scenario.controllerParameters.begin(),
+        execution.scenario.controllerParameters.end(),
+        id);
+    if (declared == execution.scenario.controllerParameters.end()) {
+      error = "controller parameter '" + id
+              + "' is not declared by the Scenario";
+      return false;
+    }
+    const auto metadata = std::find_if(gnc::Px4RollHoldParameters.begin(),
+        gnc::Px4RollHoldParameters.end(),
+        [&](const gnc::Px4RollHoldParameterMetadata &item) {
+          return item.name == id;
+        });
+    if (metadata == gnc::Px4RollHoldParameters.end()) {
+      error = "unsupported baseline controller parameter '" + id + "'";
+      return false;
+    }
+    if (!std::isfinite(value) || value < metadata->minimum
+        || value > metadata->maximum) {
+      error = "controller parameter '" + id + "' is outside ["
+              + std::to_string(metadata->minimum) + ", "
+              + std::to_string(metadata->maximum) + "]";
+      return false;
+    }
+    switch (metadata->parameter) {
+    case gnc::Px4RollHoldParameter::TimeConstant:
+      settings.timeConstantSec = value;
+      break;
+    case gnc::Px4RollHoldParameter::MaximumRollRate:
+      settings.maximumRollRateRadPerSec = math::DegToRad(value);
+      break;
+    case gnc::Px4RollHoldParameter::RateProportionalGain:
+      settings.rateProportionalGain = value;
+      break;
+    case gnc::Px4RollHoldParameter::RateIntegralGain:
+      settings.rateIntegralGain = value;
+      break;
+    case gnc::Px4RollHoldParameter::RateDerivativeGain:
+      settings.rateDerivativeGain = value;
+      break;
+    case gnc::Px4RollHoldParameter::RateFeedForwardGain:
+      settings.rateFeedForwardGain = value;
+      break;
+    case gnc::Px4RollHoldParameter::IntegratorLimit:
+      settings.integratorLimit = value;
+      break;
+    }
+  }
+  autopilot->SetRollHoldSettings(settings);
+  return true;
 }
 } // namespace
 
@@ -242,6 +318,10 @@ bool SimulationRuntime::RunExecution(const ResolvedExecutionSpec &execution) {
     }
   }
   if (!SelectExecutionVariant(execution.variant)) {
+    return false;
+  }
+  if (!ApplyExecutionParameters(*primarySimulation_, execution, lastError_)) {
+    RestoreInteractiveSimulationOrder();
     return false;
   }
   auto executor = std::make_unique<ScenarioExecutor>(*primarySimulation_);

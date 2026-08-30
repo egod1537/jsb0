@@ -19,7 +19,64 @@
 namespace application {
 namespace {
 constexpr std::size_t MaximumCachedSamplesPerChannel = 4096;
+constexpr std::size_t CompactedSamplesPerChannel = 2048;
 std::atomic<messaging::RequestId> nextRequestId = 1;
+
+void AppendChronologically(std::vector<telemetry::TelemetrySample> &output,
+    const telemetry::TelemetrySample &first,
+    const telemetry::TelemetrySample &second) {
+  if (first.timeSec <= second.timeSec) {
+    output.push_back(first);
+    if (second.timeSec != first.timeSec) {
+      output.push_back(second);
+    }
+  } else {
+    output.push_back(second);
+    output.push_back(first);
+  }
+}
+
+void CompactTelemetryHistory(telemetry::TelemetrySeries &series) {
+  const std::vector<telemetry::TelemetrySample> &samples = series.samples;
+  if (samples.size() <= MaximumCachedSamplesPerChannel) {
+    return;
+  }
+
+  std::vector<telemetry::TelemetrySample> compacted;
+  compacted.reserve(CompactedSamplesPerChannel);
+  // Keep the full session span while retaining each time bucket's extrema.
+  // This avoids per-frame front erases and preserves spikes for overview plots.
+  compacted.push_back(samples.front());
+
+  const std::size_t interiorCount = samples.size() - 2;
+  const std::size_t bucketCount = (CompactedSamplesPerChannel - 2) / 2;
+  for (std::size_t bucket = 0; bucket < bucketCount; ++bucket) {
+    const std::size_t begin = 1 + interiorCount * bucket / bucketCount;
+    const std::size_t end = 1 + interiorCount * (bucket + 1) / bucketCount;
+    if (begin >= end) {
+      continue;
+    }
+
+    auto minimum = samples.begin() + static_cast<std::ptrdiff_t>(begin);
+    auto maximum = minimum;
+    for (auto sample = minimum + 1;
+        sample != samples.begin() + static_cast<std::ptrdiff_t>(end);
+        ++sample) {
+      if (sample->value < minimum->value) {
+        minimum = sample;
+      }
+      if (sample->value > maximum->value) {
+        maximum = sample;
+      }
+    }
+    AppendChronologically(compacted, *minimum, *maximum);
+  }
+
+  if (compacted.back().timeSec != samples.back().timeSec) {
+    compacted.push_back(samples.back());
+  }
+  series.samples = std::move(compacted);
+}
 } // namespace
 
 SimulationMessageClient::SimulationMessageClient(messaging::MessageBus &bus)
@@ -374,9 +431,7 @@ void SimulationMessageClient::ReceiveTelemetry(
     } else {
       position->samples.push_back(
           {.timeSec = event.frame.timestamp, .value = value.value});
-      if (position->samples.size() > MaximumCachedSamplesPerChannel) {
-        position->samples.erase(position->samples.begin());
-      }
+      CompactTelemetryHistory(*position);
     }
   }
 }
