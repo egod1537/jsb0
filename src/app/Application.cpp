@@ -1,9 +1,10 @@
 #include "app/Application.hpp"
+#include "common/Options.hpp"
 
 #include "gui/GUI.hpp"
-#include "messaging/SimulationMessageAdapter.hpp"
-#include "messaging/SimulationMessageClient.hpp"
-#include "sim/runtime/SimulationRuntime.hpp"
+#include "messaging/GuiSimBridge.hpp"
+#include "messaging/SimMessageClient.hpp"
+#include "sim/runtime/SimRuntime.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -25,20 +26,69 @@ Clock::duration ToSimulationInterval(double hz) {
       sim::MaximumAutomaticSimulationHz);
   return ToClockDuration(1.0 / clamped);
 }
+
+bool RunsAtMaximumSpeed(const sim::SimStatus &status) {
+  return status.maximumSimulationSpeedEnabled
+         && status.executionState == sim::SimExecutionState::Running;
+}
+
+template <typename SimulationTick>
+bool RunScheduledSimulationTicks(const sim::SimStatus &status,
+    const volatile std::sig_atomic_t &running, Clock::time_point &now,
+    Clock::duration simulationInterval, Clock::time_point &nextSimulationTick,
+    Clock::time_point nextGuiTick, SimulationTick &&tick) {
+  const bool hasPendingManualTick =
+      status.executionState == sim::SimExecutionState::Paused
+      && status.pendingTickCount > 0;
+  if (hasPendingManualTick) {
+    return tick();
+  }
+  if (RunsAtMaximumSpeed(status)) {
+    do {
+      if (!tick()) {
+        return false;
+      }
+      now = Clock::now();
+    } while (running && now < nextGuiTick);
+    return true;
+  }
+  if (status.executionState == sim::SimExecutionState::Paused) {
+    nextSimulationTick = now + simulationInterval;
+    return true;
+  }
+
+  while (now >= nextSimulationTick) {
+    if (!tick()) {
+      return false;
+    }
+    nextSimulationTick += simulationInterval;
+    now = Clock::now();
+  }
+  return true;
+}
+
+template <typename GuiTick>
+void RunScheduledGuiTick(Clock::time_point &now, Clock::duration guiInterval,
+    Clock::time_point &nextGuiTick, GuiTick &&tick) {
+  if (now < nextGuiTick) {
+    return;
+  }
+
+  tick();
+  now = Clock::now();
+  do {
+    nextGuiTick += guiInterval;
+  } while (nextGuiTick <= now);
+}
 } // namespace
 
 Application::Application(std::unique_ptr<gui::GUI> gui,
-    std::unique_ptr<sim::SimulationRuntime> simulationRuntime,
-    sim::SimulationConfig simConfig)
-    : simulationRuntime_(std::move(simulationRuntime)), gui_(std::move(gui)),
-      simConfig_(std::move(simConfig)) {
-  if (simulationRuntime_ != nullptr) {
-    simulationMessageAdapter_ =
-        std::make_unique<application::messaging::SimulationMessageAdapter>(
-            messageBus_,
-            *simulationRuntime_);
-    simulationMessageClient_ =
-        std::make_unique<application::SimulationMessageClient>(messageBus_);
+    std::unique_ptr<sim::SimRuntime> simRuntime)
+    : simRuntime_(std::move(simRuntime)), gui_(std::move(gui)) {
+  if (simRuntime_ != nullptr) {
+    guiSimBridge_ = std::make_unique<app::messaging::GuiSimBridge>(messageBus_,
+        *simRuntime_);
+    simMessageClient_ = std::make_unique<app::SimMessageClient>(messageBus_);
   }
 }
 
@@ -46,33 +96,32 @@ Application::Application() = default;
 Application::~Application() = default;
 
 bool Application::Run(const volatile std::sig_atomic_t &running) {
-  if (!Start()) {
-    Exit();
+  if (!Initialize()) {
+    Shutdown();
     return false;
   }
 
-  const bool succeeded = RunMainLoop(running);
-  Exit();
+  const bool succeeded = RunTick(running);
+  Shutdown();
   return succeeded;
 }
 
-bool Application::RunMainLoop(const volatile std::sig_atomic_t &running) {
-  bool succeeded = true;
-  double scheduledSimulationHz = simulationRuntime_->GetAutomaticSimulationHz();
+bool Application::RunTick(const volatile std::sig_atomic_t &running) {
+  double scheduledSimulationHz = simRuntime_->GetAutomaticSimulationHz();
   bool scheduledMaximumSimulationSpeed =
-      simulationRuntime_->IsMaximumSimulationSpeedEnabled();
+      simRuntime_->IsMaximumSimulationSpeedEnabled();
   Clock::duration simulationInterval =
       ToSimulationInterval(scheduledSimulationHz);
-  const double guiDt = gui_->GetConfig().GetRenderDT();
   const Clock::duration guiInterval =
-      guiDt > 0.0 ? ToClockDuration(guiDt) : simulationInterval;
+      opts::gui::RenderDtSec > 0.0 ? ToClockDuration(opts::gui::RenderDtSec)
+                                   : simulationInterval;
 
   auto nextSimulationTick = Clock::now();
-  auto nextGUITick = nextSimulationTick;
+  auto nextGuiTick = nextSimulationTick;
 
-  while (succeeded && running && !gui_->ShouldClose()) {
+  while (running && !gui_->ShouldClose()) {
     auto now = Clock::now();
-    const sim::SimulationStatus status = simulationRuntime_->GetStatus();
+    const sim::SimStatus status = simRuntime_->GetStatus();
 
     if (status.maximumSimulationSpeedEnabled
         != scheduledMaximumSimulationSpeed) {
@@ -87,72 +136,39 @@ bool Application::RunMainLoop(const volatile std::sig_atomic_t &running) {
       }
     }
 
-    const bool hasPendingManualTick =
-        status.executionState == sim::SimulationExecutionState::Paused
-        && status.pendingTickCount > 0;
-    const bool runAtMaximumSpeed =
-        status.maximumSimulationSpeedEnabled
-        && status.executionState == sim::SimulationExecutionState::Running;
+    if (!RunScheduledSimulationTicks(status,
+            running,
+            now,
+            simulationInterval,
+            nextSimulationTick,
+            nextGuiTick,
+            [this] { return Tick(); })) {
+      return false;
+    }
+    RunScheduledGuiTick(now, guiInterval, nextGuiTick, [this] { TickGUI(); });
 
-    if (hasPendingManualTick) {
-      succeeded = TickSimulation();
-    } else if (runAtMaximumSpeed) {
-      do {
-        if (!TickSimulation()) {
-          succeeded = false;
-          break;
-        }
-        now = Clock::now();
-      } while (running && now < nextGUITick);
-    } else if (status.executionState == sim::SimulationExecutionState::Paused) {
-      nextSimulationTick = now + simulationInterval;
-    } else {
-      while (now >= nextSimulationTick) {
-        if (!TickSimulation()) {
-          succeeded = false;
-          break;
-        }
-        nextSimulationTick += simulationInterval;
-        now = Clock::now();
-      }
-    }
-
-    if (!succeeded) {
-      break;
-    }
-    if (now >= nextGUITick) {
-      TickGUI();
-      now = Clock::now();
-      do {
-        nextGUITick += guiInterval;
-      } while (nextGUITick <= now);
-    }
-    if (!runAtMaximumSpeed) {
-      std::this_thread::sleep_until(std::min(nextSimulationTick, nextGUITick));
+    if (!RunsAtMaximumSpeed(status)) {
+      std::this_thread::sleep_until(std::min(nextSimulationTick, nextGuiTick));
     }
   }
 
-  return succeeded;
+  return true;
 }
 
-bool Application::Start() {
-  if (gui_ == nullptr || simulationRuntime_ == nullptr
-      || simulationMessageAdapter_ == nullptr
-      || simulationMessageClient_ == nullptr) {
+bool Application::Initialize() {
+  if (gui_ == nullptr || simRuntime_ == nullptr || guiSimBridge_ == nullptr
+      || simMessageClient_ == nullptr) {
     std::cerr << "Application requires GUI, simulation runtime, message "
                  "adapter, and message client instances\n";
     return false;
   }
-  gui_->SetSimulationMessageClient(simulationMessageClient_.get());
-  if (!simulationRuntime_->Initialize(simConfig_)) {
+  gui_->SetSimMessageClient(simMessageClient_.get());
+  if (!simRuntime_->Initialize()) {
     std::cerr << "Failed to initialize simulation runtime: "
-              << simulationRuntime_->GetStatus().lastError << '\n';
+              << simRuntime_->GetStatus().lastError << '\n';
     return false;
   }
-  simulationMessageAdapter_->PublishState();
-  if (!flightGear_.Initialize()) {
-    return false;
-  }
+  guiSimBridge_->PublishState();
   if (!gui_->Start()) {
     std::cerr << "Failed to start GUI\n";
     return false;
@@ -160,24 +176,21 @@ bool Application::Start() {
   return true;
 }
 
-bool Application::TickSimulation() {
-  if (!simulationRuntime_->Tick()) {
+bool Application::Tick() {
+  if (!simRuntime_->Tick()) {
     return false;
   }
-  const sim::SimulationSnapshot snapshot = simulationRuntime_->GetSnapshot();
-  simulationMessageAdapter_->PublishState();
-  flightGear_.Update(snapshot.primary);
+  guiSimBridge_->PublishState();
   return true;
 }
 
 void Application::TickGUI() { gui_->Tick(); }
 
-void Application::Exit() {
+void Application::Shutdown() {
   if (gui_ != nullptr) {
     gui_->Exit();
   }
-  flightGear_.Shutdown();
-  if (simulationRuntime_ != nullptr) {
-    simulationRuntime_->Shutdown();
+  if (simRuntime_ != nullptr) {
+    simRuntime_->Shutdown();
   }
 }

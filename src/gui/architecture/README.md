@@ -3,7 +3,7 @@
 Application GUI code uses small hierarchical features. The lightweight
 `Component`/`Window` lifecycle remains as the editor's rendering shell, but it
 no longer exposes `GUI&` as a service locator. Components receive only a
-`GUIFrameContext`, and windows receive the immutable `SimulationSnapshot`.
+`GUIFrameContext`, and windows receive the immutable `SimSnapshot`.
 
 ```text
 application dependency or authoritative snapshot
@@ -39,8 +39,8 @@ application dependency or authoritative snapshot
   services, simulation commands, and feature controllers stay under `gui`.
 
 A dumb element may keep rendering-local state only when the immediate-mode
-toolkit requires it. It must not know `SimulationMessageClient`,
-`SimulationRuntime`, global GUI state, arbitrary services, or its parent
+toolkit requires it. It must not know `SimMessageClient`,
+`SimRuntime`, global GUI state, arbitrary services, or its parent
 controller. Pass values rather than writable references:
 
 ```text
@@ -56,7 +56,7 @@ use of callbacks that capture the owner.
 Name element-boundary events after interactions, such as
 `SliderValueChanged` or `AutopilotSourceSelected`. Name feature-boundary events
 after intent or meaning, such as `TargetRollChanged`,
-`AutopilotSelectionChanged`, or `SimulationStartRequested`.
+`AutopilotSelectionChanged`, or `SimStartRequested`.
 
 A parent controller may own child controllers. Each child owns its model,
 handles its low-level view events, and emits only semantic events upward. The
@@ -77,7 +77,7 @@ Parent Controller -> Child Controller
 Not allowed:
 
 ```text
-View -> SimulationMessageClient or SimulationRuntime
+View -> SimMessageClient or SimRuntime
 Element -> application service or parent dependency
 Simulation -> GUI
 ```
@@ -99,12 +99,12 @@ existing editor windows:
 
 ```text
 GUI root
-  SimulationController
+  SimController
     initial-condition child state
     ScenarioController
       pending draft and file state
       file serialization
-      semantic launch events to SimulationController
+      semantic launch events to SimController
   GNCController
     GNCModel and shared snapshot/configuration coordination
     ExperimentalController

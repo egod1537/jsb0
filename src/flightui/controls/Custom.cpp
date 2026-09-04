@@ -4,8 +4,8 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 UIElement Custom(Action drawAction) {
   return CreateElement(std::move(drawAction));
 }
-} // namespace FlightUI
+} // namespace ui

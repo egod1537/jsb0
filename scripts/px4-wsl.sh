@@ -52,8 +52,7 @@ for variable in \
   PX4_VERSION \
   JSBSIM_VERSION \
   PX4_WORKSPACE \
-  PX4_JSBSIM_MODEL \
-  PX4_HEADLESS
+  PX4_JSBSIM_MODEL
 do
   if [[ -n "${!variable+x}" ]]; then
     wsl_env+=("${variable}=${!variable}")

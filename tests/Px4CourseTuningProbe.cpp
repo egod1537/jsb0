@@ -146,11 +146,7 @@ std::string Format(double value, int precision = 3) {
 }
 
 control::FlightControlManager &Manager(sim::Simulation &simulation) {
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  if (!manager) {
-    throw std::runtime_error("FlightControlManager is missing");
-  }
-  return *manager;
+  return simulation.GetFlightControlManager();
 }
 
 gnc::PX4Autopilot &Autopilot(sim::Simulation &simulation) {
@@ -288,9 +284,7 @@ Run Execute(std::string scenario, double hz, double airspeedKts,
     double initialHeadingDeg, double targetCourseDeg, Candidate candidate,
     bool retainSamples, bool enableAtStep = false) {
   sim::Simulation simulation(std::make_unique<gnc::PX4Autopilot>());
-  sim::SimulationConfig config;
-  config.simulationHz = hz;
-  if (!simulation.Initialize(config)) {
+  if (!simulation.Initialize(opts::simulation::AircraftName, hz)) {
     throw std::runtime_error("Failed to initialize course tuning simulation");
   }
   sim::InitialCondition initial = simulation.GetDefaultInitialCondition();
@@ -387,9 +381,7 @@ Run Execute(std::string scenario, double hz, double airspeedKts,
 RollRegressionMetrics ExecuteRollRegression(std::string scenario, double hz,
     double rollStepDeg, bool directRatePulse) {
   sim::Simulation simulation(std::make_unique<gnc::PX4Autopilot>());
-  sim::SimulationConfig config;
-  config.simulationHz = hz;
-  if (!simulation.Initialize(config)) {
+  if (!simulation.Initialize(opts::simulation::AircraftName, hz)) {
     throw std::runtime_error("Failed to initialize roll regression simulation");
   }
   auto &autopilot = Autopilot(simulation);
@@ -599,7 +591,7 @@ void WriteReport(const std::filesystem::path &path, const Candidate &selected,
   out << "# PX4 Course Hold / 120 Hz Validation Report\n\n"
       << "## 1. Legacy removal and 120 Hz architecture\n\n"
       << "The UAVBook PI CourseHoldController is removed. One canonical "
-         "SimulationConfig timestep drives controller OnTick, JSBSim "
+         "The configured simulation timestep drives controller OnTick, JSBSim "
          "Setdt/Run, "
          "JSBSim actuator dynamics, and post-step telemetry. The production "
          "default is 120 Hz (8.333 ms); GUI rendering remains independent. "

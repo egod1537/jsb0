@@ -4,7 +4,7 @@
 #include <imgui.h>
 #include <implot.h>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 ImVec4 Color(std::uint32_t rgb, float alpha = 1.0F) {
   constexpr float ByteToFloat = 1.0F / 255.0F;
@@ -238,4 +238,4 @@ StatusBadgeStyle GetStatusBadgeStyle(StatusTone tone) {
 
   return {Color(0x747B87, 0.16F), palette.textDisabled};
 }
-} // namespace FlightUI
+} // namespace ui

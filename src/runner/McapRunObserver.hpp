@@ -1,20 +1,20 @@
 #pragma once
 
-#include "SimulationRunner.hpp"
+#include "SimRunner.hpp"
 #include "sim/telemetry/recording/TelemetryRecordingService.hpp"
 
 namespace runner {
-class McapRunObserver final : public ISimulationRunObserver {
+class McapRunObserver final : public ISimRunObserver {
 public:
-  bool OnRunStarted(const SimulationRunInfo &info,
-      const SimulationRunObservation &observation, std::string &error) override;
-  bool OnSimulationStep(const SimulationRunInfo &info,
-      const SimulationRunObservation &observation, std::string &error) override;
-  bool OnRunFinished(const SimulationRunInfo &info, const RunnerResult &result,
+  bool OnRunStarted(const SimRunInfo &info,
+      const SimRunObservation &observation, std::string &error) override;
+  bool OnSimStep(const SimRunInfo &info,
+      const SimRunObservation &observation, std::string &error) override;
+  bool OnRunFinished(const SimRunInfo &info, const RunnerResult &result,
       std::string &error) override;
 
 private:
-  bool Consume(const SimulationRunObservation &observation, std::string &error);
+  bool Consume(const SimRunObservation &observation, std::string &error);
 
   telemetry::recording::TelemetryRecordingService recording_;
   bool started_ = false;

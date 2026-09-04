@@ -1,11 +1,11 @@
 # Passive Monitor feature
 
 Monitor is a one-way visualization consumer. The GUI root reads the latest
-published snapshots from `SimulationMessageClient`'s cache and constructs a
+published snapshots from `SimMessageClient`'s cache and constructs a
 `MonitorInput`. Monitor never queries runtime or simulation objects.
 
 ```text
-SimulationRuntime -> MessageBus -> SimulationMessageClient cache
+SimRuntime -> MessageBus -> SimMessageClient cache
                                       |
                                       v
                                 GUI root input adapter
@@ -54,7 +54,7 @@ Visualization-local state (category B):
 
 Commands/dependencies removed from Monitor (category C):
 
-- `SimulationMessageClient` and its per-frame getters;
+- `SimMessageClient` and its per-frame getters;
 - the automatic-linearization command call;
 - simulation/runtime/controller objects and mutable telemetry registries.
 
@@ -107,4 +107,4 @@ calculation remain outside the GUI; Monitor only renders the supplied history.
 
 The model, controller, catalogs, and dialog model are built as the headless
 `jsb_monitor` target so timeline, layout, preset, filtering, and Add/Edit state
-can be tested without ImGui, `SimulationRuntime`, or `TelemetryRegistry`.
+can be tested without ImGui, `SimRuntime`, or `TelemetryRegistry`.

@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 class ButtonBuilder {
 public:
   // Lifetime
@@ -45,4 +45,4 @@ private:
 };
 
 ButtonBuilder Button(std::string label, Action onClick = {});
-} // namespace FlightUI
+} // namespace ui

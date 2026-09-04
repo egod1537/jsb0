@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace FlightUI {
+namespace ui {
 using ComboChangedAction = std::function<void(int)>;
 
 class ComboBuilder {
@@ -46,4 +46,4 @@ private:
 
 ComboBuilder Combo(std::string label, int selectedIndex,
     std::vector<std::string> items);
-} // namespace FlightUI
+} // namespace ui

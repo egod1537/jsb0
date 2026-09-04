@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace FlightUI {
+namespace ui {
 class HorizontalLayoutBuilder {
 public:
   // Lifetime
@@ -37,4 +37,4 @@ private:
 
 HorizontalLayoutBuilder HorizontalLayout();
 HorizontalLayoutBuilder HorizontalLayout(Children children);
-} // namespace FlightUI
+} // namespace ui

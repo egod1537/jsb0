@@ -4,7 +4,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 constexpr float HeaderToggleWidth = 18.0F;
 }
@@ -163,4 +163,4 @@ UIElement ToggleFoldOutBuilder::operator[](Children children) const {
 ToggleFoldOutBuilder ToggleFoldOut(std::string label, bool value) {
   return ToggleFoldOutBuilder(std::move(label), value);
 }
-} // namespace FlightUI
+} // namespace ui

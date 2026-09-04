@@ -15,11 +15,11 @@ public:
 
   void Synchronize(const sim::BaselineRollHoldConfig &config);
 
-  void Handle(const BaselineTecsValueChanged &event);
-  void Handle(const BaselineTecsParameterChanged &event);
-  void Handle(const BaselineTecsTuningResetRequested &event);
-  void Handle(const BaselineTecsAltitudeCaptureRequested &event);
-  void Handle(const BaselineTecsAirspeedCaptureRequested &event);
+  void OnEvent(const BaselineTecsValueChanged &event);
+  void OnEvent(const BaselineTecsParameterChanged &event);
+  void OnEvent(const BaselineTecsTuningResetRequested &event);
+  void OnEvent(const BaselineTecsAltitudeCaptureRequested &event);
+  void OnEvent(const BaselineTecsAirspeedCaptureRequested &event);
 
 private:
   BaselineAutopilotPanelState &state_;

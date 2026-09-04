@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 enum class FoldOutVariant {
   Default,
   Section,
@@ -64,4 +64,4 @@ private:
 };
 
 FoldOutBuilder FoldOut(std::string label);
-} // namespace FlightUI
+} // namespace ui

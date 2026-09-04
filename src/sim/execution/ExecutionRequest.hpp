@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sim/execution/ExecutionVariant.hpp"
-#include "sim/scenario/SimulationScenario.hpp"
+#include "sim/scenario/SimScenario.hpp"
 
 #include <map>
 #include <string>
@@ -16,21 +16,21 @@ struct ScenarioSource {
 using ExecutionParameterSet = std::map<std::string, double>;
 
 struct ExecutionRequest {
-  SimulationScenario scenario;
+  SimScenario scenario;
   ExecutionVariant variant = ExecutionVariant::Primary;
   ScenarioSource source;
   ExecutionParameterSet parameters;
 };
 
 struct ResolvedExecutionSpec {
-  SimulationScenario scenario;
+  SimScenario scenario;
   ExecutionVariant variant = ExecutionVariant::Primary;
   ScenarioSource source;
   ExecutionParameterSet parameters;
 };
 
 struct ComparisonExecutionRequest {
-  SimulationScenario scenario;
+  SimScenario scenario;
   ScenarioSource source;
   ExecutionParameterSet baselineParameters;
   ExecutionParameterSet primaryParameters;

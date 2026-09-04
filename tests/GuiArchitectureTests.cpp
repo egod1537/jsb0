@@ -50,11 +50,12 @@ public:
         props,
         architecture::EventSink<ToggleValueChanged>{
             [this, props](const ToggleValueChanged &event) {
-              HandleEvent(event, props);
+              OnToggleValueChanged(event, props);
             }});
   }
 
-  void HandleEvent(const ToggleValueChanged &event, const ChildProps &props) {
+  void OnToggleValueChanged(
+      const ToggleValueChanged &event, const ChildProps &props) {
     if (!props.editable || GetModel().enabled == event.value) {
       return;
     }
@@ -90,13 +91,13 @@ public:
       : settings_(settings),
         child_(architecture::EventSink<ChildEnabledChanged>{
             [this](const ChildEnabledChanged &event) {
-              HandleChildEvent(event);
+              OnChildEnabledChanged(event);
             }}) {}
 
   ChildController &GetChild() { return child_; }
 
 private:
-  void HandleChildEvent(const ChildEnabledChanged &event) {
+  void OnChildEnabledChanged(const ChildEnabledChanged &event) {
     EditModel().childEnabled = event.enabled;
     settings_.SetEnabled(event.enabled);
   }
@@ -122,7 +123,7 @@ void TestChildEventUpdatesControllerAndPropagatesSemantically() {
   FakeSettingsService settings;
   ParentController parent(settings);
 
-  parent.GetChild().HandleEvent({true}, {.editable = true});
+  parent.GetChild().OnToggleValueChanged({true}, {.editable = true});
 
   assert(parent.GetChild().GetModel().enabled);
   assert(parent.GetModel().childEnabled);
@@ -134,7 +135,7 @@ void TestControllerRejectsDisabledInteraction() {
   FakeSettingsService settings;
   ParentController parent(settings);
 
-  parent.GetChild().HandleEvent({true}, {.editable = false});
+  parent.GetChild().OnToggleValueChanged({true}, {.editable = false});
 
   assert(!parent.GetChild().GetModel().enabled);
   assert(!parent.GetModel().childEnabled);

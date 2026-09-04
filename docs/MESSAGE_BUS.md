@@ -5,11 +5,22 @@ type-safe C++ message bus. Message types, rather than string topic names,
 identify channels.
 
 ```text
-GUI -> SimulationMessageClient -> MessageBus -> SimulationMessageAdapter
-                                                -> SimulationRuntime
+GUI
+  ↓
+SimMessageClient
+  ↓
+MessageBus
+  ↓
+GuiSimBridge
+  ↓
+SimRuntime
 
-GUI <- cached events          <- MessageBus <- SimulationMessageAdapter
+GUI <- cached events          <- MessageBus <- GuiSimBridge
 ```
+
+`GuiSimBridge` does not depend on a concrete GUI implementation. It bridges
+GUI-side typed messaging and `SimRuntime`; the GUI reaches the runtime
+only through `SimMessageClient` and `MessageBus`.
 
 `MessageBus::Publish` dispatches synchronously on the publishing thread. The
 application therefore retains its existing single-threaded GUI and simulation
@@ -22,10 +33,10 @@ its own subscription or another subscription safely; a removed callback that
 has not yet run is skipped during the current publication.
 
 Commands and events are ordinary C++ structs in
-`messaging/SimulationMessages.hpp`. Request/response operations
+`messaging/SimMessages.hpp`. Request/response operations
 carry request IDs. Continuous state is delivered as snapshot, status, and
-telemetry frame events. `SimulationMessageClient` turns those events into local
+telemetry frame events. `SimMessageClient` turns those events into local
 immutable caches for GUI rendering.
 
 The headless runner does not require the bus and continues to drive
-`SimulationRuntime` directly.
+`SimRuntime` directly.

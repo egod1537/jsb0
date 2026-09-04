@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 class WindowBuilder {
 public:
   // Lifetime
@@ -50,4 +50,4 @@ private:
 };
 
 WindowBuilder Window(std::string title);
-} // namespace FlightUI
+} // namespace ui

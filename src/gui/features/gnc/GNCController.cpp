@@ -1,17 +1,17 @@
 #include "gui/features/gnc/GNCController.hpp"
 
 #include "common/math/Math.hpp"
-#include "messaging/SimulationMessageClient.hpp"
+#include "messaging/SimMessageClient.hpp"
 
 namespace gui {
-GNCController::GNCController(application::SimulationMessageClient &client)
+GNCController::GNCController(app::SimMessageClient &client)
     : client_(client), experimentalController_(model_.primaryAutopilot),
       px4AttitudeController_(model_.baselineAutopilot),
       tecsController_(model_.baselineAutopilot),
       trimController_(client_, model_.trimRequest, model_.trimResultOpen,
           model_.trimResidualOpen, model_.trimInProgress) {}
 
-void GNCController::Synchronize(const sim::SimulationSnapshot &snapshot) {
+void GNCController::Synchronize(const sim::SimSnapshot &snapshot) {
   if (model_.autopilotStateLoaded) {
     return;
   }
@@ -28,11 +28,11 @@ void GNCController::Synchronize(const sim::SimulationSnapshot &snapshot) {
 }
 
 void GNCController::PublishConfiguration(
-    const sim::SimulationSnapshot &snapshot) {
+    const sim::SimSnapshot &snapshot) {
   if (snapshot.status.scenario.has_value()) {
     return;
   }
-  Handle(PrimaryRollHoldConfigChanged{{
+  OnEvent(PrimaryRollHoldConfigChanged{{
       .enabled = model_.primaryAutopilot.rollHold,
       .targetRollRad = math::DegToRad(model_.primaryAutopilot.rollTargetDeg),
       .rollAngleProportionalGain =
@@ -47,7 +47,7 @@ void GNCController::PublishConfiguration(
   }
 
   const BaselineAutopilotPanelState &state = model_.baselineAutopilot;
-  Handle(BaselineRollHoldConfigChanged{{
+  OnEvent(BaselineRollHoldConfigChanged{{
       .enabled = state.rollHold,
       .targetRollRad = math::DegToRad(state.rollTargetDeg),
       .timeConstantSec = state.px4RollTimeConstantSec,
@@ -99,75 +99,75 @@ void GNCController::PublishConfiguration(
   }});
 }
 
-void GNCController::Handle(const TrimRequested &event) {
-  trimController_.Handle(event);
+void GNCController::OnEvent(const TrimRequested &event) {
+  trimController_.OnEvent(event);
 }
 
-void GNCController::Handle(const ManualControlChanged &event) {
+void GNCController::OnEvent(const ManualControlChanged &event) {
   client_.SetManualControl(event.input);
 }
 
-void GNCController::Handle(const PrimaryRollHoldConfigChanged &event) {
+void GNCController::OnEvent(const PrimaryRollHoldConfigChanged &event) {
   client_.SetPrimaryRollHoldConfig(event.config);
 }
 
-void GNCController::Handle(const BaselineRollHoldConfigChanged &event) {
+void GNCController::OnEvent(const BaselineRollHoldConfigChanged &event) {
   client_.SetBaselineRollHoldConfig(event.config);
 }
 
-void GNCController::Handle(const PrimaryRollHoldValueChanged &event) {
-  experimentalController_.Handle(event);
+void GNCController::OnEvent(const PrimaryRollHoldValueChanged &event) {
+  experimentalController_.OnEvent(event);
 }
 
-void GNCController::Handle(const BaselineRollHoldValueChanged &event) {
-  px4AttitudeController_.Handle(event);
+void GNCController::OnEvent(const BaselineRollHoldValueChanged &event) {
+  px4AttitudeController_.OnEvent(event);
 }
 
-void GNCController::Handle(const BaselineRollHoldTuningResetRequested &event) {
-  px4AttitudeController_.Handle(event);
+void GNCController::OnEvent(const BaselineRollHoldTuningResetRequested &event) {
+  px4AttitudeController_.OnEvent(event);
 }
 
-void GNCController::Handle(const BaselinePitchHoldTuningResetRequested &event) {
-  px4AttitudeController_.Handle(event);
+void GNCController::OnEvent(const BaselinePitchHoldTuningResetRequested &event) {
+  px4AttitudeController_.OnEvent(event);
 }
 
-void GNCController::Handle(const BaselineTecsValueChanged &event) {
-  tecsController_.Handle(event);
+void GNCController::OnEvent(const BaselineTecsValueChanged &event) {
+  tecsController_.OnEvent(event);
 }
 
-void GNCController::Handle(const BaselineTecsParameterChanged &event) {
-  tecsController_.Handle(event);
+void GNCController::OnEvent(const BaselineTecsParameterChanged &event) {
+  tecsController_.OnEvent(event);
 }
 
-void GNCController::Handle(const BaselineTecsTuningResetRequested &event) {
-  tecsController_.Handle(event);
+void GNCController::OnEvent(const BaselineTecsTuningResetRequested &event) {
+  tecsController_.OnEvent(event);
 }
 
-void GNCController::Handle(const BaselineTecsAltitudeCaptureRequested &event) {
-  tecsController_.Handle(event);
+void GNCController::OnEvent(const BaselineTecsAltitudeCaptureRequested &event) {
+  tecsController_.OnEvent(event);
 }
 
-void GNCController::Handle(const BaselineTecsAirspeedCaptureRequested &event) {
-  tecsController_.Handle(event);
+void GNCController::OnEvent(const BaselineTecsAirspeedCaptureRequested &event) {
+  tecsController_.OnEvent(event);
 }
 
-void GNCController::Handle(const TrimRequestValueChanged &event) {
-  trimController_.Handle(event);
+void GNCController::OnEvent(const TrimRequestValueChanged &event) {
+  trimController_.OnEvent(event);
 }
 
-void GNCController::Handle(const TrimExecutionRequested &event) {
-  trimController_.Handle(event);
+void GNCController::OnEvent(const TrimExecutionRequested &event) {
+  trimController_.OnEvent(event);
 }
 
-void GNCController::Handle(const ExperimentalViewStateChanged &event) {
-  experimentalController_.Handle(event);
+void GNCController::OnEvent(const ExperimentalViewStateChanged &event) {
+  experimentalController_.OnEvent(event);
 }
 
-void GNCController::Handle(const Px4AttitudeViewStateChanged &event) {
-  px4AttitudeController_.Handle(event);
+void GNCController::OnEvent(const Px4AttitudeViewStateChanged &event) {
+  px4AttitudeController_.OnEvent(event);
 }
 
-void GNCController::Handle(const TrimViewStateChanged &event) {
-  trimController_.Handle(event);
+void GNCController::OnEvent(const TrimViewStateChanged &event) {
+  trimController_.OnEvent(event);
 }
 } // namespace gui

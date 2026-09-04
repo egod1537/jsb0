@@ -107,11 +107,7 @@ double FiniteOr(double value, double fallback) {
 }
 
 control::FlightControlManager &Manager(sim::Simulation &simulation) {
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  if (manager == nullptr) {
-    throw std::runtime_error("FlightControlManager is missing");
-  }
-  return *manager;
+  return simulation.GetFlightControlManager();
 }
 
 gnc::PX4Autopilot &Autopilot(sim::Simulation &simulation) {
@@ -198,9 +194,7 @@ Metrics Evaluate(const std::vector<Sample> &samples, double stepDeg,
 Run Execute(std::string scenario, double hz, double airspeedKts, double stepDeg,
     Candidate candidate) {
   sim::Simulation simulation(std::make_unique<gnc::PX4Autopilot>());
-  sim::SimulationConfig config;
-  config.simulationHz = hz;
-  if (!simulation.Initialize(config)) {
+  if (!simulation.Initialize(opts::simulation::AircraftName, hz)) {
     throw std::runtime_error("Failed to initialize pitch tuning simulation");
   }
   sim::InitialCondition initial = simulation.GetDefaultInitialCondition();
@@ -712,9 +706,7 @@ TransitionRun ExecuteTransition(TransitionDefinition definition,
     bool yawRateControlEnabled, bool yawRateAugmented,
     const RollCandidate &rollCandidate, double throttlePitchGain) {
   sim::Simulation simulation(std::make_unique<gnc::PX4Autopilot>());
-  sim::SimulationConfig config;
-  config.simulationHz = hz;
-  if (!simulation.Initialize(config)) {
+  if (!simulation.Initialize(opts::simulation::AircraftName, hz)) {
     throw std::runtime_error("Failed to initialize transition simulation");
   }
   sim::InitialCondition initial = simulation.GetDefaultInitialCondition();

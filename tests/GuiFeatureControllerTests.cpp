@@ -1,11 +1,11 @@
 #include "gui/features/gnc/GNCController.hpp"
 #include "gui/features/linearization/LinearizationController.hpp"
 #include "gui/features/simulation/ScenarioController.hpp"
-#include "gui/features/simulation/SimulationController.hpp"
+#include "gui/features/simulation/SimController.hpp"
 #include "common/math/Math.hpp"
 #include "messaging/MessageBus.hpp"
-#include "messaging/SimulationMessageClient.hpp"
-#include "messaging/SimulationMessages.hpp"
+#include "messaging/SimMessageClient.hpp"
+#include "messaging/SimMessages.hpp"
 
 #include <array>
 #include <cassert>
@@ -13,42 +13,42 @@
 #include <string_view>
 
 namespace {
-namespace messaging = application::messaging;
+namespace messaging = app::messaging;
 
 void TestSimulationEventsPublishCommandsAndUpdateChildModel() {
   messaging::MessageBus bus;
-  application::SimulationMessageClient client(bus);
-  gui::SimulationController controller(client);
+  app::SimMessageClient client(bus);
+  gui::SimController controller(client);
 
   int startCount = 0;
   double requestedHz = 0.0;
   bool maximumSpeed = false;
-  auto startSubscription = bus.Subscribe<messaging::SimulationStartCommand>(
+  auto startSubscription = bus.Subscribe<messaging::SimStartCommand>(
       [&startCount](const auto &) { ++startCount; });
-  auto rateSubscription = bus.Subscribe<messaging::SimulationRateCommand>(
+  auto rateSubscription = bus.Subscribe<messaging::SimRateCommand>(
       [&requestedHz](const auto &command) { requestedHz = command.hz; });
   auto maximumSubscription =
-      bus.Subscribe<messaging::SimulationMaximumSpeedCommand>(
+      bus.Subscribe<messaging::SimMaximumSpeedCommand>(
           [&maximumSpeed](
               const auto &command) { maximumSpeed = command.enabled; });
 
-  controller.Handle(gui::SimulationStartRequested{});
-  controller.Handle(gui::SimulationRateChanged{120.0});
-  controller.Handle(gui::MaximumSimulationSpeedChanged{true});
+  controller.OnEvent(gui::SimStartRequested{});
+  controller.OnEvent(gui::SimRateChanged{120.0});
+  controller.OnEvent(gui::MaximumSimulationSpeedChanged{true});
   assert(startCount == 1);
   assert(requestedHz == 120.0);
   assert(maximumSpeed);
 
-  sim::SimulationSnapshot snapshot;
+  sim::SimSnapshot snapshot;
   snapshot.defaultInitialCondition.altitudeAslM = 1200.0;
   controller.Synchronize(snapshot);
-  controller.Handle({gui::InitialConditionField::AltitudeAslM, 1500.0});
+  controller.OnEvent({gui::InitialConditionField::AltitudeAslM, 1500.0});
   assert(controller.GetInitialConditionModel().pending.altitudeAslM == 1500.0);
-  controller.Handle({gui::InitialConditionField::LatitudeDeg, 45.0});
+  controller.OnEvent({gui::InitialConditionField::LatitudeDeg, 45.0});
   assert(std::abs(controller.GetInitialConditionModel().pending.latitudeRad
                   - math::DegToRad(45.0))
          < 1.0e-12);
-  controller.Handle(
+  controller.OnEvent(
       {gui::InitialConditionField::CalibratedAirspeedMps, 41.16});
   assert(controller.GetInitialConditionModel()
              .pending.calibratedAirspeedMps
@@ -57,42 +57,42 @@ void TestSimulationEventsPublishCommandsAndUpdateChildModel() {
 
 void TestPlaybackToggleSelectsStartOrStopFromRuntimeState() {
   messaging::MessageBus bus;
-  application::SimulationMessageClient client(bus);
-  gui::SimulationController controller(client);
+  app::SimMessageClient client(bus);
+  gui::SimController controller(client);
   int startCount = 0;
   int stopCount = 0;
-  auto startSubscription = bus.Subscribe<messaging::SimulationStartCommand>(
+  auto startSubscription = bus.Subscribe<messaging::SimStartCommand>(
       [&startCount](const auto &) { ++startCount; });
-  auto stopSubscription = bus.Subscribe<messaging::SimulationStopCommand>(
+  auto stopSubscription = bus.Subscribe<messaging::SimStopCommand>(
       [&stopCount](const auto &) { ++stopCount; });
 
-  controller.Handle(gui::SimulationPlaybackToggled{});
+  controller.OnEvent(gui::SimPlaybackToggled{});
   assert(startCount == 1);
   assert(stopCount == 0);
 
-  sim::SimulationStatus status;
-  status.executionState = sim::SimulationExecutionState::Running;
-  bus.Publish(messaging::SimulationStatusEvent{.status = status});
-  controller.Handle(gui::SimulationPlaybackToggled{});
+  sim::SimStatus status;
+  status.executionState = sim::SimExecutionState::Running;
+  bus.Publish(messaging::SimStatusEvent{.status = status});
+  controller.OnEvent(gui::SimPlaybackToggled{});
   assert(startCount == 1);
   assert(stopCount == 1);
 
-  status.executionState = sim::SimulationExecutionState::Paused;
-  bus.Publish(messaging::SimulationStatusEvent{.status = status});
-  controller.Handle(gui::SimulationPlaybackToggled{});
+  status.executionState = sim::SimExecutionState::Paused;
+  bus.Publish(messaging::SimStatusEvent{.status = status});
+  controller.OnEvent(gui::SimPlaybackToggled{});
   assert(stopCount == 2);
 }
 
 void TestGNCEventsUpdateModelAndPublishCompleteConfig() {
   messaging::MessageBus bus;
-  application::SimulationMessageClient client(bus);
+  app::SimMessageClient client(bus);
   gui::GNCController controller(client);
-  sim::SimulationSnapshot snapshot;
+  sim::SimSnapshot snapshot;
   snapshot.primary.available = true;
   snapshot.primaryAutopilot.available = true;
   controller.Synchronize(snapshot);
 
-  controller.Handle(
+  controller.OnEvent(
       gui::PrimaryRollHoldValueChanged{gui::PrimaryRollHoldField::TargetDeg,
           12.5});
   assert(controller.GetModel().primaryAutopilot.rollTargetDeg == 12.5);
@@ -114,15 +114,15 @@ void TestTecsCapturePreservesSiValues() {
 
   gui::BaselineAutopilotPanelState state;
   gui::TecsController controller(state);
-  controller.Handle(gui::BaselineTecsAltitudeCaptureRequested{AltitudeAglM});
-  controller.Handle(
+  controller.OnEvent(gui::BaselineTecsAltitudeCaptureRequested{AltitudeAglM});
+  controller.OnEvent(
       gui::BaselineTecsAirspeedCaptureRequested{CalibratedAirspeedMps});
   assert(state.tecsTargetAltitudeM == AltitudeAglM);
   assert(state.tecsTargetAirspeedMps == CalibratedAirspeedMps);
 
-  controller.Handle(gui::BaselineTecsAltitudeCaptureRequested{
+  controller.OnEvent(gui::BaselineTecsAltitudeCaptureRequested{
       std::numeric_limits<double>::quiet_NaN()});
-  controller.Handle(gui::BaselineTecsAirspeedCaptureRequested{-1.0});
+  controller.OnEvent(gui::BaselineTecsAirspeedCaptureRequested{-1.0});
   assert(state.tecsTargetAltitudeM == AltitudeAglM);
   assert(state.tecsTargetAirspeedMps == CalibratedAirspeedMps);
 }
@@ -133,25 +133,25 @@ void TestPx4FeatureControllersOwnStateValidationAndViewState() {
   gui::ExperimentalController experimental(primary);
   gui::Px4AttitudeController controller(baseline);
 
-  experimental.Handle(
+  experimental.OnEvent(
       gui::PrimaryRollHoldValueChanged{gui::PrimaryRollHoldField::TargetDeg,
           7.5});
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::CourseHoldEnabled,
       1.0});
   assert(primary.rollTargetDeg == 7.5);
   assert(baseline.courseHold);
   assert(baseline.rollHold);
 
-  experimental.Handle(gui::ExperimentalViewStateChanged{false});
-  controller.Handle(gui::Px4AttitudeViewStateChanged{true, false, true, false});
+  experimental.OnEvent(gui::ExperimentalViewStateChanged{false});
+  controller.OnEvent(gui::Px4AttitudeViewStateChanged{true, false, true, false});
   assert(!primary.rollHoldParametersOpen);
   assert(baseline.px4RollTuningOpen);
   assert(!baseline.px4RollDiagnosticsOpen);
   assert(baseline.px4PitchTuningOpen);
   assert(!baseline.px4PitchDiagnosticsOpen);
 
-  experimental.Handle(
+  experimental.OnEvent(
       gui::PrimaryRollHoldValueChanged{gui::PrimaryRollHoldField::TargetDeg,
           std::numeric_limits<double>::infinity()});
   assert(primary.rollTargetDeg == 7.5);
@@ -159,7 +159,7 @@ void TestPx4FeatureControllersOwnStateValidationAndViewState() {
 
 void TestTrimRequestStateUsesSi() {
   messaging::MessageBus bus;
-  application::SimulationMessageClient client(bus);
+  app::SimMessageClient client(bus);
   gui::GNCController controller(client);
   gnc::TrimRequest publishedRequest;
   bool publishedFromCurrentState = false;
@@ -168,16 +168,16 @@ void TestTrimRequestStateUsesSi() {
         publishedRequest = command.request;
         publishedFromCurrentState = command.fromCurrentState;
       });
-  controller.Handle(
+  controller.OnEvent(
       gui::TrimRequestValueChanged{gui::TrimRequestField::CalibratedAirspeedMps,
           math::KnotsToMetersPerSecond(80.0)});
-  controller.Handle(
+  controller.OnEvent(
       gui::TrimRequestValueChanged{gui::TrimRequestField::AltitudeAslM,
           math::FeetToMeters(1200.0)});
-  controller.Handle(
+  controller.OnEvent(
       gui::TrimRequestValueChanged{gui::TrimRequestField::FlightPathAngleRad,
           math::DegToRad(3.0)});
-  controller.Handle(
+  controller.OnEvent(
       gui::TrimRequestValueChanged{gui::TrimRequestField::AltitudeAslM,
           std::numeric_limits<double>::quiet_NaN()});
 
@@ -186,7 +186,7 @@ void TestTrimRequestStateUsesSi() {
   assert(request.altitudeAslM == 365.76);
   assert(request.flightPathAngleRad == math::DegToRad(3.0));
 
-  controller.Handle(gui::TrimExecutionRequested{true});
+  controller.OnEvent(gui::TrimExecutionRequested{true});
   assert(publishedRequest.calibratedAirspeedMps
          == math::KnotsToMetersPerSecond(80.0));
   assert(publishedFromCurrentState);
@@ -244,7 +244,7 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
   }
 
   messaging::MessageBus bus;
-  application::SimulationMessageClient client(bus);
+  app::SimMessageClient client(bus);
   gui::GNCController controller(client);
 
   assert(gui::BaselinePx4RollHoldParameterBindings.size() == 7);
@@ -252,12 +252,12 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
     const auto &metadata =
         gnc::GetPx4RollHoldParameterMetadata(binding.parameter);
 
-    controller.Handle(gui::BaselineRollHoldValueChanged{binding.field,
+    controller.OnEvent(gui::BaselineRollHoldValueChanged{binding.field,
         metadata.minimum - 1000.0});
     assert(controller.GetModel().baselineAutopilot.*(binding.value)
            == metadata.minimum);
 
-    controller.Handle(gui::BaselineRollHoldValueChanged{binding.field,
+    controller.OnEvent(gui::BaselineRollHoldValueChanged{binding.field,
         metadata.maximum + 1000.0});
     assert(controller.GetModel().baselineAutopilot.*(binding.value)
            == metadata.maximum);
@@ -268,42 +268,42 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
     const auto &metadata =
         gnc::GetPx4PitchHoldParameterMetadata(binding.parameter);
 
-    controller.Handle(gui::BaselineRollHoldValueChanged{binding.field,
+    controller.OnEvent(gui::BaselineRollHoldValueChanged{binding.field,
         metadata.minimum - 1000.0});
     assert(controller.GetModel().baselineAutopilot.*(binding.value)
            == metadata.minimum);
 
-    controller.Handle(gui::BaselineRollHoldValueChanged{binding.field,
+    controller.OnEvent(gui::BaselineRollHoldValueChanged{binding.field,
         metadata.maximum + 1000.0});
     assert(controller.GetModel().baselineAutopilot.*(binding.value)
            == metadata.maximum);
   }
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::PitchHoldEnabled,
       1.0});
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::TargetPitchDeg,
       100.0});
   assert(controller.GetModel().baselineAutopilot.pitchHold);
   assert(controller.GetModel().baselineAutopilot.pitchTargetDeg == 90.0);
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::TargetPitchDeg,
       -4.5});
 
   assert(gnc::Px4TecsParameters.size()
          == static_cast<std::size_t>(gnc::Px4TecsParameter::Count));
-  controller.Handle(
+  controller.OnEvent(
       gui::BaselineTecsValueChanged{gui::BaselineTecsField::Enabled, 1.0});
-  controller.Handle(
+  controller.OnEvent(
       gui::BaselineTecsValueChanged{gui::BaselineTecsField::TargetAltitudeM,
           354.8});
-  controller.Handle(
+  controller.OnEvent(
       gui::BaselineTecsValueChanged{gui::BaselineTecsField::TargetAirspeedMps,
           44.0});
-  controller.Handle(
+  controller.OnEvent(
       gui::BaselineTecsParameterChanged{gnc::Px4TecsParameter::MaximumClimbRate,
           3.25});
-  controller.Handle(
+  controller.OnEvent(
       gui::BaselineTecsParameterChanged{gnc::Px4TecsParameter::MinimumPitch,
           math::DegToRad(-12.0)});
   assert(controller.GetModel().baselineAutopilot.tecs);
@@ -319,7 +319,7 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
   for (const auto &binding : gui::BaselinePx4CourseHoldParameterBindings) {
     const auto &metadata =
         gnc::GetPx4CourseHoldParameterMetadata(binding.parameter);
-    controller.Handle(gui::BaselineRollHoldValueChanged{binding.field,
+    controller.OnEvent(gui::BaselineRollHoldValueChanged{binding.field,
         metadata.maximum + 1000.0});
     assert(controller.GetModel().baselineAutopilot.*(binding.value)
            == metadata.maximum);
@@ -330,51 +330,51 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
   for (const auto &binding : gui::BaselinePx4YawRateParameterBindings) {
     const auto &metadata =
         gnc::GetPx4YawRateParameterMetadata(binding.parameter);
-    controller.Handle(gui::BaselineRollHoldValueChanged{binding.field,
+    controller.OnEvent(gui::BaselineRollHoldValueChanged{binding.field,
         metadata.minimum - 1000.0});
     assert(controller.GetModel().baselineAutopilot.*(binding.value)
            == metadata.minimum);
-    controller.Handle(gui::BaselineRollHoldValueChanged{binding.field,
+    controller.OnEvent(gui::BaselineRollHoldValueChanged{binding.field,
         metadata.maximum + 1000.0});
     assert(controller.GetModel().baselineAutopilot.*(binding.value)
            == metadata.maximum);
   }
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::CourseHoldEnabled,
       1.0});
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::TargetCourseDeg,
       -179.0});
   assert(controller.GetModel().baselineAutopilot.courseHold);
   assert(controller.GetModel().baselineAutopilot.rollHold);
   assert(controller.GetModel().baselineAutopilot.targetCourseDeg == -179.0);
 
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::RateProportionalGain,
       0.1234});
   assert(controller.GetModel().baselineAutopilot.px4RollRateProportionalGain
          == 0.123);
 
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::DirectRollRateTestEnabled,
       1.0});
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::DirectRollRateCommandDegPerSec,
       5.0});
   assert(controller.GetModel().baselineAutopilot.directRollRateTestEnabled);
   assert(controller.GetModel().baselineAutopilot.directRollRateCommandDegPerSec
          == 5.0);
 
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::YawRateControlEnabled,
       1.0});
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::CoordinatedTurnEnabled,
       1.0});
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::YawRateProportionalGain,
       0.8});
-  controller.Handle(gui::BaselineRollHoldValueChanged{
+  controller.OnEvent(gui::BaselineRollHoldValueChanged{
       gui::BaselineRollHoldField::SideslipToYawRateGain,
       8.0});
   assert(controller.GetModel().baselineAutopilot.yawRateControlEnabled);
@@ -386,8 +386,8 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
   sim::BaselineRollHoldConfig published;
   auto subscription = bus.Subscribe<messaging::BaselineRollHoldConfigCommand>(
       [&published](const auto &command) { published = command.config; });
-  sim::SimulationSnapshot snapshot;
-  snapshot.baseline = sim::SimulationInstanceSnapshot{.available = true};
+  sim::SimSnapshot snapshot;
+  snapshot.baseline = sim::SimInstanceSnapshot{.available = true};
   snapshot.baselineAutopilot = sim::AutopilotSnapshot{.available = true};
   controller.PublishConfiguration(snapshot);
   assert(published.directRollRateTestEnabled);
@@ -413,7 +413,7 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
   assert(published.tecsSettings.maximumClimbRateMps == 3.25);
   assert(published.tecsSettings.minimumPitchRad == math::DegToRad(-12.0));
 
-  controller.Handle(gui::BaselineRollHoldTuningResetRequested{});
+  controller.OnEvent(gui::BaselineRollHoldTuningResetRequested{});
   assert(!controller.GetModel().baselineAutopilot.directRollRateTestEnabled);
   assert(controller.GetModel().baselineAutopilot.directRollRateCommandDegPerSec
          == 0.0);
@@ -435,7 +435,7 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
            == metadata.defaultValue);
   }
 
-  controller.Handle(gui::BaselinePitchHoldTuningResetRequested{});
+  controller.OnEvent(gui::BaselinePitchHoldTuningResetRequested{});
   for (const auto &binding : gui::BaselinePx4PitchHoldParameterBindings) {
     const auto &metadata =
         gnc::GetPx4PitchHoldParameterMetadata(binding.parameter);
@@ -444,7 +444,7 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
   }
   const double trimThrottle =
       controller.GetModel().baselineAutopilot.tecsSettings.trimThrottle;
-  controller.Handle(gui::BaselineTecsTuningResetRequested{});
+  controller.OnEvent(gui::BaselineTecsTuningResetRequested{});
   assert(
       controller.GetModel().baselineAutopilot.tecsSettings.maximumClimbRateMps
       == gnc::Px4TecsSettings{}.maximumClimbRateMps);
@@ -454,7 +454,7 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
 
 void TestLinearizationEventPublishesCommand() {
   messaging::MessageBus bus;
-  application::SimulationMessageClient client(bus);
+  app::SimMessageClient client(bus);
   gui::LinearizationController controller(client);
   bool automatic = false;
   auto subscription = bus.Subscribe<messaging::LinearizationConfigCommand>(
@@ -462,8 +462,8 @@ void TestLinearizationEventPublishesCommand() {
         automatic = command.automaticUpdatesEnabled;
       });
 
-  controller.Handle(gui::AutomaticLinearizationChanged{true});
-  controller.Handle(gui::LinearizationValueTransformChanged{
+  controller.OnEvent(gui::AutomaticLinearizationChanged{true});
+  controller.OnEvent(gui::LinearizationValueTransformChanged{
       gui::LinearizationValueTransform::SignedLog10});
 
   assert(automatic);
@@ -481,15 +481,15 @@ void TestScenarioChildUpdatesDraftAndEmitsLaunchIntent() {
             launchReceived =
                 event.request.scenario.events.front().command.rollRad
                     == math::DegToRad(14.0);
-            controllerPtr->Handle(gui::ScenarioApplyCompleted{
+            controllerPtr->OnEvent(gui::ScenarioApplyCompleted{
                 .succeeded = true,
             });
           }});
   controllerPtr = &controller;
-  sim::SimulationScenario draft = controller.GetModel().draft;
+  sim::SimScenario draft = controller.GetModel().draft;
   draft.events.front().command.rollRad = math::DegToRad(14.0);
 
-  controller.Handle(gui::ScenarioDraftChanged{draft});
+  controller.OnEvent(gui::ScenarioDraftChanged{draft});
   assert(controller.Apply());
 
   assert(controller.GetModel().draft.events.front().command.rollRad

@@ -10,8 +10,8 @@ public:
   explicit ExperimentalController(AutopilotPanelState &state);
 
   void Synchronize(const sim::PrimaryRollHoldConfig &config);
-  void Handle(const PrimaryRollHoldValueChanged &event);
-  void Handle(const ExperimentalViewStateChanged &event);
+  void OnEvent(const PrimaryRollHoldValueChanged &event);
+  void OnEvent(const ExperimentalViewStateChanged &event);
 
 private:
   AutopilotPanelState &state_;

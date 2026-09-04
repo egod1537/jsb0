@@ -7,7 +7,7 @@
 #include <iostream>
 #include <system_error>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 constexpr const char *InterRelativePath = "assets/fonts/Inter-Regular.ttf";
 
@@ -92,4 +92,4 @@ float CalculateUIFontScale(float uiScale) {
 
   return std::max(uiScale, MinimumUIFontSize / BaseUIFontSize);
 }
-} // namespace FlightUI
+} // namespace ui

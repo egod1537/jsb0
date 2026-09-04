@@ -4,14 +4,13 @@
 #include "gui/panels/BaselineAutopilotPanel.hpp"
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float AutopilotParameterLabelWidth = 112.0F;
 constexpr float AutopilotTargetInputWidth = 140.0F;
 constexpr float HoldCaptureButtonWidth = 96.0F;
 
-UI::PropertyRowBuilder RenderTecsParameterRow(gnc::Px4TecsParameter parameter,
+ui::PropertyRowBuilder RenderTecsParameterRow(gnc::Px4TecsParameter parameter,
     const BaselineAutopilotPanelState &state,
     architecture::EventSink<BaselineTecsParameterChanged> events) {
   const auto &metadata = gnc::GetPx4TecsParameterMetadata(parameter);
@@ -22,10 +21,10 @@ UI::PropertyRowBuilder RenderTecsParameterRow(gnc::Px4TecsParameter parameter,
 }
 } // namespace
 
-UI::UIElement TecsPanel::Build(const BaselineAutopilotPanelProps &props) {
+ui::UIElement TecsPanel::Build(const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
-  UI::PropertyGridBuilder parameters =
-      UI::PropertyGrid("BaselinePx4TecsParameters")
+  ui::PropertyGridBuilder parameters =
+      ui::PropertyGrid("BaselinePx4TecsParameters")
           .LabelWidth(AutopilotParameterLabelWidth)
           .ColumnSpacing(4.0F)
           .RowPadding(2.0F)
@@ -39,8 +38,8 @@ UI::UIElement TecsPanel::Build(const BaselineAutopilotPanelProps &props) {
             props.tecsParameterEvents));
   }
 
-  UI::ToggleFoldOutBuilder foldOut =
-      UI::ToggleFoldOut("TECS", state.tecs)
+  ui::ToggleFoldOutBuilder foldOut =
+      ui::ToggleFoldOut("TECS", state.tecs)
           .Id("BaselineTecsSection")
           .OnChanged([events = props.tecsValueEvents](bool enabled) {
             events.Emit({BaselineTecsField::Enabled, enabled ? 1.0 : 0.0});
@@ -48,16 +47,16 @@ UI::UIElement TecsPanel::Build(const BaselineAutopilotPanelProps &props) {
 
   // clang-format off
   return foldOut[
-      UI::VerticalLayout().Spacing(6.0F)
+      ui::VerticalLayout().Spacing(6.0F)
           [
-            +UI::TextWrapped(
+            +ui::TextWrapped(
                 "PX4-style total-energy outer loop. TECS owns the pitch "
                 "setpoint and throttle; the existing Pitch Hold continues "
                 "to own elevator control.")
-            + UI::HorizontalLayout().Spacing(8.0F)
+            + ui::HorizontalLayout().Spacing(8.0F)
                   [
-                    +UI::TextDisabled("Altitude SP (m AGL)")
-                    + UI::InputDouble("##BaselineTecsAltitudeTarget",
+                    +ui::TextDisabled("Altitude SP (m AGL)")
+                    + ui::InputDouble("##BaselineTecsAltitudeTarget",
                           state.tecsTargetAltitudeM)
                           .Width(AutopilotTargetInputWidth)
                           .Step(5.0)
@@ -66,17 +65,17 @@ UI::UIElement TecsPanel::Build(const BaselineAutopilotPanelProps &props) {
                           .OnChanged([events = props.tecsValueEvents](double value) {
                             events.Emit({BaselineTecsField::TargetAltitudeM, value});
                           })
-                    + UI::Button("Capture##TecsAltitude")
+                    + ui::Button("Capture##TecsAltitude")
                           .OnAction([events = props.tecsAltitudeCaptureEvents,
                                        value = props.currentAltitudeAglM] {
                             events.Emit({value});
                           })
                           .Width(HoldCaptureButtonWidth)
                   ]
-            + UI::HorizontalLayout().Spacing(8.0F)
+            + ui::HorizontalLayout().Spacing(8.0F)
                   [
-                    +UI::TextDisabled("Airspeed SP (m/s CAS)")
-                    + UI::InputDouble("##BaselineTecsAirspeedTarget",
+                    +ui::TextDisabled("Airspeed SP (m/s CAS)")
+                    + ui::InputDouble("##BaselineTecsAirspeedTarget",
                           state.tecsTargetAirspeedMps)
                           .Width(AutopilotTargetInputWidth)
                           .Step(1.0)
@@ -85,14 +84,14 @@ UI::UIElement TecsPanel::Build(const BaselineAutopilotPanelProps &props) {
                           .OnChanged([events = props.tecsValueEvents](double value) {
                             events.Emit({BaselineTecsField::TargetAirspeedMps, value});
                           })
-                    + UI::Button("Capture##TecsAirspeed")
+                    + ui::Button("Capture##TecsAirspeed")
                           .OnAction([events = props.tecsAirspeedCaptureEvents,
                                        value = props.currentCalibratedAirspeedMps] {
                             events.Emit({value});
                           })
                           .Width(HoldCaptureButtonWidth)
                   ]
-            + UI::KeyValueGrid("BaselineTecsDiagnosticValues")
+            + ui::KeyValueGrid("BaselineTecsDiagnosticValues")
                   .ColumnsPerRow(2)
                   .AddDouble("Internal Altitude SP",
                       props.tecsInternalAltitudeSetpointM,
@@ -105,32 +104,32 @@ UI::UIElement TecsPanel::Build(const BaselineAutopilotPanelProps &props) {
                   .AddDouble("Balance Error",
                       props.tecsEnergyBalanceError,
                       "%.2f m^2/s^2")
-            + UI::HorizontalLayout().Spacing(8.0F)
+            + ui::HorizontalLayout().Spacing(8.0F)
                   [
-                    +UI::StatusBadge(props.tecsActive ? "Active" : "Inactive",
-                        props.tecsActive ? UI::StatusTone::Success
-                                         : UI::StatusTone::Neutral)
-                    + UI::StatusBadge(
+                    +ui::StatusBadge(props.tecsActive ? "Active" : "Inactive",
+                        props.tecsActive ? ui::StatusTone::Success
+                                         : ui::StatusTone::Neutral)
+                    + ui::StatusBadge(
                           props.tecsUnderspeedProtectionActive
                               ? "Underspeed protection"
                               : "Airspeed safe",
                           props.tecsUnderspeedProtectionActive
-                              ? UI::StatusTone::Warning
-                              : UI::StatusTone::Neutral)
-                    + UI::StatusBadge(
+                              ? ui::StatusTone::Warning
+                              : ui::StatusTone::Neutral)
+                    + ui::StatusBadge(
                           props.tecsOverspeedProtectionActive
                               ? "Overspeed protection"
                               : "Below overspeed",
                           props.tecsOverspeedProtectionActive
-                              ? UI::StatusTone::Warning
-                              : UI::StatusTone::Neutral)
+                              ? ui::StatusTone::Warning
+                              : ui::StatusTone::Neutral)
                   ]
-            + UI::FoldOut("PX4 TECS Tuning").Section()
+            + ui::FoldOut("PX4 TECS Tuning").Section()
                   [
-                    UI::VerticalLayout().Spacing(6.0F)
+                    ui::VerticalLayout().Spacing(6.0F)
                         [
                           +parameters
-                          + UI::Button("Reset C172x TECS Tuning")
+                          + ui::Button("Reset C172x TECS Tuning")
                                 .OnAction([events = props.tecsResetEvents] {
                                   events.Emit({});
                                 })

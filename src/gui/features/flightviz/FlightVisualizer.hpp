@@ -15,7 +15,7 @@ struct EditorIconHandle;
 }
 
 namespace sim {
-struct SimulationInstanceSnapshot;
+struct SimInstanceSnapshot;
 } // namespace sim
 
 namespace viz {
@@ -28,8 +28,8 @@ public:
   ~FlightVisualizer();
 
   // Frame update
-  bool Tick(const sim::SimulationInstanceSnapshot *mainSnapshot,
-      const sim::SimulationInstanceSnapshot *shadowSnapshot = nullptr);
+  bool Tick(const sim::SimInstanceSnapshot *mainSnapshot,
+      const sim::SimInstanceSnapshot *shadowSnapshot = nullptr);
   const FrameSnapshot &GetFrameSnapshot() const { return snapshot_; }
 
   // Visualization state
@@ -81,12 +81,12 @@ private:
 
   // Aircraft synchronization
   void ResetMainState();
-  void UpdateWorldOrigin(const sim::SimulationInstanceSnapshot &source);
+  void UpdateWorldOrigin(const sim::SimInstanceSnapshot &source);
   AircraftSnapshot CaptureAircraft(
-      const sim::SimulationInstanceSnapshot &source) const;
+      const sim::SimInstanceSnapshot &source) const;
   Vec3 ProjectWorldPosition(
-      const sim::SimulationInstanceSnapshot &source) const;
-  void SyncFlightPath(const sim::SimulationInstanceSnapshot &source);
+      const sim::SimInstanceSnapshot &source) const;
+  void SyncFlightPath(const sim::SimInstanceSnapshot &source);
   void SyncGroundScroll(const sim::AircraftState &state);
   void UpdateSnapshotViewState();
 

@@ -8,8 +8,8 @@ target_include_directories(jsb_message_bus PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(jsb_message_bus PUBLIC jsb_common)
 
 add_library(jsb_messaging STATIC
-  SimulationMessageAdapter.cpp
-  SimulationMessageClient.cpp
+  GuiSimBridge.cpp
+  SimMessageClient.cpp
 )
 target_compile_features(jsb_messaging PUBLIC cxx_std_20)
 set_target_properties(jsb_messaging PROPERTIES CXX_SCAN_FOR_MODULES OFF)

@@ -10,7 +10,7 @@ struct LinearizationResult;
 namespace sim {
 class AircraftLinearizer {
 public:
-  bool Initialize(const SimulationConfig &config,
+  bool Initialize(std::string_view aircraftName, double simulationHz,
       const InitialCondition &initialCondition);
   gnc::LinearizationResult Linearize(const FDMState &sourceState);
 

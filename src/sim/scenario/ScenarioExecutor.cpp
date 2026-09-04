@@ -31,23 +31,21 @@ FDMEnvironmentState MakeEnvironment(const Simulation &reference,
 }
 
 gnc::IRollHoldAutopilot *FindRollHold(Simulation &simulation) {
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  return manager != nullptr
-             ? dynamic_cast<gnc::IRollHoldAutopilot *>(&manager->GetAutopilot())
-             : nullptr;
+  return dynamic_cast<gnc::IRollHoldAutopilot *>(
+      &simulation.GetFlightControlManager().GetAutopilot());
 }
 
 bool ConfigureRollHold(Simulation &simulation, double targetRollRad,
     bool enabled) {
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
+  auto &manager = simulation.GetFlightControlManager();
   auto *rollHold = FindRollHold(simulation);
-  if (manager == nullptr || rollHold == nullptr) {
+  if (rollHold == nullptr) {
     return false;
   }
   rollHold->SetTargetRollRad(targetRollRad);
   rollHold->SetRollHoldEnabled(enabled);
-  manager->SetMode(enabled ? control::FlightControlMode::Autopilot
-                           : control::FlightControlMode::Manual);
+  manager.SetMode(enabled ? control::FlightControlMode::Autopilot
+                          : control::FlightControlMode::Manual);
   return true;
 }
 } // namespace
@@ -55,7 +53,7 @@ bool ConfigureRollHold(Simulation &simulation, double targetRollRad,
 ScenarioExecutor::ScenarioExecutor(Simulation &simulation)
     : simulation_(simulation) {}
 
-bool ScenarioExecutor::Start(const SimulationScenario &scenario, double dtSec) {
+bool ScenarioExecutor::Start(const SimScenario &scenario, double dtSec) {
   if (state_ == ScenarioExecutorState::Running) {
     return Fail("scenario executor is already running");
   }
@@ -65,7 +63,7 @@ bool ScenarioExecutor::Start(const SimulationScenario &scenario, double dtSec) {
     return Fail("scenario simulation must be initialized");
   }
   std::string validationError;
-  if (!ValidateSimulationScenario(scenario, &validationError)) {
+  if (!ValidateSimScenario(scenario, &validationError)) {
     return Fail(validationError);
   }
   const auto targetSteps = CalculateStepCount(scenario.durationSec, dtSec);
@@ -158,7 +156,7 @@ std::uint64_t ScenarioExecutor::GetTargetStepCount() const {
   return targetStepCount_;
 }
 
-const SimulationScenario *ScenarioExecutor::GetScenario() const {
+const SimScenario *ScenarioExecutor::GetScenario() const {
   return state_ == ScenarioExecutorState::Idle ? nullptr : &scenario_;
 }
 
@@ -195,7 +193,7 @@ std::optional<std::uint64_t> ScenarioExecutor::CalculateStepCount(
 bool ScenarioExecutor::ResetSimulations() {
   const FDMEnvironmentState environment =
       MakeEnvironment(simulation_, scenario_.windEnabled);
-  const SimulationResetOptions options{
+  const SimResetOptions options{
       .runTrim = scenario_.runTrim,
       .trimMode = scenario_.trimMode,
       .environment = environment,

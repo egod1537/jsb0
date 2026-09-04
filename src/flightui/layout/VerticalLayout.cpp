@@ -7,7 +7,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class VerticalLayoutBuilder::Impl {
 public:
   Children ChildrenList;
@@ -107,4 +107,4 @@ VerticalLayoutBuilder VerticalLayout() { return VerticalLayoutBuilder(); }
 VerticalLayoutBuilder VerticalLayout(Children children) {
   return VerticalLayoutBuilder(std::move(children));
 }
-} // namespace FlightUI
+} // namespace ui

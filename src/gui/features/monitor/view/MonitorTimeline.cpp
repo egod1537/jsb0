@@ -14,7 +14,6 @@
 #include <vector>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float TimelineOverviewBarHeight = 12.0F;
@@ -71,20 +70,20 @@ std::vector<double> CalculateTimelineTicks(double minSec, double maxSec) {
 void MonitorView::DrawTimelineHeader() {
   const bool wasOpen = timelinePaneOpen_;
   bool live = liveView_;
-  const UI::UIElement toolbar =
-      UI::Toolbar()
+  const ui::UIElement toolbar =
+      ui::Toolbar()
           .Id("TimelineHeader")
           .Compact()
           .Height(26.0F)
-          .Left(UI::HorizontalLayout().Spacing(
-              4.0F)[+UI::Button(
+          .Left(ui::HorizontalLayout().Spacing(
+              4.0F)[+ui::Button(
                         wasOpen ? "v##CollapseTimeline" : "^##OpenTimeline")
                         .Tooltip(
                             wasOpen ? "Collapse Timeline" : "Open Timeline")
                         .OnAction(
                             [this, wasOpen] { timelinePaneOpen_ = !wasOpen; })
-                    + UI::Text("Timeline")])
-          .Right(UI::Toggle("Live##Timeline", live)
+                    + ui::Text("Timeline")])
+          .Right(ui::Toggle("Live##Timeline", live)
                   .OnChanged([this](bool enabled) { SetLiveView(enabled); }));
   toolbar.Render();
 }
@@ -112,9 +111,9 @@ void MonitorView::DrawTimeline(
   }
 
   DrawTimelineOverview(*telemetryHistoryRange_);
-  ImGui::Dummy(ImVec2(0.0F, UI::Ui(TimelineRowSpacing)));
+  ImGui::Dummy(ImVec2(0.0F, ui::Ui(TimelineRowSpacing)));
   DrawTimelineDetail();
-  ImGui::Dummy(ImVec2(0.0F, UI::Ui(TimelineRowSpacing)));
+  ImGui::Dummy(ImVec2(0.0F, ui::Ui(TimelineRowSpacing)));
   DrawLinearizationTrack(dynamicModeHistory);
 }
 
@@ -125,12 +124,12 @@ void MonitorView::DrawTimelineOverview(const TimelineRange &historyRange) {
 
   const TimelineRange trackRange = GetEffectiveHistoryRange(historyRange);
 
-  const float barWidth = std::max(UI::Ui(80.0F),
+  const float barWidth = std::max(ui::Ui(80.0F),
       ImGui::GetContentRegionAvail().x
-          - UI::Ui(TimelineHorizontalPadding) * 2.0F);
-  const float barHeight = UI::Ui(TimelineOverviewBarHeight);
+          - ui::Ui(TimelineHorizontalPadding) * 2.0F);
+  const float barHeight = ui::Ui(TimelineOverviewBarHeight);
   const ImVec2 cursorPosition = ImGui::GetCursorScreenPos();
-  const ImVec2 barMin(cursorPosition.x + UI::Ui(TimelineHorizontalPadding),
+  const ImVec2 barMin(cursorPosition.x + ui::Ui(TimelineHorizontalPadding),
       cursorPosition.y);
   const ImVec2 barMax(barMin.x + barWidth, barMin.y + barHeight);
   const double historyDuration = trackRange.maxSec - trackRange.minSec;
@@ -163,25 +162,25 @@ void MonitorView::DrawTimelineOverview(const TimelineRange &historyRange) {
   drawList->AddRectFilled(barMin,
       barMax,
       ImGui::GetColorU32(ImGuiCol_FrameBg),
-      UI::Ui(3.0F));
+      ui::Ui(3.0F));
 
   const float selectionMinX = timeToX(timelineViewRange_.minSec);
   const float selectionMaxX = timeToX(timelineViewRange_.maxSec);
   drawList->AddRectFilled(ImVec2(selectionMinX, barMin.y),
       ImVec2(selectionMaxX, barMax.y),
       ImGui::GetColorU32(ImGuiCol_FrameBgHovered),
-      UI::Ui(3.0F));
+      ui::Ui(3.0F));
 
-  const float handleWidth = UI::Ui(TimelineHandleWidth);
+  const float handleWidth = ui::Ui(TimelineHandleWidth);
   const ImU32 viewHandleColor = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-  drawList->AddLine(ImVec2(selectionMinX, barMin.y - UI::Ui(2.0F)),
-      ImVec2(selectionMinX, barMax.y + UI::Ui(2.0F)),
+  drawList->AddLine(ImVec2(selectionMinX, barMin.y - ui::Ui(2.0F)),
+      ImVec2(selectionMinX, barMax.y + ui::Ui(2.0F)),
       viewHandleColor,
-      UI::Ui(1.5F));
-  drawList->AddLine(ImVec2(selectionMaxX, barMin.y - UI::Ui(2.0F)),
-      ImVec2(selectionMaxX, barMax.y + UI::Ui(2.0F)),
+      ui::Ui(1.5F));
+  drawList->AddLine(ImVec2(selectionMaxX, barMin.y - ui::Ui(2.0F)),
+      ImVec2(selectionMaxX, barMax.y + ui::Ui(2.0F)),
       viewHandleColor,
-      UI::Ui(1.5F));
+      ui::Ui(1.5F));
 
   ImGui::SetCursorScreenPos(ImVec2(barMin.x - handleWidth * 0.5F, barMin.y));
   ImGui::InvisibleButton("##TimelineOverviewInteraction",
@@ -274,12 +273,12 @@ void MonitorView::DrawTimelineDetail() {
     return;
   }
 
-  const float barWidth = std::max(UI::Ui(80.0F),
+  const float barWidth = std::max(ui::Ui(80.0F),
       ImGui::GetContentRegionAvail().x
-          - UI::Ui(TimelineHorizontalPadding) * 2.0F);
-  const float barHeight = UI::Ui(TimelineDetailBarHeight);
+          - ui::Ui(TimelineHorizontalPadding) * 2.0F);
+  const float barHeight = ui::Ui(TimelineDetailBarHeight);
   const ImVec2 cursorPosition = ImGui::GetCursorScreenPos();
-  const ImVec2 barMin(cursorPosition.x + UI::Ui(TimelineHorizontalPadding),
+  const ImVec2 barMin(cursorPosition.x + ui::Ui(TimelineHorizontalPadding),
       cursorPosition.y + ImGui::GetTextLineHeight());
   const ImVec2 barMax(barMin.x + barWidth, barMin.y + barHeight);
 
@@ -311,7 +310,7 @@ void MonitorView::DrawTimelineDetail() {
   drawList->AddRectFilled(barMin,
       barMax,
       ImGui::GetColorU32(ImGuiCol_FrameBg),
-      UI::Ui(3.0F));
+      ui::Ui(3.0F));
   const std::vector<double> ticks =
       CalculateTimelineTicks(detailRange.minSec, detailRange.maxSec);
   for (double tick : ticks) {
@@ -323,7 +322,7 @@ void MonitorView::DrawTimelineDetail() {
     std::snprintf(label, sizeof(label), "%.3g s", tick);
     const ImVec2 labelSize = ImGui::CalcTextSize(label);
     drawList->AddText(ImVec2(tickX - labelSize.x * 0.5F,
-                          barMin.y - labelSize.y - UI::Ui(2.0F)),
+                          barMin.y - labelSize.y - ui::Ui(2.0F)),
         ImGui::GetColorU32(ImGuiCol_TextDisabled),
         label);
   }
@@ -333,25 +332,25 @@ void MonitorView::DrawTimelineDetail() {
   drawList->AddRectFilled(ImVec2(selectionMinX, barMin.y),
       ImVec2(selectionMaxX, barMax.y),
       ImGui::GetColorU32(ImGuiCol_SliderGrabActive),
-      UI::Ui(3.0F));
+      ui::Ui(3.0F));
 
-  const float handleWidth = UI::Ui(TimelineHandleWidth);
+  const float handleWidth = ui::Ui(TimelineHandleWidth);
   drawList->AddRectFilled(ImVec2(selectionMinX - handleWidth * 0.5F, barMin.y),
       ImVec2(selectionMinX + handleWidth * 0.5F, barMax.y),
       ImGui::GetColorU32(ImGuiCol_SliderGrab),
-      UI::Ui(2.0F));
+      ui::Ui(2.0F));
   drawList->AddRectFilled(ImVec2(selectionMaxX - handleWidth * 0.5F, barMin.y),
       ImVec2(selectionMaxX + handleWidth * 0.5F, barMax.y),
       ImGui::GetColorU32(ImGuiCol_SliderGrab),
-      UI::Ui(2.0F));
+      ui::Ui(2.0F));
 
   if (selectedTimeInitialized_ && selectedTimeSec_ >= detailRange.minSec
       && selectedTimeSec_ <= detailRange.maxSec) {
     const float cursorX = timeToX(selectedTimeSec_);
-    drawList->AddLine(ImVec2(cursorX, barMin.y - UI::Ui(3.0F)),
-        ImVec2(cursorX, barMax.y + UI::Ui(3.0F)),
+    drawList->AddLine(ImVec2(cursorX, barMin.y - ui::Ui(3.0F)),
+        ImVec2(cursorX, barMax.y + ui::Ui(3.0F)),
         ImGui::GetColorU32(ImVec4(0.95F, 0.75F, 0.25F, 0.9F)),
-        UI::Ui(1.5F));
+        ui::Ui(1.5F));
   }
 
   ImGui::SetCursorScreenPos(ImVec2(barMin.x - handleWidth * 0.5F, barMin.y));
@@ -461,12 +460,12 @@ void MonitorView::DrawLinearizationTrack(
     return;
   }
 
-  const float trackWidth = std::max(UI::Ui(80.0F),
+  const float trackWidth = std::max(ui::Ui(80.0F),
       ImGui::GetContentRegionAvail().x
-          - UI::Ui(TimelineHorizontalPadding) * 2.0F);
-  const float trackHeight = UI::Ui(LinearizationTrackHeight);
+          - ui::Ui(TimelineHorizontalPadding) * 2.0F);
+  const float trackHeight = ui::Ui(LinearizationTrackHeight);
   const ImVec2 cursorPosition = ImGui::GetCursorScreenPos();
-  const ImVec2 trackMin(cursorPosition.x + UI::Ui(TimelineHorizontalPadding),
+  const ImVec2 trackMin(cursorPosition.x + ui::Ui(TimelineHorizontalPadding),
       cursorPosition.y);
   const ImVec2 trackMax(trackMin.x + trackWidth, trackMin.y + trackHeight);
   const auto timeToX = [&](double timeSec) {
@@ -488,7 +487,7 @@ void MonitorView::DrawLinearizationTrack(
   drawList->AddRectFilled(trackMin,
       trackMax,
       ImGui::GetColorU32(ImGuiCol_FrameBg),
-      UI::Ui(3.0F));
+      ui::Ui(3.0F));
 
   if (!dynamicModeHistory.empty()) {
     const ImU32 markerColor = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
@@ -499,12 +498,12 @@ void MonitorView::DrawLinearizationTrack(
       }
       const float markerX = timeToX(snapshot.simulationTimeSec);
       const ImVec2 markerCenter(markerX, (trackMin.y + trackMax.y) * 0.5F);
-      drawList->AddLine(ImVec2(markerX, trackMin.y + UI::Ui(2.0F)),
-          ImVec2(markerX, trackMax.y - UI::Ui(2.0F)),
+      drawList->AddLine(ImVec2(markerX, trackMin.y + ui::Ui(2.0F)),
+          ImVec2(markerX, trackMax.y - ui::Ui(2.0F)),
           markerColor,
-          UI::Ui(1.0F));
+          ui::Ui(1.0F));
       drawList->AddCircleFilled(markerCenter,
-          UI::Ui(LinearizationMarkerRadius),
+          ui::Ui(LinearizationMarkerRadius),
           markerColor);
     }
   }
@@ -512,10 +511,10 @@ void MonitorView::DrawLinearizationTrack(
   if (selectedTimeInitialized_ && selectedTimeSec_ >= trackRange.minSec
       && selectedTimeSec_ <= trackRange.maxSec) {
     const float selectedX = timeToX(selectedTimeSec_);
-    drawList->AddLine(ImVec2(selectedX, trackMin.y - UI::Ui(2.0F)),
-        ImVec2(selectedX, trackMax.y + UI::Ui(2.0F)),
+    drawList->AddLine(ImVec2(selectedX, trackMin.y - ui::Ui(2.0F)),
+        ImVec2(selectedX, trackMax.y + ui::Ui(2.0F)),
         ImGui::GetColorU32(ImVec4(0.95F, 0.75F, 0.25F, 0.9F)),
-        UI::Ui(1.5F));
+        ui::Ui(1.5F));
   }
 
   ImGui::SetCursorScreenPos(trackMin);
@@ -526,7 +525,7 @@ void MonitorView::DrawLinearizationTrack(
   const bool isActive = ImGui::IsItemActive();
 
   const gnc::DynamicModeSnapshot *hoveredSnapshot = nullptr;
-  float nearestDistance = UI::Ui(LinearizationMarkerHitRadius) + 1.0F;
+  float nearestDistance = ui::Ui(LinearizationMarkerHitRadius) + 1.0F;
   if ((isHovered || isActive) && !dynamicModeHistory.empty()) {
     const float mouseX = ImGui::GetIO().MousePos.x;
     for (const gnc::DynamicModeSnapshot &snapshot : dynamicModeHistory) {

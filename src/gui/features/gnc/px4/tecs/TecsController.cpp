@@ -2,7 +2,7 @@
 
 #include "gui/panels/BaselineAutopilotPanel.hpp"
 #include "sim/gnc/config/Px4ControlProfile.hpp"
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 
 #include <cmath>
 
@@ -17,7 +17,7 @@ void TecsController::Synchronize(const sim::BaselineRollHoldConfig &config) {
   state_.tecsSettings = config.tecsSettings;
 }
 
-void TecsController::Handle(const BaselineTecsValueChanged &event) {
+void TecsController::OnEvent(const BaselineTecsValueChanged &event) {
   if (!std::isfinite(event.value)) {
     return;
   }
@@ -36,25 +36,25 @@ void TecsController::Handle(const BaselineTecsValueChanged &event) {
   }
 }
 
-void TecsController::Handle(const BaselineTecsParameterChanged &event) {
+void TecsController::OnEvent(const BaselineTecsParameterChanged &event) {
   gnc::SetPx4TecsParameterValue(state_.tecsSettings,
       event.parameter,
       event.value);
 }
 
-void TecsController::Handle(const BaselineTecsTuningResetRequested &) {
+void TecsController::OnEvent(const BaselineTecsTuningResetRequested &) {
   const double synchronizedTrimThrottle = state_.tecsSettings.trimThrottle;
   state_.tecsSettings = gnc::GetC172xPx4ControlProfile().tecs;
   state_.tecsSettings.trimThrottle = synchronizedTrimThrottle;
 }
 
-void TecsController::Handle(const BaselineTecsAltitudeCaptureRequested &event) {
-  Handle(BaselineTecsValueChanged{BaselineTecsField::TargetAltitudeM,
+void TecsController::OnEvent(const BaselineTecsAltitudeCaptureRequested &event) {
+  OnEvent(BaselineTecsValueChanged{BaselineTecsField::TargetAltitudeM,
       event.currentAltitudeAglM});
 }
 
-void TecsController::Handle(const BaselineTecsAirspeedCaptureRequested &event) {
-  Handle(BaselineTecsValueChanged{BaselineTecsField::TargetAirspeedMps,
+void TecsController::OnEvent(const BaselineTecsAirspeedCaptureRequested &event) {
+  OnEvent(BaselineTecsValueChanged{BaselineTecsField::TargetAirspeedMps,
       event.currentCalibratedAirspeedMps});
 }
 } // namespace gui

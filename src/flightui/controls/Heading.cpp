@@ -6,7 +6,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 UIElement Heading(std::string text) {
   return CreateElement([text = std::move(text)] {
 #if IMGUI_VERSION_NUM >= 18900
@@ -17,4 +17,4 @@ UIElement Heading(std::string text) {
 #endif
   });
 }
-} // namespace FlightUI
+} // namespace ui

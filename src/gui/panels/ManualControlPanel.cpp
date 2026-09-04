@@ -5,7 +5,6 @@
 #include <cmath>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr double ManualInputStep = 0.05;
@@ -13,10 +12,10 @@ constexpr float ManualInputLayoutSpacing = 6.0F;
 constexpr float ManualInputRowSpacing = 8.0F;
 constexpr float ManualInputButtonWidth = 32.0F;
 
-bool WasShortcutPressed(UI::Key key) { return UI::IsKeyPressed(key, true); }
+bool WasShortcutPressed(ui::Key key) { return ui::IsKeyPressed(key, true); }
 
 bool CanApplyManualInputShortcuts() {
-  return UI::IsCurrentWindowFocused() && !UI::WantsTextInput();
+  return ui::IsCurrentWindowFocused() && !ui::WantsTextInput();
 }
 
 bool IsManualControlAllowed(const AutopilotPanelState &autopilotState,
@@ -88,36 +87,36 @@ void ApplyManualInputShortcuts(ManualControlPanelProps &props) {
     return;
   }
 
-  if (WasShortcutPressed(UI::Key::F)) {
+  if (WasShortcutPressed(ui::Key::F)) {
     AdjustManualInput(props, control::ControlAxis::Throttle, -ManualInputStep);
   }
-  if (WasShortcutPressed(UI::Key::R)) {
+  if (WasShortcutPressed(ui::Key::R)) {
     AdjustManualInput(props, control::ControlAxis::Throttle, ManualInputStep);
   }
-  if (WasShortcutPressed(UI::Key::W)) {
+  if (WasShortcutPressed(ui::Key::W)) {
     AdjustManualInput(props, control::ControlAxis::Elevator, -ManualInputStep);
   }
-  if (WasShortcutPressed(UI::Key::S)) {
+  if (WasShortcutPressed(ui::Key::S)) {
     AdjustManualInput(props, control::ControlAxis::Elevator, ManualInputStep);
   }
-  if (WasShortcutPressed(UI::Key::A)) {
+  if (WasShortcutPressed(ui::Key::A)) {
     AdjustManualInput(props, control::ControlAxis::Aileron, -ManualInputStep);
   }
-  if (WasShortcutPressed(UI::Key::D)) {
+  if (WasShortcutPressed(ui::Key::D)) {
     AdjustManualInput(props, control::ControlAxis::Aileron, ManualInputStep);
   }
-  if (WasShortcutPressed(UI::Key::Q)) {
+  if (WasShortcutPressed(ui::Key::Q)) {
     AdjustManualInput(props, control::ControlAxis::Rudder, -ManualInputStep);
   }
-  if (WasShortcutPressed(UI::Key::E)) {
+  if (WasShortcutPressed(ui::Key::E)) {
     AdjustManualInput(props, control::ControlAxis::Rudder, ManualInputStep);
   }
 }
 
-UI::UIElement MakeManualScalarEditor(const char *id, double value,
+ui::UIElement MakeManualScalarEditor(const char *id, double value,
     double minimum, double maximum, ManualControlPanelProps &props,
     control::ControlAxis axis, bool enabled, const char *tooltip) {
-  return UI::ScalarEditor(id, value)
+  return ui::ScalarEditor(id, value)
       .Range(minimum, maximum)
       .Step(0.01)
       .FastStep(0.1)
@@ -129,18 +128,18 @@ UI::UIElement MakeManualScalarEditor(const char *id, double value,
                      double changed) { SetManualInput(props, axis, changed); });
 }
 
-UI::UIElement MakeThrottleRow(ManualControlPanelProps &props) {
+ui::UIElement MakeThrottleRow(ManualControlPanelProps &props) {
   const bool enabled = IsManualControlAllowed(props.autopilotState,
       control::ControlAxis::Throttle);
   const char *tooltip = ManualControlLockTooltip(props.autopilotState,
       control::ControlAxis::Throttle);
 
   // clang-format off
-  return UI::HorizontalLayout()
+  return ui::HorizontalLayout()
       .Spacing(ManualInputRowSpacing)
       [
-        +UI::Text("Throttle")
-        + UI::Button("F")
+        +ui::Text("Throttle")
+        + ui::Button("F")
               .Enabled(enabled)
               .Tooltip(tooltip)
               .OnAction([&props] {
@@ -156,7 +155,7 @@ UI::UIElement MakeThrottleRow(ManualControlPanelProps &props) {
               control::ControlAxis::Throttle,
               enabled,
               tooltip)
-        + UI::Button("R")
+        + ui::Button("R")
               .Enabled(enabled)
               .Tooltip(tooltip)
               .OnAction([&props] {
@@ -168,18 +167,18 @@ UI::UIElement MakeThrottleRow(ManualControlPanelProps &props) {
   // clang-format on
 }
 
-UI::UIElement MakeElevatorRow(ManualControlPanelProps &props) {
+ui::UIElement MakeElevatorRow(ManualControlPanelProps &props) {
   const bool enabled = IsManualControlAllowed(props.autopilotState,
       control::ControlAxis::Elevator);
   const char *tooltip = ManualControlLockTooltip(props.autopilotState,
       control::ControlAxis::Elevator);
 
   // clang-format off
-  return UI::HorizontalLayout()
+  return ui::HorizontalLayout()
       .Spacing(ManualInputRowSpacing)
       [
-        +UI::Text("Elevator")
-        + UI::Button("W")
+        +ui::Text("Elevator")
+        + ui::Button("W")
               .Enabled(enabled)
               .Tooltip(tooltip)
               .OnAction([&props] {
@@ -195,7 +194,7 @@ UI::UIElement MakeElevatorRow(ManualControlPanelProps &props) {
               control::ControlAxis::Elevator,
               enabled,
               tooltip)
-        + UI::Button("S")
+        + ui::Button("S")
               .Enabled(enabled)
               .Tooltip(tooltip)
               .OnAction([&props] {
@@ -207,18 +206,18 @@ UI::UIElement MakeElevatorRow(ManualControlPanelProps &props) {
   // clang-format on
 }
 
-UI::UIElement MakeAileronRow(ManualControlPanelProps &props) {
+ui::UIElement MakeAileronRow(ManualControlPanelProps &props) {
   const bool enabled = IsManualControlAllowed(props.autopilotState,
       control::ControlAxis::Aileron);
   const char *tooltip = ManualControlLockTooltip(props.autopilotState,
       control::ControlAxis::Aileron);
 
   // clang-format off
-  return UI::HorizontalLayout()
+  return ui::HorizontalLayout()
       .Spacing(ManualInputRowSpacing)
       [
-        +UI::Text("Aileron")
-        + UI::Button("A")
+        +ui::Text("Aileron")
+        + ui::Button("A")
               .Enabled(enabled)
               .Tooltip(tooltip)
               .OnAction([&props] {
@@ -234,7 +233,7 @@ UI::UIElement MakeAileronRow(ManualControlPanelProps &props) {
               control::ControlAxis::Aileron,
               enabled,
               tooltip)
-        + UI::Button("D")
+        + ui::Button("D")
               .Enabled(enabled)
               .Tooltip(tooltip)
               .OnAction([&props] {
@@ -246,18 +245,18 @@ UI::UIElement MakeAileronRow(ManualControlPanelProps &props) {
   // clang-format on
 }
 
-UI::UIElement MakeRudderRow(ManualControlPanelProps &props) {
+ui::UIElement MakeRudderRow(ManualControlPanelProps &props) {
   const bool enabled = IsManualControlAllowed(props.autopilotState,
       control::ControlAxis::Rudder);
   const char *tooltip = ManualControlLockTooltip(props.autopilotState,
       control::ControlAxis::Rudder);
 
   // clang-format off
-  return UI::HorizontalLayout()
+  return ui::HorizontalLayout()
       .Spacing(ManualInputRowSpacing)
       [
-        +UI::Text("Rudder")
-        + UI::Button("Q")
+        +ui::Text("Rudder")
+        + ui::Button("Q")
               .Enabled(enabled)
               .Tooltip(tooltip)
               .OnAction([&props] {
@@ -273,7 +272,7 @@ UI::UIElement MakeRudderRow(ManualControlPanelProps &props) {
               control::ControlAxis::Rudder,
               enabled,
               tooltip)
-        + UI::Button("E")
+        + ui::Button("E")
               .Enabled(enabled)
               .Tooltip(tooltip)
               .OnAction([&props] {
@@ -285,17 +284,17 @@ UI::UIElement MakeRudderRow(ManualControlPanelProps &props) {
   // clang-format on
 }
 
-UI::UIElement MakeManualInputLayout(ManualControlPanelProps &props) {
+ui::UIElement MakeManualInputLayout(ManualControlPanelProps &props) {
   // clang-format off
-  return UI::VerticalLayout()
+  return ui::VerticalLayout()
       .Spacing(ManualInputLayoutSpacing)
       [
-        +UI::Text("Control Inputs")
+        +ui::Text("Control Inputs")
         + MakeThrottleRow(props)
         + MakeElevatorRow(props)
         + MakeAileronRow(props)
         + MakeRudderRow(props)
-        + UI::ValueLabel("Pitch Trim", props.pitchTrim, "%.3f")
+        + ui::ValueLabel("Pitch Trim", props.pitchTrim, "%.3f")
       ];
   // clang-format on
 }

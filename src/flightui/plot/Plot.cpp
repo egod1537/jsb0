@@ -16,7 +16,7 @@
 #include <optional>
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 constexpr double YAxisPaddingRatio = 0.10;
 constexpr double MinimumYAxisPadding = 0.10;
@@ -765,4 +765,4 @@ PlotBuilder::operator UIElement() const {
 }
 
 PlotBuilder Plot(std::string title) { return PlotBuilder(std::move(title)); }
-} // namespace FlightUI
+} // namespace ui

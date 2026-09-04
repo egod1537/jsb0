@@ -20,17 +20,17 @@ public:
   std::vector<MonitorPlotProps> BuildPlotProps() const;
 
   // Typed local interaction events
-  void Handle(const MonitorEvent &event);
-  void Handle(const MonitorLiveChanged &event);
-  void Handle(const MonitorViewRangeChanged &event);
-  void Handle(const MonitorVisibleRangeChanged &event);
-  void Handle(const MonitorCursorMoved &event);
-  void Handle(const MonitorSelectedRangeChanged &event);
-  void Handle(const MonitorZoomRequested &event);
-  void Handle(const MonitorPanRequested &event);
-  void Handle(const MonitorTelemetryRangeChanged &event);
-  void Handle(const MonitorStateChanged &event);
-  void Handle(const MonitorAutomaticLinearizationChanged &event);
+  void OnEvent(const MonitorEvent &event);
+  void OnEvent(const MonitorLiveChanged &event);
+  void OnEvent(const MonitorViewRangeChanged &event);
+  void OnEvent(const MonitorVisibleRangeChanged &event);
+  void OnEvent(const MonitorCursorMoved &event);
+  void OnEvent(const MonitorSelectedRangeChanged &event);
+  void OnEvent(const MonitorZoomRequested &event);
+  void OnEvent(const MonitorPanRequested &event);
+  void OnEvent(const MonitorTelemetryRangeChanged &event);
+  void OnEvent(const MonitorStateChanged &event);
+  void OnEvent(const MonitorAutomaticLinearizationChanged &event);
 
 private:
   void UpdateLiveRanges();

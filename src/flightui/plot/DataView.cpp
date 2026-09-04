@@ -1,6 +1,6 @@
 #include "flightui/plot/DataView.hpp"
 
-namespace FlightUI {
+namespace ui {
 DataView::DataView()
     : m_Data(nullptr), m_Count(0), m_Stride(0), m_Type(DataType::None) {}
 
@@ -40,4 +40,4 @@ std::size_t DataView::GetCount() const { return m_Count; }
 std::size_t DataView::GetStride() const { return m_Stride; }
 
 DataType DataView::GetType() const { return m_Type; }
-} // namespace FlightUI
+} // namespace ui

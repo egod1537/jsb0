@@ -31,7 +31,7 @@ Values are converted once at a system boundary:
    feet, feet-per-second, Rankine, and pounds-per-square-foot values.
 2. `Aircraft` converts SI initial and trim conditions when calling JSBSim's
    native initial-condition API.
-3. `SimulationScenarioSerializer` preserves the version-1 YAML contract
+3. `SimScenarioSerializer` preserves the version-1 YAML contract
    (`*_deg`, `altitude_ft`, and `airspeed_kts`) while storing the parsed domain
    object in SI.
 4. Trim UI may display aviation units; it converts through `common/math/Math`

@@ -1,13 +1,12 @@
 #pragma once
 
 #include "gui/Component.hpp"
-#include "gui/GUIConfig.hpp"
 #include "gui/Window.hpp"
 #include "gui/layout/EditorLayoutManager.hpp"
 #include "gui/layout/EditorWindowStateSettings.hpp"
 #include "gui/platform/FileDialogService.hpp"
 #include "gui/resources/EditorIconRegistry.hpp"
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <implot.h>
@@ -23,12 +22,12 @@ class GNCController;
 class LinearizationController;
 class MonitorController;
 class ScenarioController;
-class SimulationController;
+class SimController;
 
 } // namespace gui
 
-namespace application {
-class SimulationMessageClient;
+namespace app {
+class SimMessageClient;
 }
 
 namespace gui {
@@ -36,7 +35,7 @@ namespace gui {
 class GUI {
 public:
   // Lifetime and frame loop
-  explicit GUI(GUIConfig config = {});
+  GUI();
   ~GUI();
 
   GUI(const GUI &other) = delete;
@@ -50,11 +49,10 @@ public:
   bool ShouldClose() const;
   void RequestClose();
 
-  const GUIConfig &GetConfig() const { return config_; }
   void ResetEditorLayoutToDefault();
 
   // Application control
-  void SetSimulationMessageClient(application::SimulationMessageClient *client);
+  void SetSimMessageClient(app::SimMessageClient *client);
   // UI registration
   void RegisterComponent(std::unique_ptr<Component> component);
   void RegisterWindow(std::unique_ptr<Window> window);
@@ -126,16 +124,14 @@ private:
   bool featureTreeRegistered_ = false;
 
   // Application dependencies
-  application::SimulationMessageClient *simulationMessageClient_ = nullptr;
-  std::unique_ptr<SimulationController> simulationController_;
+  app::SimMessageClient *simMessageClient_ = nullptr;
+  std::unique_ptr<SimController> simController_;
   std::unique_ptr<ScenarioController> scenarioController_;
   std::unique_ptr<EditorPlatformController> editorPlatformController_;
   std::unique_ptr<GNCController> gncController_;
   std::unique_ptr<LinearizationController> linearizationController_;
   std::unique_ptr<MonitorController> monitorController_;
-  sim::SimulationSnapshot simulationSnapshot_;
+  sim::SimSnapshot simSnapshot_;
 
-  // Configuration
-  GUIConfig config_;
 };
 } // namespace gui

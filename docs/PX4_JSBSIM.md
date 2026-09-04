@@ -73,7 +73,6 @@ The wrapper recognizes these optional environment variables:
 | `PX4_WSL_DISTRO` | WSL default | Selects a WSL distribution by name. |
 | `PX4_WORKSPACE` | `~/.local/share/jsb-test/px4` | Sets the Linux workspace path. |
 | `PX4_JSBSIM_MODEL` | `rascal` | Selects `rascal`, `malolo`, `quadrotor_x`, or `hexarotor_x`. |
-| `PX4_HEADLESS` | `1` | Set to `0` to allow the PX4 launch script to start FlightGear. |
 | `PX4_VERSION` | `v1.17.0` | Selects the PX4 source tag. |
 | `JSBSIM_VERSION` | `v1.3.0` | Selects the JSBSim source tag. |
 

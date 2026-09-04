@@ -7,40 +7,40 @@
 #include "gui/features/gnc/px4/tecs/TecsController.hpp"
 #include "gui/features/gnc/trim/TrimController.hpp"
 
-namespace application {
-class SimulationMessageClient;
+namespace app {
+class SimMessageClient;
 }
 
 namespace gui {
 class GNCController {
 public:
-  explicit GNCController(application::SimulationMessageClient &client);
+  explicit GNCController(app::SimMessageClient &client);
 
   const GNCModel &GetModel() const { return model_; }
-  void Synchronize(const sim::SimulationSnapshot &snapshot);
-  void PublishConfiguration(const sim::SimulationSnapshot &snapshot);
+  void Synchronize(const sim::SimSnapshot &snapshot);
+  void PublishConfiguration(const sim::SimSnapshot &snapshot);
 
-  void Handle(const TrimRequested &event);
-  void Handle(const ManualControlChanged &event);
-  void Handle(const PrimaryRollHoldConfigChanged &event);
-  void Handle(const BaselineRollHoldConfigChanged &event);
-  void Handle(const PrimaryRollHoldValueChanged &event);
-  void Handle(const BaselineRollHoldValueChanged &event);
-  void Handle(const BaselineRollHoldTuningResetRequested &event);
-  void Handle(const BaselinePitchHoldTuningResetRequested &event);
-  void Handle(const BaselineTecsValueChanged &event);
-  void Handle(const BaselineTecsParameterChanged &event);
-  void Handle(const BaselineTecsTuningResetRequested &event);
-  void Handle(const BaselineTecsAltitudeCaptureRequested &event);
-  void Handle(const BaselineTecsAirspeedCaptureRequested &event);
-  void Handle(const TrimRequestValueChanged &event);
-  void Handle(const TrimExecutionRequested &event);
-  void Handle(const ExperimentalViewStateChanged &event);
-  void Handle(const Px4AttitudeViewStateChanged &event);
-  void Handle(const TrimViewStateChanged &event);
+  void OnEvent(const TrimRequested &event);
+  void OnEvent(const ManualControlChanged &event);
+  void OnEvent(const PrimaryRollHoldConfigChanged &event);
+  void OnEvent(const BaselineRollHoldConfigChanged &event);
+  void OnEvent(const PrimaryRollHoldValueChanged &event);
+  void OnEvent(const BaselineRollHoldValueChanged &event);
+  void OnEvent(const BaselineRollHoldTuningResetRequested &event);
+  void OnEvent(const BaselinePitchHoldTuningResetRequested &event);
+  void OnEvent(const BaselineTecsValueChanged &event);
+  void OnEvent(const BaselineTecsParameterChanged &event);
+  void OnEvent(const BaselineTecsTuningResetRequested &event);
+  void OnEvent(const BaselineTecsAltitudeCaptureRequested &event);
+  void OnEvent(const BaselineTecsAirspeedCaptureRequested &event);
+  void OnEvent(const TrimRequestValueChanged &event);
+  void OnEvent(const TrimExecutionRequested &event);
+  void OnEvent(const ExperimentalViewStateChanged &event);
+  void OnEvent(const Px4AttitudeViewStateChanged &event);
+  void OnEvent(const TrimViewStateChanged &event);
 
 private:
-  application::SimulationMessageClient &client_;
+  app::SimMessageClient &client_;
   GNCModel model_;
   ExperimentalController experimentalController_;
   Px4AttitudeController px4AttitudeController_;

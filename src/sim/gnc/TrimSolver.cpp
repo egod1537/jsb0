@@ -108,7 +108,7 @@ TrimResult ExecuteTrim(sim::Aircraft &aircraft, TrimMode mode,
 }
 } // namespace
 
-namespace gnc::TrimSolver {
+namespace gnc::trim_solver {
 TrimResult Solve(sim::Aircraft &aircraft, const TrimRequest &req) {
   return ExecuteTrim(aircraft, req.mode, &req);
 }
@@ -124,4 +124,4 @@ TrimResult SolveCurrentState(sim::Aircraft &aircraft, TrimMode mode) {
 
   return ExecuteTrim(aircraft, mode, nullptr);
 }
-} // namespace gnc::TrimSolver
+} // namespace gnc::trim_solver

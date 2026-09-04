@@ -7,7 +7,7 @@
 #include <imgui.h>
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class StatusBadgeBuilder::Impl {
 public:
   std::string Label;
@@ -81,11 +81,11 @@ StatusBadgeBuilder::operator UIElement() const {
         ImGui::ColorConvertFloat4ToU32(colors.Text),
         state.Label.c_str());
     ImGui::Dummy(size);
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
 StatusBadgeBuilder StatusBadge(std::string label, StatusTone tone) {
   return StatusBadgeBuilder(std::move(label), tone);
 }
-} // namespace FlightUI
+} // namespace ui

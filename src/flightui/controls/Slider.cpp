@@ -9,7 +9,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class SliderFloatBuilder::Impl {
 public:
   std::string Label;
@@ -156,16 +156,16 @@ SliderFloatBuilder &SliderFloatBuilder::Id(std::string id) {
 SliderFloatBuilder::operator UIElement() const {
   Impl state = *m_Impl;
   return CreateElement([state] {
-    Internal::IdScope idScope(state.Id);
-    Internal::DisabledScope disabledScope(!state.Enabled);
-    Internal::ItemWidthScope widthScope(state.Width);
+    internal::IdScope idScope(state.Id);
+    internal::DisabledScope disabledScope(!state.Enabled);
+    internal::ItemWidthScope widthScope(state.Width);
     float value = state.Value;
     if (ImGui::SliderFloat(state.Label.c_str(), &value, state.Minimum,
                            state.Maximum, state.Format.c_str(), state.Flags) &&
         state.OnChanged) {
       state.OnChanged(value);
     }
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
@@ -281,14 +281,14 @@ SliderDoubleBuilder &SliderDoubleBuilder::Id(std::string id) {
 SliderDoubleBuilder::operator UIElement() const {
   Impl state = *m_Impl;
   return CreateElement([state] {
-    Internal::IdScope idScope(state.Id);
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::IdScope idScope(state.Id);
+    internal::DisabledScope disabledScope(!state.Enabled);
     const float width =
         state.FillAvailableWidth
             ? std::max(1.0F,
                   ImGui::GetContentRegionAvail().x - Ui(state.TrailingWidth))
             : state.Width;
-    Internal::ItemWidthScope widthScope(width);
+    internal::ItemWidthScope widthScope(width);
     double value = state.Value;
     if (ImGui::SliderScalar(state.Label.c_str(), ImGuiDataType_Double, &value,
                             &state.Minimum, &state.Maximum,
@@ -296,7 +296,7 @@ SliderDoubleBuilder::operator UIElement() const {
         state.OnChanged) {
       state.OnChanged(value);
     }
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
@@ -397,16 +397,16 @@ SliderIntBuilder &SliderIntBuilder::Id(std::string id) {
 SliderIntBuilder::operator UIElement() const {
   Impl state = *m_Impl;
   return CreateElement([state] {
-    Internal::IdScope idScope(state.Id);
-    Internal::DisabledScope disabledScope(!state.Enabled);
-    Internal::ItemWidthScope widthScope(state.Width);
+    internal::IdScope idScope(state.Id);
+    internal::DisabledScope disabledScope(!state.Enabled);
+    internal::ItemWidthScope widthScope(state.Width);
     int value = state.Value;
     if (ImGui::SliderInt(state.Label.c_str(), &value, state.Minimum,
                          state.Maximum, state.Format.c_str(), state.Flags) &&
         state.OnChanged) {
       state.OnChanged(value);
     }
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
@@ -424,4 +424,4 @@ SliderIntBuilder SliderInt(std::string label, int value, int minimum,
                            int maximum) {
   return SliderIntBuilder(std::move(label), value, minimum, maximum);
 }
-} // namespace FlightUI
+} // namespace ui

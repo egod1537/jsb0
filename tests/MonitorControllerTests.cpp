@@ -23,7 +23,7 @@ void RequireNear(double actual, double expected) {
 
 gui::MonitorController MakeControllerWithRange(double minimum, double maximum) {
   gui::MonitorController controller;
-  controller.Handle(gui::MonitorTelemetryRangeChanged{{minimum, maximum}});
+  controller.OnEvent(gui::MonitorTelemetryRangeChanged{{minimum, maximum}});
   return controller;
 }
 
@@ -54,18 +54,18 @@ void TestDisplayModeDefaultsToCompare() {
 
   gui::MonitorState state = controller.GetState();
   state.displayMode = gui::MonitorDisplayMode::Baseline;
-  controller.Handle(gui::MonitorStateChanged{state});
+  controller.OnEvent(gui::MonitorStateChanged{state});
   assert(
       controller.GetState().displayMode == gui::MonitorDisplayMode::Baseline);
 }
 
 void TestDisablingLiveFreezesExpectedRange() {
   gui::MonitorController controller = MakeControllerWithRange(0.0, 100.0);
-  controller.Handle(gui::MonitorLiveChanged{false});
+  controller.OnEvent(gui::MonitorLiveChanged{false});
   const gui::MonitorTimeRange frozen =
       controller.GetState().timeline.visibleRange;
 
-  controller.Handle(gui::MonitorTelemetryRangeChanged{{0.0, 120.0}});
+  controller.OnEvent(gui::MonitorTelemetryRangeChanged{{0.0, 120.0}});
 
   assert(!controller.GetState().timeline.live);
   RequireNear(controller.GetState().timeline.visibleRange.minSec,
@@ -77,11 +77,11 @@ void TestDisablingLiveFreezesExpectedRange() {
 
 void TestZoomUpdatesSharedTimeline() {
   gui::MonitorController controller = MakeControllerWithRange(0.0, 100.0);
-  controller.Handle(gui::MonitorLiveChanged{false});
+  controller.OnEvent(gui::MonitorLiveChanged{false});
   const double oldDuration = controller.GetState().timeline.viewRange.maxSec
                              - controller.GetState().timeline.viewRange.minSec;
 
-  controller.Handle(gui::MonitorZoomRequested{1.0, 80.0});
+  controller.OnEvent(gui::MonitorZoomRequested{1.0, 80.0});
 
   const gui::MonitorTimelineState &timeline = controller.GetState().timeline;
   const double newDuration =
@@ -93,11 +93,11 @@ void TestZoomUpdatesSharedTimeline() {
 
 void TestPanUpdatesSharedRanges() {
   gui::MonitorController controller = MakeControllerWithRange(0.0, 200.0);
-  controller.Handle(gui::MonitorLiveChanged{false});
-  controller.Handle(gui::MonitorViewRangeChanged{{50.0, 90.0}});
-  controller.Handle(gui::MonitorVisibleRangeChanged{{60.0, 70.0}});
+  controller.OnEvent(gui::MonitorLiveChanged{false});
+  controller.OnEvent(gui::MonitorViewRangeChanged{{50.0, 90.0}});
+  controller.OnEvent(gui::MonitorVisibleRangeChanged{{60.0, 70.0}});
 
-  controller.Handle(gui::MonitorPanRequested{5.0});
+  controller.OnEvent(gui::MonitorPanRequested{5.0});
 
   RequireNear(controller.GetState().timeline.viewRange.minSec, 55.0);
   RequireNear(controller.GetState().timeline.viewRange.maxSec, 95.0);
@@ -107,7 +107,7 @@ void TestPanUpdatesSharedRanges() {
 
 void TestCursorMovementPropagatesThroughController() {
   gui::MonitorController controller = MakeControllerWithRange(0.0, 100.0);
-  controller.Handle(gui::MonitorCursorMoved{42.5});
+  controller.OnEvent(gui::MonitorCursorMoved{42.5});
   assert(controller.GetState().timeline.cursorInitialized);
   RequireNear(controller.GetState().timeline.cursorTimeSec, 42.5);
 }
@@ -123,7 +123,7 @@ void TestEveryPlotReceivesTheSameTimelineProps() {
       .yAxisMinimum = -10.0,
       .yAxisMaximum = 10.0});
   state.plots.push_back({.id = 2, .title = "Pitch"});
-  controller.Handle(gui::MonitorStateChanged{state});
+  controller.OnEvent(gui::MonitorStateChanged{state});
 
   const std::vector<gui::MonitorPlotProps> props = controller.BuildPlotProps();
   assert(props.size() == 2);
@@ -162,7 +162,7 @@ void TestApplicationIntentIsEmittedUpward() {
       gui::architecture::EventSink<gui::MonitorAutomaticLinearizationChanged>{
           [&enabled](const auto &event) { enabled = event.enabled; }});
 
-  controller.Handle(gui::MonitorAutomaticLinearizationChanged{true});
+  controller.OnEvent(gui::MonitorAutomaticLinearizationChanged{true});
 
   assert(enabled);
 }

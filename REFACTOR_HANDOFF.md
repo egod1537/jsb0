@@ -9,30 +9,32 @@ The interactive application composes a pure C++ synchronous message path:
 
 ```text
 GUI
-  <-> SimulationMessageClient
+  <-> SimMessageClient
   <-> MessageBus
-  <-> SimulationMessageAdapter
-  <-> SimulationRuntime
+  <-> GuiSimBridge
+  <-> SimRuntime
   <-> Simulation Core
 ```
 
-The headless runner continues to use `SimulationRuntime` directly.
+The headless runner continues to use `SimRuntime` directly.
 
 ## Boundaries
 
-- `SimulationRuntime` owns application lifecycle and coordinates scenarios,
+- `SimRuntime` owns application lifecycle and coordinates scenarios,
   primary/baseline instances, trim, linearization, snapshots, and telemetry
   recording. The corresponding algorithms and data conversion live in focused
   sim services rather than Runtime itself.
-- `SimulationMessageAdapter` translates typed commands into runtime calls and
-  publishes plain-data status, snapshot, telemetry, and result events.
-- `SimulationMessageClient` publishes GUI commands and maintains local event
+- `GuiSimBridge` translates typed commands into runtime calls and publishes
+  plain-data status, snapshot, telemetry, and result events. It does not depend
+  on a concrete GUI implementation; it bridges GUI-side messaging and the
+  simulation runtime.
+- `SimMessageClient` publishes GUI commands and maintains local event
   caches. GUI rendering only reads those caches.
 - `TelemetryRegistry` remains internal. GUI plotting consumes immutable
   `TelemetrySnapshot` data assembled from `TelemetryFrame` events.
-- `Simulation` is the one-aircraft execution primitive. `SimulationInstanceSet`
+- `Simulation` is the one-aircraft execution primitive. `SimInstanceSet`
   gives primary and baseline the same initialize/reset/step/shutdown path.
-- `SimulationTelemetryPublisher`, `SimulationSnapshotBuilder`,
+- `SimTelemetryPublisher`, `SimSnapshotBuilder`,
   `AutopilotConfigurationService`, `TrimWorkflow`, and `LinearizationService`
   own telemetry mapping, contract snapshots, autopilot-specific settings
   application, trim sequencing, and analysis access respectively.
@@ -127,5 +129,5 @@ feature edits consistently reject non-finite values.
 `BaselineAutopilotPanel` is now a visual-order composition wrapper. PX4
 attitude and TECS rendering are separate components and share the generic,
 descriptor-driven `ParameterEditor`. Runtime access still crosses only
-`SimulationMessageClient`, and the complete primary/baseline configuration
+`SimMessageClient`, and the complete primary/baseline configuration
 commands are unchanged. See `docs/GUI_GNC_ARCHITECTURE.md`.

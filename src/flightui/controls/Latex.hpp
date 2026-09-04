@@ -4,10 +4,10 @@
 
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 struct LatexOptions {
   float Scale = 1.0F;
 };
 
 UIElement Latex(std::string source, LatexOptions options = {});
-} // namespace FlightUI
+} // namespace ui

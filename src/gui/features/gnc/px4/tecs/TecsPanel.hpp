@@ -7,6 +7,6 @@ struct BaselineAutopilotPanelProps;
 
 class TecsPanel {
 public:
-  static FlightUI::UIElement Build(const BaselineAutopilotPanelProps &props);
+  static ui::UIElement Build(const BaselineAutopilotPanelProps &props);
 };
 } // namespace gui

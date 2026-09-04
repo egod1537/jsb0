@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 using IconButtonAction = std::function<void()>;
 using ToggleIconButtonChangedAction = std::function<void(bool)>;
 
@@ -53,4 +53,4 @@ private:
 IconButtonBuilder IconButton(std::string id, ImTextureID texture);
 IconButtonBuilder ToggleIconButton(std::string id, ImTextureID texture,
     bool selected);
-} // namespace FlightUI
+} // namespace ui

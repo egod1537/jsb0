@@ -1,6 +1,5 @@
 #pragma once
 
-#include "sim/Component.hpp"
 #include "sim/control/ControlInput.hpp"
 #include "sim/control/FlightControlMode.hpp"
 #include "sim/control/ManualFlightControlController.hpp"
@@ -11,13 +10,17 @@
 #include <optional>
 
 namespace sim {
+class Aircraft;
 struct Tick;
 } // namespace sim
 
 namespace control {
-class FlightControlManager final : public sim::Component {
+class FlightControlManager final {
 public:
   explicit FlightControlManager(std::unique_ptr<gnc::IAutopilot> autopilot);
+
+  // Simulation stepping
+  void Tick(sim::Aircraft &aircraft, const sim::Tick &tick);
 
   // Active source
   FlightControlMode GetMode() const;
@@ -33,9 +36,6 @@ public:
   void ResetControllers();
   void SynchronizeWithTrimResult(sim::Aircraft &aircraft,
       const gnc::TrimResult &trimResult);
-
-protected:
-  bool OnTick(const sim::Tick &tick) override;
 
 private:
   // Control routing

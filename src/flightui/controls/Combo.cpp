@@ -7,7 +7,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class ComboBuilder::Impl {
 public:
   std::string Label;
@@ -91,9 +91,9 @@ ComboBuilder &ComboBuilder::Id(std::string id) { return SetId(std::move(id)); }
 ComboBuilder::operator UIElement() const {
   Impl state = *m_Impl;
   return CreateElement([state] {
-    Internal::IdScope idScope(state.Id);
-    Internal::DisabledScope disabledScope(!state.Enabled);
-    Internal::ItemWidthScope widthScope(state.Width);
+    internal::IdScope idScope(state.Id);
+    internal::DisabledScope disabledScope(!state.Enabled);
+    internal::ItemWidthScope widthScope(state.Width);
 
     const bool hasSelectedItem =
         state.SelectedIndex >= 0
@@ -117,7 +117,7 @@ ComboBuilder::operator UIElement() const {
       ImGui::EndCombo();
     }
 
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
@@ -125,4 +125,4 @@ ComboBuilder Combo(std::string label, int selectedIndex,
     std::vector<std::string> items) {
   return ComboBuilder(std::move(label), selectedIndex, std::move(items));
 }
-} // namespace FlightUI
+} // namespace ui

@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 using ToggleFoldOutChangedAction = std::function<void(bool)>;
 
 class ToggleFoldOutBuilder {
@@ -53,4 +53,4 @@ private:
 };
 
 ToggleFoldOutBuilder ToggleFoldOut(std::string label, bool value);
-} // namespace FlightUI
+} // namespace ui

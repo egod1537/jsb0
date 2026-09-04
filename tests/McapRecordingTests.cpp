@@ -290,14 +290,13 @@ void TestLifecycleEmptyAndFailureHandling() {
 }
 
 void EnableRollHold(sim::Simulation &simulation, double targetRollRad) {
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  Require(manager != nullptr, "flight control manager is missing");
+  auto &manager = simulation.GetFlightControlManager();
   auto *rollHold =
-      dynamic_cast<gnc::IRollHoldAutopilot *>(&manager->GetAutopilot());
+      dynamic_cast<gnc::IRollHoldAutopilot *>(&manager.GetAutopilot());
   Require(rollHold != nullptr, "roll-hold capability is missing");
   rollHold->SetTargetRollRad(targetRollRad);
   rollHold->SetRollHoldEnabled(true);
-  manager->SetMode(control::FlightControlMode::Autopilot);
+  manager.SetMode(control::FlightControlMode::Autopilot);
 }
 
 void TestRegistrySiValuesReachWireModelWithoutConversion() {
@@ -337,16 +336,15 @@ void TestRegistrySiValuesReachWireModelWithoutConversion() {
 }
 
 void TestSimulationIntegrationAndWriteSample() {
+  constexpr double SimHz = 100.0;
   const std::filesystem::path samplePath = JSB_TEST_SAMPLE_MCAP_PATH;
   std::filesystem::create_directories(samplePath.parent_path());
 
-  sim::SimulationConfig config;
-  config.simulationHz = 100.0;
   sim::Simulation primary(std::make_unique<gnc::MyAutopilot>());
   sim::Simulation baseline(std::make_unique<gnc::PX4Autopilot>());
-  Require(primary.Initialize(config),
+  Require(primary.Initialize(opts::simulation::AircraftName, SimHz),
       "primary simulation failed to initialize");
-  Require(baseline.Initialize(config),
+  Require(baseline.Initialize(opts::simulation::AircraftName, SimHz),
       "baseline simulation failed to initialize");
   EnableRollHold(primary, 0.08726646259971647);
   EnableRollHold(baseline, 0.08726646259971647);
@@ -376,8 +374,10 @@ void TestSimulationIntegrationAndWriteSample() {
       .integratorLimit = 0.15,
   });
   for (int tick = 0; tick < 4; ++tick) {
-    Require(primary.Step(config.GetDT()), "primary simulation step failed");
-    Require(baseline.Step(config.GetDT()), "baseline simulation step failed");
+    Require(primary.Step(1.0 / SimHz),
+        "primary simulation step failed");
+    Require(baseline.Step(1.0 / SimHz),
+        "baseline simulation step failed");
     service.Consume(primary.GetTime(),
         primary.GetTelemetryRegistry(),
         &baseline.GetTelemetryRegistry());

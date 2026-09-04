@@ -2,7 +2,7 @@
 
 #include <functional>
 
-namespace FlightUI {
+namespace ui {
 struct Vector2 {
   float X = 0.0F;
   float Y = 0.0F;
@@ -25,4 +25,4 @@ double GetTime();
 bool IsKeyPressed(Key key, bool repeat = true);
 bool IsCurrentWindowFocused();
 bool WantsTextInput();
-} // namespace FlightUI
+} // namespace ui

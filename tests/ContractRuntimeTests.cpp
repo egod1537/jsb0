@@ -2,7 +2,7 @@
 #include "sim/execution/ExecutionVariantResolver.hpp"
 #include "sim/gnc/autopilot/MyAutopilot.hpp"
 #include "sim/gnc/autopilot/PX4Autopilot.hpp"
-#include "sim/scenario/SimulationScenarioSerializer.hpp"
+#include "sim/scenario/SimScenarioSerializer.hpp"
 #include "telemetry/aircraft_state.pb.h"
 #include "telemetry/control.pb.h"
 
@@ -31,10 +31,10 @@
 
 namespace {
 void TestCanonicalScenarioIsExecutableInput() {
-  sim::SimulationScenario scenario;
+  sim::SimScenario scenario;
   std::string error;
   assert(
-      sim::SimulationScenarioSerializer::Load(JSB_TEST_CONTRACT_SCENARIO_PATH,
+      sim::SimScenarioSerializer::Load(JSB_TEST_CONTRACT_SCENARIO_PATH,
           scenario,
           error));
   assert(error.empty());
@@ -45,29 +45,29 @@ void TestCanonicalScenarioIsExecutableInput() {
   assert(scenario.controllerParameters[0] == "FW_R_TC");
   assert(scenario.controllerParameters[5] == "FW_RR_IMAX");
   const std::string serialized =
-      sim::SimulationScenarioSerializer::Serialize(scenario);
+      sim::SimScenarioSerializer::Serialize(scenario);
   assert(serialized.find("autopilot") == std::string::npos);
   assert(serialized.find("controller_parameters") != std::string::npos);
 }
 
 void TestUnsupportedScenarioVersionIsRejected() {
-  sim::SimulationScenario scenario;
+  sim::SimScenario scenario;
   scenario.schemaVersion = 2;
   std::string error;
-  assert(!sim::ValidateSimulationScenario(scenario, &error));
+  assert(!sim::ValidateSimScenario(scenario, &error));
   assert(error.find("schema_version") != std::string::npos);
 }
 
 void TestAuthoritativeScenarioValidation() {
-  sim::SimulationScenario valid;
+  sim::SimScenario valid;
   std::string error;
-  const auto requireInvalid = [&error](sim::SimulationScenario scenario,
+  const auto requireInvalid = [&error](sim::SimScenario scenario,
                                   std::string_view path) {
-    assert(!sim::ValidateSimulationScenario(scenario, &error));
+    assert(!sim::ValidateSimScenario(scenario, &error));
     assert(error.find(path) != std::string::npos);
   };
 
-  sim::SimulationScenario invalid = valid;
+  sim::SimScenario invalid = valid;
   invalid.aircraft = "unknown";
   requireInvalid(invalid, "aircraft");
   invalid = valid;
@@ -86,14 +86,14 @@ void TestAuthoritativeScenarioValidation() {
   requireInvalid(invalid, "events[0].command.type");
 
   const std::string serialized =
-      sim::SimulationScenarioSerializer::Serialize(valid);
-  sim::SimulationScenario parsed;
-  assert(sim::SimulationScenarioSerializer::Deserialize(serialized,
+      sim::SimScenarioSerializer::Serialize(valid);
+  sim::SimScenario parsed;
+  assert(sim::SimScenarioSerializer::Deserialize(serialized,
       parsed,
       error));
 
   const std::string invalidAutopilot = "autopilot: unsupported\n" + serialized;
-  assert(!sim::SimulationScenarioSerializer::Deserialize(invalidAutopilot,
+  assert(!sim::SimScenarioSerializer::Deserialize(invalidAutopilot,
       parsed,
       error));
   assert(error.find("autopilot") != std::string::npos);
@@ -140,23 +140,23 @@ void TestExecutionVariantContractAndResolution() {
 
 void TestLegacyAutopilotMigration() {
   const std::string canonical =
-      sim::SimulationScenarioSerializer::Serialize(sim::SimulationScenario{});
+      sim::SimScenarioSerializer::Serialize(sim::SimScenario{});
   for (const std::string legacyField : {
            std::string("autopilot: baseline\n"),
            std::string("autopilot:\n  type: baseline\n"),
        }) {
-    sim::SimulationScenario scenario;
+    sim::SimScenario scenario;
     sim::ScenarioLoadMetadata metadata;
     std::string error;
     assert(
-        sim::SimulationScenarioSerializer::Deserialize(legacyField + canonical,
+        sim::SimScenarioSerializer::Deserialize(legacyField + canonical,
             scenario,
             error,
             &metadata));
     assert(metadata.legacyVariant == sim::ExecutionVariant::Baseline);
     assert(!metadata.warnings.empty());
     assert(
-        sim::SimulationScenarioSerializer::Serialize(scenario).find("autopilot")
+        sim::SimScenarioSerializer::Serialize(scenario).find("autopilot")
         == std::string::npos);
   }
 }

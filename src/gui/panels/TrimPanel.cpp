@@ -4,7 +4,6 @@
 #include "flightui/FlightUI.hpp"
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float TrimInputPanelHeight = 178.0F;
@@ -49,21 +48,21 @@ gnc::TrimMode TrimModeFromIndex(int index) {
   }
 }
 
-UI::UIElement MakeTrimInputPanel(const gnc::TrimRequest &request,
+ui::UIElement MakeTrimInputPanel(const gnc::TrimRequest &request,
     architecture::EventSink<TrimRequestValueChanged> events) {
-  return UI::Panel("TrimInputPanel")
+  return ui::Panel("TrimInputPanel")
       .FlexibleWidth(true)
       .Height(TrimInputPanelHeight)
-      .Border(true)[UI::VerticalLayout().Spacing(
-          6.0F)[+UI::Heading("Trim Input")
-                + UI::Combo("Mode",
+      .Border(true)[ui::VerticalLayout().Spacing(
+          6.0F)[+ui::Heading("Trim Input")
+                + ui::Combo("Mode",
                     TrimModeIndex(request.mode),
                     {"Longitudinal", "Full", "Ground"})
                     .OnChanged([events](int index) {
                       events.Emit(
                           {TrimRequestField::Mode, static_cast<double>(index)});
                     })
-                + UI::InputDouble("Airspeed (kt)",
+                + ui::InputDouble("Airspeed (kt)",
                     math::MetersPerSecondToKnots(request.calibratedAirspeedMps))
                     .Step(1.0)
                     .FastStep(10.0)
@@ -72,7 +71,7 @@ UI::UIElement MakeTrimInputPanel(const gnc::TrimRequest &request,
                       events.Emit({TrimRequestField::CalibratedAirspeedMps,
                           math::KnotsToMetersPerSecond(value)});
                     })
-                + UI::InputDouble("Altitude (ft)",
+                + ui::InputDouble("Altitude (ft)",
                     math::MetersToFeet(request.altitudeAslM))
                     .Step(100.0)
                     .FastStep(1000.0)
@@ -81,7 +80,7 @@ UI::UIElement MakeTrimInputPanel(const gnc::TrimRequest &request,
                       events.Emit({TrimRequestField::AltitudeAslM,
                           math::FeetToMeters(value)});
                     })
-                + UI::InputDouble("Flight Path Angle (deg)",
+                + ui::InputDouble("Flight Path Angle (deg)",
                     math::RadToDeg(request.flightPathAngleRad))
                     .Step(0.1)
                     .FastStep(1.0)
@@ -92,8 +91,8 @@ UI::UIElement MakeTrimInputPanel(const gnc::TrimRequest &request,
                     })]];
 }
 
-UI::UIElement MakeTrimRequestSummary(const gnc::TrimRequest &request) {
-  return UI::KeyValueGrid("TrimRequestSummaryTable")
+ui::UIElement MakeTrimRequestSummary(const gnc::TrimRequest &request) {
+  return ui::KeyValueGrid("TrimRequestSummaryTable")
       .ColumnsPerRow(4)
       .Add("Mode", TrimModeLabel(request.mode))
       .AddDouble("Airspeed",
@@ -107,30 +106,30 @@ UI::UIElement MakeTrimRequestSummary(const gnc::TrimRequest &request) {
           "%.2f deg");
 }
 
-UI::UIElement MakeTrimResultContent(const gnc::TrimResult &result,
+ui::UIElement MakeTrimResultContent(const gnc::TrimResult &result,
     bool hasResult) {
-  const UI::StatusTone statusTone = !hasResult       ? UI::StatusTone::Neutral
-                                    : result.success ? UI::StatusTone::Success
-                                                     : UI::StatusTone::Error;
-  UI::VerticalLayoutBuilder layout =
-      UI::VerticalLayout().Spacing(6.0F)
-      + UI::HorizontalLayout().Spacing(
-          6.0F)[+UI::TextDisabled("Status")
-                + UI::StatusBadge(hasResult
+  const ui::StatusTone statusTone = !hasResult       ? ui::StatusTone::Neutral
+                                    : result.success ? ui::StatusTone::Success
+                                                     : ui::StatusTone::Error;
+  ui::VerticalLayoutBuilder layout =
+      ui::VerticalLayout().Spacing(6.0F)
+      + ui::HorizontalLayout().Spacing(
+          6.0F)[+ui::TextDisabled("Status")
+                + ui::StatusBadge(hasResult
                                       ? (result.success ? "Success" : "Failed")
                                       : "Idle",
                     statusTone)];
 
   if (!result.message.empty()) {
     layout = layout
-             + UI::HorizontalLayout().Spacing(
-                 6.0F)[+UI::TextDisabled("Message")
-                       + UI::TextWrapped(result.message)];
+             + ui::HorizontalLayout().Spacing(
+                 6.0F)[+ui::TextDisabled("Message")
+                       + ui::TextWrapped(result.message)];
   }
 
   layout =
       layout
-      + UI::KeyValueGrid("TrimResultMetrics")
+      + ui::KeyValueGrid("TrimResultMetrics")
             .ColumnsPerRow(2)
             .AddDouble("Alpha", math::RadToDeg(result.alphaRad), "%.2f deg")
             .AddDouble("Beta", math::RadToDeg(result.betaRad), "%.2f deg")
@@ -145,8 +144,8 @@ UI::UIElement MakeTrimResultContent(const gnc::TrimResult &result,
   return layout;
 }
 
-UI::UIElement MakeTrimResidualContent(const gnc::TrimResult &result) {
-  return UI::KeyValueGrid("TrimResidualMetrics")
+ui::UIElement MakeTrimResidualContent(const gnc::TrimResult &result) {
+  return ui::KeyValueGrid("TrimResidualMetrics")
       .ColumnsPerRow(2)
       .AddDouble("uDot", result.uDotMps2, "%.4f m/s^2")
       .AddDouble("vDot", result.vDotMps2, "%.4f m/s^2")
@@ -158,27 +157,27 @@ UI::UIElement MakeTrimResidualContent(const gnc::TrimResult &result) {
 } // namespace
 
 void TrimPanel::Draw(TrimPanelProps props) {
-  UI::VerticalLayout()
+  ui::VerticalLayout()
       .Spacing(TrimLayoutSpacing)
           [+MakeTrimInputPanel(props.request, props.valueEvents)
-              + UI::HorizontalLayout().Spacing(
-                  8.0F)[+UI::Button("RunIC Trim")
+              + ui::HorizontalLayout().Spacing(
+                  8.0F)[+ui::Button("RunIC Trim")
                             .Width(TrimButtonWidth)
                             .Enabled(props.canRequestTrim)
                             .OnAction([events = props.executionEvents] {
                               events.Emit({false});
                             })
-                        + UI::Button("Current State Trim")
+                        + ui::Button("Current State Trim")
                             .Width(TrimButtonWidth)
                             .Enabled(props.canRequestTrim)
                             .OnAction([events = props.executionEvents] {
                               events.Emit({true});
                             })]
-              + MakeTrimRequestSummary(props.request) + UI::Space(6.0F)
-              + UI::FoldOut("Result").Open(
+              + MakeTrimRequestSummary(props.request) + ui::Space(6.0F)
+              + ui::FoldOut("Result").Open(
                   props.resultOpen)[MakeTrimResultContent(props.result,
                   props.hasResult)]
-              + UI::FoldOut("Residual")
+              + ui::FoldOut("Residual")
                   .Open(props
                           .residualOpen)[MakeTrimResidualContent(props.result)]]
       .Render();

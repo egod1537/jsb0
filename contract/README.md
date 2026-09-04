@@ -130,7 +130,7 @@ the required pair. Saving the Scenario produces canonical YAML without that
 legacy field.
 
 Baseline and primary channels use identical Protobuf schemas, units, and
-timing semantics and can be overlaid directly. Desktop `SimulationSlot`
+timing semantics and can be overlaid directly. Desktop `SimSlot`
 namespaces remain unchanged and are mapped explicitly to Execution Variants.
 
 `metadata/run.schema.json` describes `run.json`. Its contract/runtime/scenario

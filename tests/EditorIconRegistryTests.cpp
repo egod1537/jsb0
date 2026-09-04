@@ -12,9 +12,9 @@ int main() {
   assert(icons.Contains("SceneAsset Icon.png"));
   assert(icons.Contains("d_console.infoicon"));
   assert(icons.Contains("icons/small/d_PlayButton.png"));
-  assert(icons.Contains(gui::EditorIconAliases::ShadowAircraft));
-  assert(icons.Contains(gui::EditorIconAliases::ViewOptions));
-  assert(icons.Contains(gui::EditorIconAliases::CameraView));
+  assert(icons.Contains(gui::editor_icon_aliases::ShadowAircraft));
+  assert(icons.Contains(gui::editor_icon_aliases::ViewOptions));
+  assert(icons.Contains(gui::editor_icon_aliases::CameraView));
   assert(icons.Contains("processed/unityengine/d_TextAsset Icon"));
 
   // Duplicate stems require their unambiguous relative name.

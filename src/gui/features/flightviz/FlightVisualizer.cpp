@@ -8,7 +8,7 @@
 #include "flightui/visualization/components/TelemetryOverlay.hpp"
 #include "flightui/visualization/render/CameraComponent.hpp"
 #include "flightui/visualization/render/LineCanvas.hpp"
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 #include "common/math/Math.hpp"
 #include "flightui/FlightUI.hpp"
 
@@ -87,8 +87,8 @@ void FlightVisualizer::SetShadowEnabled(bool enabled) {
   UpdateSnapshotViewState();
 }
 
-bool FlightVisualizer::Tick(const sim::SimulationInstanceSnapshot *mainSnapshot,
-    const sim::SimulationInstanceSnapshot *shadowSnapshot) {
+bool FlightVisualizer::Tick(const sim::SimInstanceSnapshot *mainSnapshot,
+    const sim::SimInstanceSnapshot *shadowSnapshot) {
   if (mainSnapshot == nullptr || !mainSnapshot->available) {
     snapshot_.aircraft.available = false;
     snapshot_.shadowAircraft.available = false;
@@ -210,13 +210,13 @@ void FlightVisualizer::RenderToolbar(const gui::EditorIconHandle &shadowIcon,
   const std::string shadowButtonTooltip =
       shadowAvailable ? shadowTooltip
                       : std::string(shadowTooltip) + "\nSimulation unavailable";
-  FlightUI::Toolbar()
+  ui::Toolbar()
       .Id("FlightVizToolbar")
       .AlignRight()
       .Compact()
       .Height(ToolbarHeight)
       .Spacing(
-          4.0F)[+FlightUI::ToggleIconButton("ShadowAircraftButton",
+          4.0F)[+ui::ToggleIconButton("ShadowAircraftButton",
                     shadowIcon.texture,
                     shadowEnabled_)
                     .FallbackText("S")
@@ -226,13 +226,13 @@ void FlightVisualizer::RenderToolbar(const gui::EditorIconHandle &shadowIcon,
                     .OnChanged([shadowEvents](bool enabled) {
                       shadowEvents.Emit({enabled});
                     })
-                + FlightUI::IconButton("ViewOptionsButton",
+                + ui::IconButton("ViewOptionsButton",
                     viewOptionsIcon.texture)
                     .FallbackText("E")
                     .Size(ToolbarButtonSize)
                     .Tooltip("View options")
                     .OnAction([] { ImGui::OpenPopup("ViewOptions"); })
-                + FlightUI::ToggleIconButton("CameraViewButton",
+                + ui::ToggleIconButton("CameraViewButton",
                     cameraViewIcon.texture,
                     thirdPerson)
                     .FallbackText("V")
@@ -242,7 +242,7 @@ void FlightVisualizer::RenderToolbar(const gui::EditorIconHandle &shadowIcon,
                     .OnChanged([cameraEvents](bool) { cameraEvents.Emit({}); })]
       .Render();
   RenderViewOptionsPopup(displayEvents, pathEvents);
-  FlightUI::Space(ToolbarViewportSpacing).Render();
+  ui::Space(ToolbarViewportSpacing).Render();
 }
 
 void FlightVisualizer::RenderViewOptionsPopup(
@@ -292,16 +292,16 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
   const float canvasHeight = std::max(max.y - min.y, 1.0F);
   const float maximumSize =
       std::max(std::min(canvasWidth * 0.34F, canvasHeight * 0.38F), 1.0F);
-  const float expandedSize = std::min(FlightUI::Ui(210.0F), maximumSize);
+  const float expandedSize = std::min(ui::Ui(210.0F), maximumSize);
   const float outerPadding =
-      std::min(FlightUI::Ui(10.0F), expandedSize * 0.08F);
+      std::min(ui::Ui(10.0F), expandedSize * 0.08F);
   const bool wasMinimized = minimapMinimized_;
   const float minimapWidth =
-      wasMinimized ? std::min(FlightUI::Ui(112.0F),
+      wasMinimized ? std::min(ui::Ui(112.0F),
                          std::max(canvasWidth - outerPadding, 1.0F))
                    : expandedSize;
   const float minimapHeight =
-      wasMinimized ? std::min(FlightUI::Ui(30.0F),
+      wasMinimized ? std::min(ui::Ui(30.0F),
                          std::max(canvasHeight - outerPadding, 1.0F))
                    : expandedSize;
   const ImVec2 mapMin{
@@ -317,17 +317,17 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
   drawList.AddRectFilled(mapMin,
       mapMax,
       IM_COL32(30, 30, 30, 224),
-      FlightUI::Ui(3.0F));
+      ui::Ui(3.0F));
   drawList.AddRect(mapMin,
       mapMax,
       IM_COL32(76, 82, 90, 255),
-      FlightUI::Ui(3.0F),
+      ui::Ui(3.0F),
       0,
-      FlightUI::Ui(1.0F));
+      ui::Ui(1.0F));
 
   const float headerHeight =
-      std::min(FlightUI::Ui(24.0F), minimapHeight * 0.8F);
-  const float contentPadding = std::min(FlightUI::Ui(10.0F),
+      std::min(ui::Ui(24.0F), minimapHeight * 0.8F);
+  const float contentPadding = std::min(ui::Ui(10.0F),
       std::min(minimapWidth, minimapHeight) * 0.08F);
 
   double minimumNorth = 0.0;
@@ -365,12 +365,12 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
     std::snprintf(title, sizeof(title), "PATH  %.0f m", spanMeters);
   }
   drawList.AddText(
-      ImVec2(mapMin.x + contentPadding, mapMin.y + FlightUI::Ui(5.0F)),
+      ImVec2(mapMin.x + contentPadding, mapMin.y + ui::Ui(5.0F)),
       IM_COL32(214, 214, 214, 255),
       title);
 
   const float sizeButtonExtent =
-      std::max(std::min(FlightUI::Ui(18.0F), headerHeight - FlightUI::Ui(4.0F)),
+      std::max(std::min(ui::Ui(18.0F), headerHeight - ui::Ui(4.0F)),
           1.0F);
   const ImVec2 sizeButtonPosition{
       mapMax.x - contentPadding - sizeButtonExtent,
@@ -418,8 +418,8 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
                   * pixelsPerMeter);
   };
 
-  drawList.AddText(ImVec2(sizeButtonPosition.x - FlightUI::Ui(15.0F),
-                       mapMin.y + FlightUI::Ui(5.0F)),
+  drawList.AddText(ImVec2(sizeButtonPosition.x - ui::Ui(15.0F),
+                       mapMin.y + ui::Ui(5.0F)),
       IM_COL32(128, 156, 182, 255),
       "N");
 
@@ -427,11 +427,11 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
   drawList.AddLine(ImVec2(plotMin.x, plotCenter.y),
       ImVec2(plotMax.x, plotCenter.y),
       IM_COL32(63, 63, 63, 180),
-      FlightUI::Ui(1.0F));
+      ui::Ui(1.0F));
   drawList.AddLine(ImVec2(plotCenter.x, plotMin.y),
       ImVec2(plotCenter.x, plotMax.y),
       IM_COL32(63, 63, 63, 180),
-      FlightUI::Ui(1.0F));
+      ui::Ui(1.0F));
 
   const auto &points = flightPath_.GetPoints();
   if (!points.empty()) {
@@ -444,7 +444,7 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
       drawList.AddLine(previousScreenPoint,
           screenPoint,
           IM_COL32(83, 151, 211, 230),
-          FlightUI::Ui(2.0F));
+          ui::Ui(2.0F));
       previousScreenPoint = screenPoint;
     }
 
@@ -452,9 +452,9 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
     drawList.AddLine(previousScreenPoint,
         currentScreenPoint,
         IM_COL32(83, 151, 211, 230),
-        FlightUI::Ui(2.0F));
+        ui::Ui(2.0F));
     drawList.AddCircleFilled(startScreenPoint,
-        FlightUI::Ui(3.0F),
+        ui::Ui(3.0F),
         IM_COL32(107, 166, 112, 230));
 
     const double courseRad = snapshot_.aircraft.state.courseRad;
@@ -463,8 +463,8 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
         static_cast<float>(-std::cos(courseRad)),
     };
     const ImVec2 right{-forward.y, forward.x};
-    const float markerLength = FlightUI::Ui(9.0F);
-    const float markerHalfWidth = FlightUI::Ui(5.0F);
+    const float markerLength = ui::Ui(9.0F);
+    const float markerHalfWidth = ui::Ui(5.0F);
     const ImVec2 markerTip{
         currentScreenPoint.x + forward.x * markerLength,
         currentScreenPoint.y + forward.y * markerLength,
@@ -490,7 +490,7 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
 }
 
 AircraftSnapshot FlightVisualizer::CaptureAircraft(
-    const sim::SimulationInstanceSnapshot &source) const {
+    const sim::SimInstanceSnapshot &source) const {
   AircraftSnapshot snapshot;
   snapshot.state = source.aircraft;
   snapshot.controlInput = source.controlInput;
@@ -512,7 +512,7 @@ void FlightVisualizer::ResetMainState() {
 }
 
 void FlightVisualizer::UpdateWorldOrigin(
-    const sim::SimulationInstanceSnapshot &source) {
+    const sim::SimInstanceSnapshot &source) {
   if (worldOrigin_.initialized) {
     return;
   }
@@ -535,7 +535,7 @@ void FlightVisualizer::UpdateWorldOrigin(
 }
 
 Vec3 FlightVisualizer::ProjectWorldPosition(
-    const sim::SimulationInstanceSnapshot &source) const {
+    const sim::SimInstanceSnapshot &source) const {
   if (!worldOrigin_.initialized) {
     return {0.0F, 0.0F, AircraftOriginZ};
   }
@@ -563,7 +563,7 @@ Vec3 FlightVisualizer::ProjectWorldPosition(
 }
 
 void FlightVisualizer::SyncFlightPath(
-    const sim::SimulationInstanceSnapshot &source) {
+    const sim::SimInstanceSnapshot &source) {
   flightPath_.AddSample(source.aircraft.simulationTimeSec,
       source.fdmState.state.latitudeRad,
       source.fdmState.state.longitudeRad);

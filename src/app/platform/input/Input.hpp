@@ -1,6 +1,6 @@
 #pragma once
 
-namespace application {
+namespace app {
 enum class Key {
   W,
   S,
@@ -22,4 +22,4 @@ public:
   static bool IsKeyDown(Key key);
   static bool IsKeyPressed(Key key);
 };
-} // namespace application
+} // namespace app

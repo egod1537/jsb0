@@ -6,8 +6,8 @@ namespace sim {
 class Aircraft;
 }
 
-namespace gnc::TrimSolver {
+namespace gnc::trim_solver {
 TrimResult Solve(sim::Aircraft &aircraft, const TrimRequest &request);
 TrimResult SolveCurrentState(sim::Aircraft &aircraft,
     TrimMode mode = TrimMode::Longitudinal);
-} // namespace gnc::TrimSolver
+} // namespace gnc::trim_solver

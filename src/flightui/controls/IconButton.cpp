@@ -8,7 +8,7 @@
 #include <imgui.h>
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class IconButtonBuilder::Impl {
 public:
   std::string Id;
@@ -125,7 +125,7 @@ IconButtonBuilder &IconButtonBuilder::OnChanged(
 IconButtonBuilder::operator UIElement() const {
   Impl state = *m_Impl;
   return CreateElement([state] {
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::DisabledScope disabledScope(!state.Enabled);
     if (state.Selected) {
       ImGui::PushStyleColor(ImGuiCol_Button,
           GetThemeColor(ThemeColor::IconButtonSelected));
@@ -159,7 +159,7 @@ IconButtonBuilder::operator UIElement() const {
     if (pressed && state.Toggle && state.OnChanged) {
       state.OnChanged(!state.Selected);
     }
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
@@ -171,4 +171,4 @@ IconButtonBuilder ToggleIconButton(std::string id, ImTextureID texture,
     bool selected) {
   return IconButtonBuilder(std::move(id), texture).Selected(selected).Toggle();
 }
-} // namespace FlightUI
+} // namespace ui

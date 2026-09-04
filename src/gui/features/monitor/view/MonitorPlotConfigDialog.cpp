@@ -11,7 +11,6 @@
 #include <utility>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float PlotDialogWidth = 720.0F;
@@ -128,18 +127,18 @@ void MonitorView::DrawPlotConfigurationDialog(const TelemetrySources &sources) {
 
   const ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
   const float maximumWidth =
-      std::max(1.0F, workSize.x - UI::Ui(PlotDialogViewportMargin));
+      std::max(1.0F, workSize.x - ui::Ui(PlotDialogViewportMargin));
   const float maximumHeight =
-      std::max(1.0F, workSize.y - UI::Ui(PlotDialogViewportMargin));
+      std::max(1.0F, workSize.y - ui::Ui(PlotDialogViewportMargin));
   const ImVec2 minimumSize(
-      std::min(UI::Ui(PlotDialogMinimumWidth), maximumWidth),
-      std::min(UI::Ui(PlotDialogMinimumHeight), maximumHeight));
+      std::min(ui::Ui(PlotDialogMinimumWidth), maximumWidth),
+      std::min(ui::Ui(PlotDialogMinimumHeight), maximumHeight));
   const ImVec2 maximumSize(std::max(minimumSize.x, maximumWidth),
       std::max(minimumSize.y, maximumHeight));
   ImGui::SetNextWindowSizeConstraints(minimumSize, maximumSize);
   ImGui::SetNextWindowSize(
-      ImVec2(std::min(UI::Ui(PlotDialogWidth), maximumWidth),
-          std::min(UI::Ui(PlotDialogHeight), maximumHeight)),
+      ImVec2(std::min(ui::Ui(PlotDialogWidth), maximumWidth),
+          std::min(ui::Ui(PlotDialogHeight), maximumHeight)),
       ImGuiCond_Appearing);
 
   bool dialogVisible = true;
@@ -211,9 +210,9 @@ void MonitorView::DrawPlotConfigurationDialog(const TelemetrySources &sources) {
   const std::vector<const MonitorSignalDescriptor *> filteredSignals =
       FilterMonitorSignalCatalog(signalCatalog, plotDialog_.search.data());
   const float signalListHeight =
-      std::clamp(ImGui::GetContentRegionAvail().y - UI::Ui(235.0F),
-          UI::Ui(90.0F),
-          UI::Ui(SignalListHeight));
+      std::clamp(ImGui::GetContentRegionAvail().y - ui::Ui(235.0F),
+          ui::Ui(90.0F),
+          ui::Ui(SignalListHeight));
   if (ImGui::BeginChild("SignalList",
           ImVec2(0.0F, signalListHeight),
           true,
@@ -348,17 +347,17 @@ void MonitorView::DrawPlotConfigurationDialog(const TelemetrySources &sources) {
           && !renderState_.customPlotSlots[*plotDialog_.targetSlot]
               .has_value());
   if (!validYAxis) {
-    ImGui::TextColored(UI::GetDarkEditorSemanticColor(UI::SemanticColor::Error),
+    ImGui::TextColored(ui::GetDarkEditorSemanticColor(ui::SemanticColor::Error),
         "Minimum and maximum must be finite numbers, and minimum must be less "
         "than maximum.");
   } else if (!plotDialog_.validationMessage.empty()) {
-    ImGui::TextColored(UI::GetDarkEditorSemanticColor(UI::SemanticColor::Error),
+    ImGui::TextColored(ui::GetDarkEditorSemanticColor(ui::SemanticColor::Error),
         "%s",
         plotDialog_.validationMessage.c_str());
   }
   if (!targetAvailable) {
     ImGui::TextColored(
-        UI::GetDarkEditorSemanticColor(UI::SemanticColor::Warning),
+        ui::GetDarkEditorSemanticColor(ui::SemanticColor::Warning),
         "No empty plot slots. Change the layout or remove a plot.");
   }
 

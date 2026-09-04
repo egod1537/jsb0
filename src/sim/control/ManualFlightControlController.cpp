@@ -1,7 +1,7 @@
 #include "sim/control/ManualFlightControlController.hpp"
 
 namespace control {
-void ManualFlightControlController::OnReset() { commandedInput_ = {}; }
+void ManualFlightControlController::Reset() { commandedInput_ = {}; }
 
 ControlInput ManualFlightControlController::OnTick(sim::Aircraft &,
     const sim::Tick &) {

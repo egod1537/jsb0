@@ -7,10 +7,9 @@
 #include <string_view>
 
 namespace gui {
-namespace UI = FlightUI;
 
 template <typename Parameter, typename OnChanged>
-UI::PropertyRowBuilder RenderGncParameterRow(
+ui::PropertyRowBuilder RenderGncParameterRow(
     const gnc::ParameterMetadata<Parameter> &metadata,
     std::string_view editorSuffix, double value, OnChanged onChanged) {
   constexpr float AdaptivePropertyInputWidth = 0.0F;
@@ -28,8 +27,8 @@ UI::PropertyRowBuilder RenderGncParameterRow(
   const double displayValue = gnc::ToParameterDisplayValue(metadata, value);
   const double displayIncrement = gnc::GetParameterDisplayIncrement(metadata);
 
-  return UI::PropertyRow(std::string(metadata.id))
-      .Tooltip(tooltip)[UI::ScalarEditor(editorId, displayValue)
+  return ui::PropertyRow(std::string(metadata.id))
+      .Tooltip(tooltip)[ui::ScalarEditor(editorId, displayValue)
               .Range(displayMinimum, displayMaximum)
               .ShowSlider(false)
               .ShowStepper()

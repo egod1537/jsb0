@@ -1,7 +1,7 @@
 #pragma once
 
 namespace sim {
-struct SimulationSnapshot;
+struct SimSnapshot;
 }
 
 namespace gui {
@@ -11,7 +11,7 @@ class EditorIconRegistry;
 // shell. Application services are intentionally excluded; feature controllers
 // receive those explicitly at construction.
 struct GUIFrameContext {
-  const sim::SimulationSnapshot &simulation;
+  const sim::SimSnapshot &simulation;
   EditorIconRegistry &icons;
 };
 } // namespace gui

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/Options.hpp"
 #include "sim/jsbsim/ControlSystem.hpp"
 #include "sim/jsbsim/EngineSystem.hpp"
 #include "sim/jsbsim/FDMStateAccess.hpp"
@@ -7,10 +8,11 @@
 #include "sim/AircraftState.hpp"
 #include "sim/FDMState.hpp"
 #include "sim/InitialCondition.hpp"
-#include "sim/SimulationConfig.h"
 
 #include <filesystem>
 #include <memory>
+#include <string>
+#include <string_view>
 
 namespace JSBSim {
 class FGFDMExec;
@@ -30,20 +32,21 @@ public:
   ~Aircraft();
   Aircraft(const Aircraft &other) = delete;
   Aircraft &operator=(const Aircraft &other) = delete;
-  bool Initialize(const SimulationConfig &config,
+  bool Initialize(const InitialCondition &initialCondition);
+  bool Initialize(std::string_view aircraftName, double simulationHz,
       const InitialCondition &initialCondition);
   bool Tick();
   bool Step(double dtSec);
 
   // Configuration
-  const SimulationConfig &GetConfig() const;
+  const std::string &GetAircraftName() const;
+  double GetSimulationHz() const;
 
   // Initial condition and reset
   bool ApplyInitialCondition(const InitialCondition &initialCondition);
   void SetInitialConditionInputs(const InitialCondition &initialCondition);
   InitialCondition GetCurrentCondition() const;
-  bool Reset(const SimulationConfig &config,
-      const InitialCondition &initialCondition);
+  bool Reset(const InitialCondition &initialCondition);
   void ResetSimulationTime();
 
   // Trim operations
@@ -76,14 +79,15 @@ private:
   void ConfigurePaths();
   void ConfigureOutputPath();
   void RemoveOutputDirectory();
-  bool LoadAircraft(const SimulationConfig &config);
-  void ConfigureSimulation(const SimulationConfig &config);
+  bool LoadAircraft(std::string_view aircraftName);
+  void ConfigureSimulation(double simulationHz);
   void DisableExternalOutput();
   void PrepareExternalOutputForReset();
   bool InitializeState();
 
   // Configuration
-  SimulationConfig config_;
+  std::string aircraftName_;
+  double simulationHz_ = opts::simulation::Hz;
   std::filesystem::path outputDirectory_;
 
   // JSBSim dependencies

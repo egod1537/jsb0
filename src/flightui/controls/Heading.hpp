@@ -4,6 +4,6 @@
 
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 UIElement Heading(std::string text);
 }

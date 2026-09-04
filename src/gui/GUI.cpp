@@ -1,14 +1,15 @@
 #include "GUI.hpp"
+#include "common/Options.hpp"
 #include "gui/features/editor/EditorPlatformController.hpp"
 #include "gui/features/monitor/MonitorController.hpp"
 #include "gui/features/simulation/ScenarioController.hpp"
-#include "messaging/SimulationMessageClient.hpp"
+#include "messaging/SimMessageClient.hpp"
 #include "gui/windows/EditorIconBrowserWindow.hpp"
 #include "gui/windows/GNCWindow.hpp"
 #include "gui/windows/LinearizationWindow.hpp"
 #include "gui/windows/ScenarioWindow.hpp"
-#include "gui/windows/SimulationControlWindow.hpp"
-#include "gui/windows/SimulationWindow.hpp"
+#include "gui/windows/SimControlWindow.hpp"
+#include "gui/windows/SimWindow.hpp"
 #include "gui/windows/monitor/FlightDataMonitorWindow.hpp"
 #include "gui/windows/viz/FlightVizWindow.hpp"
 #include "flightui/core/Theme.hpp"
@@ -82,11 +83,10 @@ void ScaleImPlotStyle(ImPlotStyle &style, float scale) {
 
 namespace gui {
 // public
-GUI::GUI(GUIConfig config)
+GUI::GUI()
     : editorLayoutManager_(
           EditorLayoutManager::GetDefaultEditorConfigDirectory(),
-          &editorLayoutBackend_),
-      config_(std::move(config)) {}
+          &editorLayoutBackend_) {}
 
 GUI::~GUI() { Exit(); }
 
@@ -104,9 +104,9 @@ bool GUI::Start() {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
-  window_ = glfwCreateWindow(config_.windowWidth,
-      config_.windowHeight,
-      config_.windowTitle.c_str(),
+  window_ = glfwCreateWindow(opts::gui::WindowWidth,
+      opts::gui::WindowHeight,
+      opts::gui::WindowTitle.data(),
       nullptr,
       nullptr);
 
@@ -147,8 +147,8 @@ bool GUI::Start() {
   // logical font sizing tied only to the responsive window-resolution scale.
   io.ConfigDpiScaleFonts = false;
 
-  FlightUI::ApplyDarkEditorTheme();
-  FlightUI::LoadPrimaryUIFont();
+  ui::ApplyDarkEditorTheme();
+  ui::LoadPrimaryUIFont();
   baseImGuiStyle_ = ImGui::GetStyle();
   baseImPlotStyle_ = ImPlot::GetStyle();
   UpdateUIScale(true);
@@ -182,25 +182,25 @@ void GUI::Tick() {
     return;
   }
 
-  if (simulationMessageClient_ != nullptr) {
-    simulationSnapshot_ = simulationMessageClient_->GetSimulationSnapshot();
+  if (simMessageClient_ != nullptr) {
+    simSnapshot_ = simMessageClient_->GetSimSnapshot();
     if (monitorController_ != nullptr) {
       monitorController_->SetInput({
-          .primary = simulationMessageClient_->GetTelemetrySnapshot(
-              sim::SimulationSlot::Primary),
-          .baseline = simulationMessageClient_->GetTelemetrySnapshot(
-              sim::SimulationSlot::Baseline),
+          .primary = simMessageClient_->GetTelemetrySnapshot(
+              sim::SimSlot::Primary),
+          .baseline = simMessageClient_->GetTelemetrySnapshot(
+              sim::SimSlot::Baseline),
           .dynamicModes =
               {
-                  .history = simulationSnapshot_.linearization
+                  .history = simSnapshot_.linearization
                       .dynamicModeHistory.GetSnapshots(),
                   .errorMessage =
-                      simulationSnapshot_.linearization.errorMessage,
-                  .available = simulationSnapshot_.linearization.available,
+                      simSnapshot_.linearization.errorMessage,
+                  .available = simSnapshot_.linearization.available,
                   .automaticUpdatesEnabled =
-                      simulationSnapshot_.linearization.automaticUpdatesEnabled,
+                      simSnapshot_.linearization.automaticUpdatesEnabled,
                   .updateInProgress =
-                      simulationSnapshot_.linearization.updateInProgress,
+                      simSnapshot_.linearization.updateInProgress,
               },
       });
     }
@@ -272,37 +272,37 @@ void GUI::RequestClose() {
   }
 }
 
-void GUI::SetSimulationMessageClient(
-    application::SimulationMessageClient *client) {
-  simulationMessageClient_ = client;
+void GUI::SetSimMessageClient(
+    app::SimMessageClient *client) {
+  simMessageClient_ = client;
   RegisterFeatureTree();
 }
 
 void GUI::RegisterFeatureTree() {
-  if (featureTreeRegistered_ || simulationMessageClient_ == nullptr) {
+  if (featureTreeRegistered_ || simMessageClient_ == nullptr) {
     return;
   }
 
-  simulationController_ =
-      std::make_unique<SimulationController>(*simulationMessageClient_);
+  simController_ =
+      std::make_unique<SimController>(*simMessageClient_);
   scenarioController_ = std::make_unique<ScenarioController>(
       std::filesystem::path{},
       architecture::EventSink<ScenarioLaunchRequested>{
           [this](const ScenarioLaunchRequested &event) {
-            const bool succeeded = simulationController_->Handle(event);
-            scenarioController_->Handle(ScenarioApplyCompleted{
+            const bool succeeded = simController_->OnEvent(event);
+            scenarioController_->OnEvent(ScenarioApplyCompleted{
                 .succeeded = succeeded,
-                .error = simulationController_->GetLastCommandError().value_or(
+                .error = simController_->GetLastCommandError().value_or(
                     std::string{}),
             });
           }});
-  gncController_ = std::make_unique<GNCController>(*simulationMessageClient_);
+  gncController_ = std::make_unique<GNCController>(*simMessageClient_);
   linearizationController_ =
-      std::make_unique<LinearizationController>(*simulationMessageClient_);
+      std::make_unique<LinearizationController>(*simMessageClient_);
   monitorController_ = std::make_unique<MonitorController>(
       architecture::EventSink<MonitorAutomaticLinearizationChanged>{
           [this](const MonitorAutomaticLinearizationChanged &event) {
-            linearizationController_->Handle(
+            linearizationController_->OnEvent(
                 AutomaticLinearizationChanged{event.enabled});
           }});
   editorPlatformController_ =
@@ -310,19 +310,19 @@ void GUI::RegisterFeatureTree() {
           fileDialogService_,
           [this] { ResetEditorLayoutToDefault(); });
 
-  RegisterWindow<SimulationWindow>(*simulationController_);
+  RegisterWindow<SimWindow>(*simController_);
   RegisterWindow<ScenarioWindow>();
   RegisterWindow<GNCWindow>(*gncController_);
   RegisterWindow<LinearizationWindow>(*linearizationController_);
-  RegisterWindow<FlightDataMonitorWindow>(*monitorController_, config_.monitor);
+  RegisterWindow<FlightDataMonitorWindow>(*monitorController_, MonitorConfig{});
   primaryFlightVizWindow_ =
-      &RegisterWindow<FlightVizWindow>(sim::SimulationSlot::Primary,
+      &RegisterWindow<FlightVizWindow>(sim::SimSlot::Primary,
           &editorIcons_);
   baselineFlightVizWindow_ =
-      &RegisterWindow<FlightVizWindow>(sim::SimulationSlot::Baseline,
+      &RegisterWindow<FlightVizWindow>(sim::SimSlot::Baseline,
           &editorIcons_);
   RegisterWindow<EditorIconBrowserWindow>(editorIcons_);
-  RegisterComponent<SimulationControlWindow>(*simulationController_,
+  RegisterComponent<SimControlWindow>(*simController_,
       *scenarioController_,
       *editorPlatformController_,
       editorIcons_);
@@ -373,7 +373,7 @@ void GUI::EndFrame() {
   int displayHeight = 0;
   glfwGetFramebufferSize(window_, &displayWidth, &displayHeight);
 
-  const ImVec4 clearColor = FlightUI::GetDarkEditorApplicationBackground();
+  const ImVec4 clearColor = ui::GetDarkEditorApplicationBackground();
   glViewport(0, 0, displayWidth, displayHeight);
   glClearColor(clearColor.x * clearColor.w,
       clearColor.y * clearColor.w,
@@ -402,21 +402,21 @@ void GUI::UpdateUIScale(bool force) {
   }
 
   const float uiScale =
-      FlightUI::CalculateUIScale(static_cast<float>(windowWidth),
+      ui::CalculateUIScale(static_cast<float>(windowWidth),
           static_cast<float>(windowHeight));
   if (!force && std::abs(uiScale - appliedUIScale_) < UIScaleChangeThreshold) {
     return;
   }
 
   appliedUIScale_ = uiScale;
-  FlightUI::SetUIScale(uiScale);
+  ui::SetUIScale(uiScale);
 
   ImGuiStyle scaledImGuiStyle = baseImGuiStyle_;
   scaledImGuiStyle.ScaleAllSizes(uiScale);
   // The current ImGui backend rasterizes dynamically requested font sizes,
   // while framebuffer density remains a separate backend concern.
   scaledImGuiStyle.FontScaleMain =
-      baseImGuiStyle_.FontScaleMain * FlightUI::CalculateUIFontScale(uiScale);
+      baseImGuiStyle_.FontScaleMain * ui::CalculateUIFontScale(uiScale);
   ImGui::GetStyle() = scaledImGuiStyle;
 
   ImPlotStyle scaledImPlotStyle = baseImPlotStyle_;
@@ -426,7 +426,7 @@ void GUI::UpdateUIScale(bool force) {
 
 void GUI::RenderDockSpace() {
   const ImGuiViewport *viewport = ImGui::GetMainViewport();
-  const float toolbarHeight = SimulationControlWindow::GetReservedHeight();
+  const float toolbarHeight = SimControlWindow::GetReservedHeight();
   const ImVec2 dockSpacePosition{
       viewport->WorkPos.x,
       viewport->WorkPos.y + toolbarHeight,
@@ -568,32 +568,32 @@ void GUI::RenderSimulationMenu() {
     return;
   }
 
-  const SimulationTransportProps props =
-      simulationController_->GetTransportProps();
-  const sim::SimulationExecutionState executionState = props.executionState;
+  const SimTransportProps props =
+      simController_->GetTransportProps();
+  const sim::SimExecutionState executionState = props.executionState;
   const bool scenarioInactive = !props.scenarioStatus.has_value();
 
   ImGui::BeginDisabled(
-      executionState != sim::SimulationExecutionState::Running);
+      executionState != sim::SimExecutionState::Running);
   if (ImGui::MenuItem("Pause")) {
-    simulationController_->Handle(SimulationPauseRequested{});
+    simController_->OnEvent(SimPauseRequested{});
   }
   ImGui::EndDisabled();
 
-  ImGui::BeginDisabled(executionState != sim::SimulationExecutionState::Paused);
+  ImGui::BeginDisabled(executionState != sim::SimExecutionState::Paused);
   if (ImGui::MenuItem("Resume")) {
-    simulationController_->Handle(SimulationResumeRequested{});
+    simController_->OnEvent(SimResumeRequested{});
   }
   if (ImGui::MenuItem("Tick Once")) {
-    simulationController_->Handle(SimulationStepRequested{});
+    simController_->OnEvent(SimStepRequested{});
   }
   ImGui::EndDisabled();
 
   ImGui::BeginDisabled(
       !scenarioInactive
-      || executionState == sim::SimulationExecutionState::Stopped);
+      || executionState == sim::SimExecutionState::Stopped);
   if (ImGui::MenuItem("Reset")) {
-    simulationController_->Handle(SimulationResetRequested{});
+    simController_->OnEvent(SimResetRequested{});
   }
   ImGui::EndDisabled();
 
@@ -645,7 +645,7 @@ void GUI::StartComponents() {
 }
 
 void GUI::TickComponents() {
-  const GUIFrameContext context{simulationSnapshot_, editorIcons_};
+  const GUIFrameContext context{simSnapshot_, editorIcons_};
   for (const auto &component : components_) {
     component->Tick(context);
   }

@@ -8,6 +8,6 @@ public:
   FlightConsoleWindow();
 
 protected:
-  void OnRender(const sim::SimulationSnapshot &snapshot) override;
+  void OnRender(const sim::SimSnapshot &snapshot) override;
 };
 } // namespace gui

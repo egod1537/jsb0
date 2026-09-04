@@ -3,7 +3,6 @@
 #include "flightui/FlightUI.hpp"
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr std::size_t MaxHistorySamples = 240;
@@ -18,53 +17,53 @@ void DeclarativeDemoWindow::OnTick(const GUIFrameContext &) {
   AppendTelemetrySample();
 
   // clang-format off
-  UI::Window("Declarative Flight Monitor")
+  ui::Window("Declarative Flight Monitor")
       .InitialSize({1000.0F, 700.0F})
       [
-        UI::HorizontalLayout()
+        ui::HorizontalLayout()
             .Spacing(8.0F)
             [
-              +UI::Panel("Controls")
+              +ui::Panel("Controls")
                    .Width(300.0F)
                    .Border(true)
                    [
-                     UI::VerticalLayout()
+                     ui::VerticalLayout()
                      [
-                       +UI::Heading("Flight Controls")
-                       + UI::Toggle("Autopilot", autopilotEnabled_)
+                       +ui::Heading("Flight Controls")
+                       + ui::Toggle("Autopilot", autopilotEnabled_)
                              .OnChanged([this](bool value) {
                                autopilotEnabled_ = value;
                              })
-                       + UI::SliderDouble("Throttle", throttle_, 0.0, 1.0)
+                       + ui::SliderDouble("Throttle", throttle_, 0.0, 1.0)
                              .OnChanged([this](double value) {
                                throttle_ = value;
                              })
                              .Format("%.3f")
-                       + UI::SliderDouble("Elevator", elevator_, -1.0, 1.0)
+                       + ui::SliderDouble("Elevator", elevator_, -1.0, 1.0)
                              .OnChanged([this](double value) {
                                elevator_ = value;
                              })
                              .Format("%.3f")
-                       + UI::Button("Reset")
+                       + ui::Button("Reset")
                              .OnAction([this] {
                                throttle_ = 0.0;
                                elevator_ = 0.0;
                              })
                      ]
                    ]
-              + UI::Panel("Telemetry")
+              + ui::Panel("Telemetry")
                     .FlexibleWidth(true)
                     .Border(true)
                     [
-                      UI::VerticalLayout()
+                      ui::VerticalLayout()
                       [
-                        +UI::HorizontalLayout()
+                        +ui::HorizontalLayout()
                              .Spacing(16.0F)
                              [
-                               +UI::ValueLabel("Throttle", throttle_, "%.3f")
-                               + UI::ValueLabel("Elevator", elevator_, "%.3f")
+                               +ui::ValueLabel("Throttle", throttle_, "%.3f")
+                               + ui::ValueLabel("Elevator", elevator_, "%.3f")
                              ]
-                        + UI::Plot("Commands")
+                        + ui::Plot("Commands")
                               .Height(300.0F)
                               .XAxisLabel("Time")
                               .YAxisLabel("Command")
@@ -80,7 +79,7 @@ void DeclarativeDemoWindow::OnTick(const GUIFrameContext &) {
 }
 
 void DeclarativeDemoWindow::AppendTelemetrySample() {
-  const double time = UI::GetTime();
+  const double time = ui::GetTime();
   if (lastSampleTime_ >= 0.0 && time - lastSampleTime_ < SampleIntervalSec) {
     return;
   }

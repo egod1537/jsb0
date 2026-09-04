@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 using ToggleChangedAction = std::function<void(bool)>;
 
 class ToggleBuilder {
@@ -41,4 +41,4 @@ private:
 };
 
 ToggleBuilder Toggle(std::string label, bool value);
-} // namespace FlightUI
+} // namespace ui

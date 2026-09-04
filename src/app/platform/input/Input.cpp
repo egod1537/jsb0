@@ -11,7 +11,7 @@
 #include <unistd.h>
 #endif
 
-namespace application {
+namespace app {
 namespace {
 constexpr std::size_t KeyCount = static_cast<std::size_t>(Key::Count);
 
@@ -141,4 +141,4 @@ bool Input::IsKeyDown(Key key) {
 }
 
 bool Input::IsKeyPressed(Key key) { return IsKeyDown(key); }
-} // namespace application
+} // namespace app

@@ -1,7 +1,7 @@
 #include "gui/windows/LinearizationWindow.hpp"
 
 #include "sim/linearization/LinearizationResult.hpp"
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 #include "flightui/FlightUI.hpp"
 
 #include <imgui.h>
@@ -157,7 +157,7 @@ void DrawMatrix(const char *tableId, const Eigen::MatrixXd &matrix,
       | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit
       | ImGuiTableFlags_Resizable;
   const float availableHeight =
-      std::max(ImGui::GetContentRegionAvail().y, FlightUI::Ui(1.0F));
+      std::max(ImGui::GetContentRegionAvail().y, ui::Ui(1.0F));
   const float tableHeight =
       requestedHeight > 0.0F ? requestedHeight : availableHeight;
   if (!ImGui::BeginTable(tableId,
@@ -170,19 +170,19 @@ void DrawMatrix(const char *tableId, const Eigen::MatrixXd &matrix,
   ImGui::TableSetupScrollFreeze(1, 1);
   ImGui::TableSetupColumn("d/dt",
       ImGuiTableColumnFlags_WidthFixed,
-      FlightUI::Ui(MatrixRowLabelWidth));
+      ui::Ui(MatrixRowLabelWidth));
   for (const Eigen::Index column : columns) {
     const std::string label =
         MakeLabel(columnNames, column, columnFallbackPrefix);
     ImGui::TableSetupColumn(label.c_str(),
         ImGuiTableColumnFlags_WidthFixed,
-        FlightUI::Ui(MatrixCellWidth));
+        ui::Ui(MatrixCellWidth));
   }
   ImGui::TableHeadersRow();
 
   const double heatScale = FindHeatScale(matrix, rows, columns, valueTransform);
   const ImVec4 heatBase =
-      FlightUI::GetDarkEditorSemanticColor(FlightUI::SemanticColor::Warning);
+      ui::GetDarkEditorSemanticColor(ui::SemanticColor::Warning);
 
   for (const Eigen::Index row : rows) {
     ImGui::TableNextRow();
@@ -250,7 +250,7 @@ void DrawOverview(const gnc::LinearizationResult &result, bool updateInProgress,
 
   ImGui::TableSetupColumn("Property",
       ImGuiTableColumnFlags_WidthFixed,
-      FlightUI::Ui(176.0F));
+      ui::Ui(176.0F));
   ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
   const auto drawTextRow = [](const char *label, const char *value) {
@@ -287,14 +287,14 @@ void DrawOverview(const gnc::LinearizationResult &result, bool updateInProgress,
   ImGui::TableSetColumnIndex(0);
   ImGui::TextDisabled("Linearization status");
   ImGui::TableSetColumnIndex(1);
-  const FlightUI::SemanticColor statusColor =
-      updateInProgress        ? FlightUI::SemanticColor::Warning
-      : !errorMessage.empty() ? FlightUI::SemanticColor::Error
-                              : FlightUI::SemanticColor::Success;
+  const ui::SemanticColor statusColor =
+      updateInProgress        ? ui::SemanticColor::Warning
+      : !errorMessage.empty() ? ui::SemanticColor::Error
+                              : ui::SemanticColor::Success;
   const char *statusText = updateInProgress        ? "In progress"
                            : !errorMessage.empty() ? "Failed"
                                                    : "Succeeded";
-  ImGui::TextColored(FlightUI::GetDarkEditorSemanticColor(statusColor),
+  ImGui::TextColored(ui::GetDarkEditorSemanticColor(statusColor),
       "%s",
       statusText);
 
@@ -344,7 +344,7 @@ void DrawDerivativeGroup(const char *title, const char *tableId,
   ImGui::TableSetupColumn("Derivative", ImGuiTableColumnFlags_WidthStretch);
   ImGui::TableSetupColumn("Value",
       ImGuiTableColumnFlags_WidthFixed,
-      FlightUI::Ui(MatrixCellWidth));
+      ui::Ui(MatrixCellWidth));
   for (const DerivativeSpec &derivative : derivatives) {
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
@@ -554,7 +554,7 @@ void DrawSubsetMatrices(const char *idPrefix,
       states,
       states,
       valueTransform,
-      FlightUI::Ui(SubsetMatrixHeight));
+      ui::Ui(SubsetMatrixHeight));
 
   ImGui::SeparatorText("B - Control inputs");
   const std::string inputTableId = std::string(idPrefix) + "InputMatrix";
@@ -568,16 +568,16 @@ void DrawSubsetMatrices(const char *idPrefix,
       inputs,
       valueTransform,
       std::max(ImGui::GetContentRegionAvail().y,
-          FlightUI::Ui(MinimumMatrixHeight)));
+          ui::Ui(MinimumMatrixHeight)));
 }
 } // namespace
 
 namespace gui {
 LinearizationWindow::LinearizationWindow(LinearizationController &controller)
-    : Window("FG Linearization", EditorIconAliases::Linearization),
+    : Window("FG Linearization", editor_icon_aliases::Linearization),
       controller_(controller) {}
 
-void LinearizationWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
+void LinearizationWindow::OnRender(const sim::SimSnapshot &snapshot) {
   const sim::LinearizationSnapshot &linearization = snapshot.linearization;
   if (!linearization.available) {
     ImGui::TextDisabled("Linearization is not available for this autopilot.");
@@ -586,7 +586,7 @@ void LinearizationWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
 
   bool automaticUpdates = linearization.automaticUpdatesEnabled;
   if (ImGui::Checkbox("Automatic linearization", &automaticUpdates)) {
-    controller_.Handle(AutomaticLinearizationChanged{automaticUpdates});
+    controller_.OnEvent(AutomaticLinearizationChanged{automaticUpdates});
   }
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip(
@@ -597,31 +597,31 @@ void LinearizationWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
   const bool inProgress = linearization.updateInProgress;
   const std::string_view errorMessage = linearization.errorMessage;
   if (!automaticUpdates) {
-    const FlightUI::UIElement badge =
-        FlightUI::StatusBadge("Off", FlightUI::StatusTone::Neutral);
+    const ui::UIElement badge =
+        ui::StatusBadge("Off", ui::StatusTone::Neutral);
     badge.Render();
     ImGui::SameLine();
     ImGui::TextDisabled(inProgress ? "Off (current worker is finishing)"
                                    : "Off (latest result retained)");
   } else if (inProgress) {
-    const FlightUI::UIElement badge =
-        FlightUI::StatusBadge("Updating", FlightUI::StatusTone::Warning);
+    const ui::UIElement badge =
+        ui::StatusBadge("Updating", ui::StatusTone::Warning);
     badge.Render();
   } else if (!errorMessage.empty()) {
-    const FlightUI::UIElement badge =
-        FlightUI::StatusBadge("Failed", FlightUI::StatusTone::Error);
+    const ui::UIElement badge =
+        ui::StatusBadge("Failed", ui::StatusTone::Error);
     badge.Render();
     ImGui::SameLine();
     ImGui::TextColored(
-        FlightUI::GetDarkEditorSemanticColor(FlightUI::SemanticColor::Error),
+        ui::GetDarkEditorSemanticColor(ui::SemanticColor::Error),
         "%.*s",
         static_cast<int>(errorMessage.size()),
         errorMessage.data());
   } else {
     const bool hasResult = linearization.result.has_value();
-    const FlightUI::UIElement badge = FlightUI::StatusBadge(
+    const ui::UIElement badge = ui::StatusBadge(
         hasResult ? "Ready" : "Waiting",
-        hasResult ? FlightUI::StatusTone::Success : FlightUI::StatusTone::Info);
+        hasResult ? ui::StatusTone::Success : ui::StatusTone::Info);
     badge.Render();
   }
 
@@ -640,11 +640,11 @@ void LinearizationWindow::DrawTransformSelector() {
   const LinearizationValueTransform valueTransform =
       controller_.GetModel().valueTransform;
   int selectedTransform = static_cast<int>(valueTransform);
-  ImGui::SetNextItemWidth(FlightUI::Ui(176.0F));
+  ImGui::SetNextItemWidth(ui::Ui(176.0F));
   if (ImGui::Combo("Value transform",
           &selectedTransform,
           "Raw\0Signed log10\0")) {
-    controller_.Handle(LinearizationValueTransformChanged{
+    controller_.OnEvent(LinearizationValueTransformChanged{
         static_cast<LinearizationValueTransform>(selectedTransform)});
   }
 

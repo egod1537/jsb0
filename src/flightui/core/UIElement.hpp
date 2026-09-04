@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-namespace FlightUI {
+namespace ui {
 class UIElement {
 public:
   // Lifetime
@@ -49,4 +49,4 @@ private:
 };
 
 ChildrenBuilder operator+(UIElement child);
-} // namespace FlightUI
+} // namespace ui

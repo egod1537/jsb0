@@ -2,31 +2,31 @@
 
 #include "gui/Window.hpp"
 #include "gui/features/flightviz/FlightVisualizer.hpp"
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 
 namespace gui {
 class EditorIconRegistry;
 
 class FlightVizWindow final : public gui::Window {
 public:
-  explicit FlightVizWindow(sim::SimulationSlot slot,
+  explicit FlightVizWindow(sim::SimSlot slot,
       EditorIconRegistry *icons = nullptr);
 
-  sim::SimulationSlot GetSimulationSlot() const { return slot_; }
+  sim::SimSlot GetSimSlot() const { return slot_; }
   viz::FlightVisualizer &GetVisualizer() { return visualizer_; }
   const viz::FlightVisualizer &GetVisualizer() const { return visualizer_; }
 
 protected:
   ImGuiWindowFlags GetWindowFlags() const override;
-  void OnRender(const sim::SimulationSnapshot &snapshot) override;
+  void OnRender(const sim::SimSnapshot &snapshot) override;
 
 private:
-  void Handle(const FlightVizShadowVisibilityChanged &event);
-  void Handle(const FlightVizCameraViewToggleRequested &event);
-  void Handle(const FlightVizDisplayOptionsChanged &event);
-  void Handle(const FlightVizClearPathRequested &event);
+  void OnEvent(const FlightVizShadowVisibilityChanged &event);
+  void OnEvent(const FlightVizCameraViewToggleRequested &event);
+  void OnEvent(const FlightVizDisplayOptionsChanged &event);
+  void OnEvent(const FlightVizClearPathRequested &event);
 
-  sim::SimulationSlot slot_;
+  sim::SimSlot slot_;
   EditorIconRegistry *icons_ = nullptr;
   viz::FlightVisualizer visualizer_;
 };

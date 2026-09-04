@@ -6,20 +6,20 @@
 #include <utility>
 
 namespace {
-class UnavailableLatexRenderer final : public FlightUI::LatexRenderer {
+class UnavailableLatexRenderer final : public ui::LatexRenderer {
 public:
-  void Render(const std::string &, const FlightUI::LatexOptions &) override {
+  void Render(const std::string &, const ui::LatexOptions &) override {
     ImGui::TextDisabled("[LaTeX renderer unavailable]");
   }
 };
 
-std::unique_ptr<FlightUI::LatexRenderer> &RendererSlot() {
-  static std::unique_ptr<FlightUI::LatexRenderer> renderer;
+std::unique_ptr<ui::LatexRenderer> &RendererSlot() {
+  static std::unique_ptr<ui::LatexRenderer> renderer;
   return renderer;
 }
 } // namespace
 
-namespace FlightUI::Internal {
+namespace ui::internal {
 void SetLatexRenderer(std::unique_ptr<LatexRenderer> renderer) {
   RendererSlot() = std::move(renderer);
 }
@@ -32,4 +32,4 @@ LatexRenderer &GetLatexRenderer() {
   static UnavailableLatexRenderer unavailableRenderer;
   return unavailableRenderer;
 }
-} // namespace FlightUI::Internal
+} // namespace ui::internal

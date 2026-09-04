@@ -59,7 +59,7 @@ void Px4AttitudeController::SynchronizeBaseline(
   baseline_.rollToYawFeedForwardGain = config.rollToYawFeedForwardGain;
 }
 
-void Px4AttitudeController::Handle(const BaselineRollHoldValueChanged &event) {
+void Px4AttitudeController::OnEvent(const BaselineRollHoldValueChanged &event) {
   if (SetBaselinePx4PitchHoldParameter(baseline_, event.field, event.value)
       || SetBaselinePx4CourseHoldParameter(baseline_, event.field, event.value)
       || SetBaselinePx4RollHoldParameter(baseline_, event.field, event.value)
@@ -109,17 +109,17 @@ void Px4AttitudeController::Handle(const BaselineRollHoldValueChanged &event) {
   }
 }
 
-void Px4AttitudeController::Handle(
+void Px4AttitudeController::OnEvent(
     const BaselineRollHoldTuningResetRequested &) {
   ResetBaselinePx4RollHoldTuning(baseline_);
 }
 
-void Px4AttitudeController::Handle(
+void Px4AttitudeController::OnEvent(
     const BaselinePitchHoldTuningResetRequested &) {
   ResetBaselinePx4PitchHoldTuning(baseline_);
 }
 
-void Px4AttitudeController::Handle(const Px4AttitudeViewStateChanged &event) {
+void Px4AttitudeController::OnEvent(const Px4AttitudeViewStateChanged &event) {
   baseline_.px4RollTuningOpen = event.rollTuningOpen;
   baseline_.px4RollDiagnosticsOpen = event.rollDiagnosticsOpen;
   baseline_.px4PitchTuningOpen = event.pitchTuningOpen;

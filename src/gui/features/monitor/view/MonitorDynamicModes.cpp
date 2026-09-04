@@ -10,7 +10,6 @@
 #include <cmath>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr std::size_t MaximumDisplayedModeStates = 6;
@@ -55,7 +54,7 @@ void MonitorView::DrawDynamicModes(
   } else if (updateInProgress) {
     ImGui::TextDisabled("Updating linearization asynchronously...");
   } else if (!updateError.empty()) {
-    ImGui::TextColored(UI::GetDarkEditorSemanticColor(UI::SemanticColor::Error),
+    ImGui::TextColored(ui::GetDarkEditorSemanticColor(ui::SemanticColor::Error),
         "Latest linearization failed: %.*s",
         static_cast<int>(updateError.size()),
         updateError.data());
@@ -80,7 +79,7 @@ void MonitorView::DrawDynamicModes(
   const gnc::DynamicModeAnalysis *analysis = &snapshot->analysis;
   if (!analysis->valid) {
     ImGui::Separator();
-    ImGui::TextColored(UI::GetDarkEditorSemanticColor(UI::SemanticColor::Error),
+    ImGui::TextColored(ui::GetDarkEditorSemanticColor(ui::SemanticColor::Error),
         "Dynamic-mode analysis is unavailable: %s",
         analysis->errorMessage.c_str());
     return;
@@ -163,14 +162,14 @@ void MonitorView::DrawDynamicModes(
         ImGui::TextDisabled("--");
       }
       ImGui::TableSetColumnIndex(5);
-      const UI::SemanticColor stabilityColor =
+      const ui::SemanticColor stabilityColor =
           mode.stability == gnc::DynamicModeStability::Stable
-              ? UI::SemanticColor::Success
+              ? ui::SemanticColor::Success
           : mode.stability == gnc::DynamicModeStability::Unstable
-              ? UI::SemanticColor::Error
-              : UI::SemanticColor::Warning;
+              ? ui::SemanticColor::Error
+              : ui::SemanticColor::Warning;
       const std::string_view stability = gnc::ToString(mode.stability);
-      ImGui::TextColored(UI::GetDarkEditorSemanticColor(stabilityColor),
+      ImGui::TextColored(ui::GetDarkEditorSemanticColor(stabilityColor),
           "%.*s",
           static_cast<int>(stability.size()),
           stability.data());

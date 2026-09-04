@@ -9,7 +9,6 @@
 #include <algorithm>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float PlotHeight = 245.0F;
@@ -48,7 +47,7 @@ void MonitorView::DrawPlotTable(const TelemetrySources &sources,
   constexpr ImGuiTableFlags Flags =
       ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings;
   ImGui::PushStyleVar(ImGuiStyleVar_CellPadding,
-      ImVec2(UI::Ui(PlotGridCellPadding), 0.0F));
+      ImVec2(ui::Ui(PlotGridCellPadding), 0.0F));
   if (!ImGui::BeginTable(tableId, columnCount, Flags)) {
     ImGui::PopStyleVar();
     return;
@@ -102,8 +101,8 @@ void MonitorView::DrawPlotTable(const TelemetrySources &sources,
 
 void MonitorView::DrawEmptyPlotSlot(std::size_t slotIndex, float plotHeight) {
   ImGui::PushID(static_cast<int>(slotIndex));
-  const float slotHeight = UI::Ui(plotHeight) + ImGui::GetTextLineHeight()
-                           + UI::Ui(PlotTitleFrameSpacing);
+  const float slotHeight = ui::Ui(plotHeight) + ImGui::GetTextLineHeight()
+                           + ui::Ui(PlotTitleFrameSpacing);
   if (ImGui::BeginChild("EmptyPlotSlot",
           ImVec2(0.0F, slotHeight),
           true,
@@ -129,11 +128,11 @@ void MonitorView::DrawEmptyPlotSlot(std::size_t slotIndex, float plotHeight) {
 float MonitorView::CalculateGridPlotHeight(int rowCount) const {
   const float availableHeight = ImGui::GetContentRegionAvail().y;
   const float cardChromeHeight =
-      UI::Ui(PlotCardTopMargin) + ImGui::GetTextLineHeight()
-      + UI::Ui(PlotTitleFrameSpacing) + UI::Ui(PlotCardBottomMargin);
+      ui::Ui(PlotCardTopMargin) + ImGui::GetTextLineHeight()
+      + ui::Ui(PlotTitleFrameSpacing) + ui::Ui(PlotCardBottomMargin);
   const float plotHeightPixels =
       availableHeight / static_cast<float>(rowCount) - cardChromeHeight;
-  const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+  const float uiScale = std::max(ui::GetUIScale(), 0.001F);
   return std::max(MinimumGridPlotHeight, plotHeightPixels / uiScale);
 }
 
@@ -141,10 +140,10 @@ void MonitorView::DrawPlotCard(MonitorPlot &plot,
     const TelemetrySources &sources, float plotHeight) {
   ImGui::PushID(static_cast<int>(plot.id));
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
-      ImVec2(UI::Ui(WorkspaceSpacing), 0.0F));
+      ImVec2(ui::Ui(WorkspaceSpacing), 0.0F));
   ImGui::BeginGroup();
 
-  ImGui::Dummy(ImVec2(0.0F, UI::Ui(PlotCardTopMargin)));
+  ImGui::Dummy(ImVec2(0.0F, ui::Ui(PlotCardTopMargin)));
 
   ImGui::TextUnformatted(plot.title.c_str());
   if (plot.custom) {
@@ -168,7 +167,7 @@ void MonitorView::DrawPlotCard(MonitorPlot &plot,
       ImGui::SetTooltip("Remove plot");
     }
   }
-  ImGui::Dummy(ImVec2(0.0F, UI::Ui(PlotTitleFrameSpacing)));
+  ImGui::Dummy(ImVec2(0.0F, ui::Ui(PlotTitleFrameSpacing)));
   plotting::MonitorPlotRenderer::Draw(plot,
       {.config = config_,
           .sources = sources,
@@ -177,7 +176,7 @@ void MonitorView::DrawPlotCard(MonitorPlot &plot,
           .sharedXAxisTicks = sharedXAxisTicks_,
           .drawOverlay = [this] { return DrawPlotOverlay(); }},
       plotHeight);
-  ImGui::Dummy(ImVec2(0.0F, UI::Ui(PlotCardBottomMargin)));
+  ImGui::Dummy(ImVec2(0.0F, ui::Ui(PlotCardBottomMargin)));
 
   ImGui::EndGroup();
   ImGui::PopStyleVar();

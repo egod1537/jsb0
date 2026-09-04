@@ -27,7 +27,7 @@ bool RenderSegment(const char *label, bool selected, bool enabled,
   }
 
   const bool clicked =
-      ImGui::Button(label, ImVec2(width, FlightUI::Ui(SelectorHeight)));
+      ImGui::Button(label, ImVec2(width, ui::Ui(SelectorHeight)));
 
   if (selected) {
     ImGui::PopStyleColor(4);
@@ -42,11 +42,11 @@ void AutopilotSelectorView::Render(const AutopilotViewState &model,
     architecture::EventSink<AutopilotSourceSelected> events) const {
   const AutopilotSelection selection = model.GetSelection();
   ImGui::TextDisabled("EDIT AUTOPILOT");
-  const float spacing = FlightUI::Ui(SelectorSpacing);
+  const float spacing = ui::Ui(SelectorSpacing);
   const float segmentWidth =
       std::max((ImGui::GetContentRegionAvail().x - spacing) * 0.5F, 1.0F);
   ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,
-      FlightUI::Ui(SelectorRounding));
+      ui::Ui(SelectorRounding));
   ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0F);
   if (RenderSegment("PRIMARY",
           selection == AutopilotSelection::Primary,

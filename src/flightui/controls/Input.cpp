@@ -7,7 +7,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class InputDoubleBuilder::Impl {
 public:
   std::string Label;
@@ -127,9 +127,9 @@ InputDoubleBuilder &InputDoubleBuilder::Id(std::string id) {
 InputDoubleBuilder::operator UIElement() const {
   Impl state = *m_Impl;
   return CreateElement([state] {
-    Internal::IdScope idScope(state.Id);
-    Internal::DisabledScope disabledScope(!state.Enabled);
-    Internal::ItemWidthScope widthScope(state.Width);
+    internal::IdScope idScope(state.Id);
+    internal::DisabledScope disabledScope(!state.Enabled);
+    internal::ItemWidthScope widthScope(state.Width);
     double value = state.Value;
     if (ImGui::InputDouble(state.Label.c_str(),
             &value,
@@ -139,11 +139,11 @@ InputDoubleBuilder::operator UIElement() const {
         && state.OnChanged) {
       state.OnChanged(value);
     }
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
 InputDoubleBuilder InputDouble(std::string label, double value) {
   return InputDoubleBuilder(std::move(label), value);
 }
-} // namespace FlightUI
+} // namespace ui

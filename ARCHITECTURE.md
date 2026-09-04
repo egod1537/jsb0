@@ -8,7 +8,7 @@ executable layer.
 ## Modules
 
 - `src/app` is the desktop composition root. It constructs Runtime, messaging,
-  GUI, and integrations and owns startup, scheduling, and shutdown.
+  and GUI and owns startup, scheduling, and shutdown.
 - `src/sim` owns simulation state and execution, JSBSim access, control and
   autopilot behavior, scenarios, linearization, and runtime telemetry
   production. It must not depend on GUI or rendering libraries.
@@ -22,8 +22,6 @@ executable layer.
   and drawing primitives. GUI-specific typed events remain in `src/gui`.
 - `src/contract` owns C++ integration for the declarative root `contract/`
   source of truth: generated Protobuf types, recording DTOs, and MCAP adapters.
-- `src/integration/flightgear` is an outbound external-display adapter over a
-  read-only simulation snapshot.
 - `src/runner` is the JSB1-facing headless execution boundary. It loads a
   scenario, composes Runtime, and writes contract artifacts and exit status.
 - `src/common` contains only subsystem-independent math, containers, and small
@@ -39,13 +37,13 @@ the C++ adapters that implement that specification.
 ## Dependency direction
 
 ```text
-                    app
-             ┌──────┼───────────┐
-             v      v           v
-            gui  messaging  flightgear integration
-             │      │           │
-             v      v           v
-          flightui  sim <──── stable snapshots
+               app
+             ┌──┴────┐
+             v       v
+            gui  messaging
+             │       │
+             v       v
+          flightui  sim
                      │
                      v
                   contract
@@ -58,9 +56,13 @@ runner ────────────> sim + contract
 
 `sim` must not include GUI, FlightUI, messaging, or ImGui/GLFW. `common` must
 not include any higher-level subsystem. GUI code must not include concrete
-`SimulationRuntime`, JSBSim wrappers, or autopilot implementations. FlightUI
+`SimRuntime`, JSBSim wrappers, or autopilot implementations. FlightUI
 may consume stable render-state structs but must not know GUI controllers,
 messaging, Runtime, or external contract adapters.
+
+The desktop messaging path is `GUI -> SimMessageClient -> MessageBus ->
+GuiSimBridge -> SimRuntime`. `GuiSimBridge` belongs to the messaging
+boundary and does not depend on the concrete GUI implementation.
 
 ## CMake targets
 
@@ -70,7 +72,7 @@ jsb_contract_proto -> jsb_contract
 jsb_sim_core -> jsb_sim_runtime
 jsb_message_bus -> jsb_messaging
 jsb_gui_architecture + jsb_monitor + flightui -> jsb_editor
-jsb_flightgear + jsb_editor -> jsb_app -> jsb-flight-console
+jsb_editor -> jsb_app -> jsb-flight-console
 jsb_sim_runtime + jsb_contract -> jsb_runner -> jsb-sim-runner
 ```
 
@@ -87,17 +89,31 @@ Namespaces retain their established names in this filesystem/CMake refactor.
 Future namespace normalization can introduce `jsb::...` incrementally without
 combining that source-level churn with ownership moves.
 
+## Lifecycle and event handler naming
+
+- `OnXxx` identifies a callback invoked when an external lifecycle transition
+  or event occurs, such as `OnTick()`, `OnEvent(...)`, or `OnSignal(...)`.
+- `HandleXxx` identifies command or message dispatch handling, such as
+  `HandleResetCommand(...)`.
+- A plain imperative verb identifies an operation the caller asks an object to
+  perform, such as `Initialize()`, `Reset()`, `Step()`, `Update()`, or
+  `PublishState()`.
+
+Do not add `On` merely because an operation resembles a lifecycle verb. The
+distinction is whether the method receives notification of something that has
+happened or actively performs the requested operation.
+
 ## Simulation internals
 
 `src/sim` has two CMake layers with a one-way dependency:
 
 ```text
 jsb_sim_runtime
-  SimulationRuntime
-    -> SimulationInstanceSet
+  SimRuntime
+    -> SimInstanceSet
     -> AutopilotConfigurationService
     -> ScenarioExecutor
-    -> SimulationSnapshotBuilder
+    -> SimSnapshotBuilder
     -> LinearizationService
     -> TelemetryRecordingService
           |
@@ -105,32 +121,32 @@ jsb_sim_runtime
 jsb_sim_core
   Simulation (one aircraft/model instance)
     -> Aircraft / JSBSim boundary
-    -> FlightControlManager and tick components
+    -> FlightControlManager
     -> TrimWorkflow / TrimService
-    -> SimulationTelemetryPublisher -> TelemetryRegistry
+    -> SimTelemetryPublisher -> TelemetryRegistry
 ```
 
-`Simulation` owns and advances exactly one aircraft/model instance. It applies
-one instance's controls, runs one component pipeline, advances one JSBSim tick,
-and exposes that instance's state. It does not choose primary versus baseline,
-run a scenario schedule, publish application status, or implement recording
-policy.
+`Simulation` owns and advances exactly one aircraft/model instance. It directly
+owns `FlightControlManager`, applies one instance's controls, advances one
+JSBSim tick, and exposes that instance's state. It does not choose primary
+versus baseline, run a scenario schedule, publish application status, or
+implement recording policy.
 
-`SimulationRuntime` is the application-facing orchestrator. Primary and
-baseline are both ordinary `Simulation` objects; `SimulationInstanceSet`
+`SimRuntime` is the application-facing orchestrator. Primary and
+baseline are both ordinary `Simulation` objects; `SimInstanceSet`
 applies the same initialize, reset, shutdown, and step path to them and owns
 only pair coordination such as manual-control synchronization. Scenario YAML
-loading remains in `SimulationScenarioSerializer`, while deterministic command
+loading remains in `SimScenarioSerializer`, while deterministic command
 scheduling and pass/fail state remain in `ScenarioExecutor`.
 
-Telemetry signal mapping is owned by `SimulationTelemetryPublisher`; storage
+Telemetry signal mapping is owned by `SimTelemetryPublisher`; storage
 and immutable frame/snapshot capture stay in `TelemetryRegistry`; recording is
 implemented by `TelemetryRecordingService` and merely coordinated by Runtime.
 Signal display name/symbol/unit metadata is resolved in the lightweight
 `jsb_telemetry_contracts` layer and is included in immutable snapshots.
 Monitor consumes this metadata rather than duplicating a signal-name/unit
 table.
-`SimulationSnapshotBuilder` translates domain state into stable Runtime
+`SimSnapshotBuilder` translates domain state into stable Runtime
 contracts without putting GUI naming or view state in the core.
 Autopilot-specific settings validation and application are isolated in
 `AutopilotConfigurationService`; Runtime only coordinates the request and any
@@ -142,9 +158,9 @@ is exposed through `LinearizationService`; numeric linearization and mode
 analysis remain under `src/sim/linearization`.
 
 Errors stay at their source: `Simulation::ErrorTracker` reports one-instance
-input/JSBSim/component failures, `ScenarioExecutor` reports scenario failures,
-and `SimulationRuntime::lastError` reports orchestration failures. Messaging and
-GUI boundaries may present those strings but do not create simulation-domain
+input and JSBSim failures; `ScenarioExecutor` reports scenario failures, and
+`SimRuntime::lastError` reports orchestration failures. Messaging and GUI
+boundaries may present those strings but do not create simulation-domain
 errors.
 
 ## Monitor internals

@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 using SliderFloatChangedAction = std::function<void(float)>;
 using SliderDoubleChangedAction = std::function<void(double)>;
 using SliderIntChangedAction = std::function<void(int)>;
@@ -134,4 +134,4 @@ SliderDoubleBuilder SliderDouble(std::string label, double value,
     double minimum, double maximum);
 SliderIntBuilder SliderInt(std::string label, int value, int minimum,
     int maximum);
-} // namespace FlightUI
+} // namespace ui

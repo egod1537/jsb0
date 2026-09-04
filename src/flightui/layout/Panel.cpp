@@ -8,7 +8,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class PanelBuilder::Impl {
 public:
   std::string Name;
@@ -176,7 +176,7 @@ UIElement PanelBuilder::operator[](Children children) const {
     size = UiSize(size);
 
     const std::string childId = state.Id.empty() ? state.Name : state.Id;
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::DisabledScope disabledScope(!state.Enabled);
     const bool isVisible =
         ImGui::BeginChild(childId.c_str(), ToImVec2(size), flags);
 
@@ -196,4 +196,4 @@ UIElement PanelBuilder::operator[](Children children) const {
 }
 
 PanelBuilder Panel(std::string name) { return PanelBuilder(std::move(name)); }
-} // namespace FlightUI
+} // namespace ui

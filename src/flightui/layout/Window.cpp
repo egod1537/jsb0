@@ -8,7 +8,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class WindowBuilder::Impl {
 public:
   std::string Title;
@@ -157,7 +157,7 @@ UIElement WindowBuilder::operator[](Children children) const {
           ImGuiCond_FirstUseEver);
     }
 
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::DisabledScope disabledScope(!state.Enabled);
     const std::string title =
         state.Id.empty() ? state.Title : state.Title + "###" + state.Id;
     const bool isVisible = ImGui::Begin(title.c_str(),
@@ -189,4 +189,4 @@ UIElement WindowBuilder::operator[](Children children) const {
 WindowBuilder Window(std::string title) {
   return WindowBuilder(std::move(title));
 }
-} // namespace FlightUI
+} // namespace ui

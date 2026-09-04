@@ -9,7 +9,7 @@
 namespace gui {
 FlightDataMonitorWindow::FlightDataMonitorWindow(MonitorController &controller,
     MonitorConfig config)
-    : Window("Monitor", EditorIconAliases::Monitor), controller_(controller),
+    : Window("Monitor", editor_icon_aliases::Monitor), controller_(controller),
       view_(std::move(config)) {}
 
 ImGuiWindowFlags FlightDataMonitorWindow::GetWindowFlags() const {
@@ -20,6 +20,6 @@ void FlightDataMonitorWindow::OnRender() {
   view_.Render(controller_.GetInput(),
       controller_.GetState(),
       architecture::EventSink<MonitorEvent>{
-          [this](const MonitorEvent &event) { controller_.Handle(event); }});
+          [this](const MonitorEvent &event) { controller_.OnEvent(event); }});
 }
 } // namespace gui

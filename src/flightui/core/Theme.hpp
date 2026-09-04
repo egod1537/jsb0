@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-namespace FlightUI {
+namespace ui {
 enum class SemanticColor {
   Success,
   Warning,
@@ -37,4 +37,4 @@ ImVec4 GetDarkEditorApplicationBackground();
 ImVec4 GetDarkEditorSemanticColor(SemanticColor color);
 ImVec4 GetThemeColor(ThemeColor color);
 StatusBadgeStyle GetStatusBadgeStyle(StatusTone tone);
-} // namespace FlightUI
+} // namespace ui

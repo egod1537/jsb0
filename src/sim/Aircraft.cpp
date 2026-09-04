@@ -84,17 +84,24 @@ Aircraft::~Aircraft() {
   RemoveOutputDirectory();
 }
 
-bool Aircraft::Initialize(const SimulationConfig &config,
+bool Aircraft::Initialize(const InitialCondition &initialCondition) {
+  return Initialize(opts::simulation::AircraftName,
+      opts::simulation::Hz,
+      initialCondition);
+}
+
+bool Aircraft::Initialize(std::string_view aircraftName, double simulationHz,
     const InitialCondition &initialCondition) {
-  config_ = config;
+  aircraftName_ = aircraftName;
+  simulationHz_ = simulationHz;
   controls_.SetInput({});
 
   ConfigurePaths();
   // JSBSim flight-control components cache their channel dt while the model
   // is loaded. Set the canonical simulation timestep first so actuator rate
   // limits and filters use physical-time units at every configured rate.
-  ConfigureSimulation(config);
-  if (!LoadAircraft(config)) {
+  ConfigureSimulation(simulationHz_);
+  if (!LoadAircraft(aircraftName_)) {
     return false;
   }
 
@@ -102,7 +109,7 @@ bool Aircraft::Initialize(const SimulationConfig &config,
   return InitializeState();
 }
 
-bool Aircraft::Tick() { return Step(config_.GetDT()); }
+bool Aircraft::Tick() { return Step(1.0 / simulationHz_); }
 
 bool Aircraft::Step(double dtSec) {
   fdm_->Setdt(dtSec);
@@ -111,7 +118,9 @@ bool Aircraft::Step(double dtSec) {
   return fdm_->Run();
 }
 
-const SimulationConfig &Aircraft::GetConfig() const { return config_; }
+const std::string &Aircraft::GetAircraftName() const { return aircraftName_; }
+
+double Aircraft::GetSimulationHz() const { return simulationHz_; }
 
 AircraftState Aircraft::GetAircraftState() const {
   AircraftState state{};
@@ -268,10 +277,8 @@ InitialCondition Aircraft::GetCurrentCondition() const {
   return initialCondition;
 }
 
-bool Aircraft::Reset(const SimulationConfig &config,
-    const InitialCondition &initialCondition) {
-  config_ = config;
-  ConfigureSimulation(config);
+bool Aircraft::Reset(const InitialCondition &initialCondition) {
+  ConfigureSimulation(simulationHz_);
   controls_.Reset();
 
   if (!ApplyInitialCondition(initialCondition)) {
@@ -374,19 +381,19 @@ void Aircraft::RemoveOutputDirectory() {
   outputDirectory_.clear();
 }
 
-bool Aircraft::LoadAircraft(const SimulationConfig &config) {
-  if (!fdm_->LoadModel(config.aircraftName)) {
-    std::cerr << "Failed to load " << config.aircraftName << '\n';
+bool Aircraft::LoadAircraft(std::string_view aircraftName) {
+  if (!fdm_->LoadModel(std::string(aircraftName))) {
+    std::cerr << "Failed to load " << aircraftName << '\n';
     return false;
   }
 
   DisableExternalOutput();
-  std::cout << config.aircraftName << " loaded\n";
+  std::cout << aircraftName << " loaded\n";
   return true;
 }
 
-void Aircraft::ConfigureSimulation(const SimulationConfig &config) {
-  fdm_->Setdt(config.GetDT());
+void Aircraft::ConfigureSimulation(double simulationHz) {
+  fdm_->Setdt(1.0 / simulationHz);
 }
 
 void Aircraft::DisableExternalOutput() { fdm_->DisableOutput(); }

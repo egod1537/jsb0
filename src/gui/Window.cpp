@@ -64,7 +64,7 @@ ImGuiWindowFlags Window::GetWindowFlags() const {
 
 void Window::OnRender() {}
 
-void Window::OnRender(const sim::SimulationSnapshot &) { OnRender(); }
+void Window::OnRender(const sim::SimSnapshot &) { OnRender(); }
 
 void Window::DrawTitleIcon(const EditorIconHandle &icon) const {
   ImGuiWindow *window = ImGui::GetCurrentWindow();

@@ -17,8 +17,8 @@ std::string RecordingError(const telemetry::recording::RecordingStatus &status,
 }
 } // namespace
 
-bool McapRunObserver::OnRunStarted(const SimulationRunInfo &info,
-    const SimulationRunObservation &observation, std::string &error) {
+bool McapRunObserver::OnRunStarted(const SimRunInfo &info,
+    const SimRunObservation &observation, std::string &error) {
   telemetry::recording::RecordingMetadata metadata;
   metadata.contractVersion = JSB_CONTRACT_VERSION;
   metadata.telemetrySchemaVersion = JSB_TELEMETRY_SCHEMA_VERSION;
@@ -51,12 +51,12 @@ bool McapRunObserver::OnRunStarted(const SimulationRunInfo &info,
   return Consume(observation, error);
 }
 
-bool McapRunObserver::OnSimulationStep(const SimulationRunInfo &,
-    const SimulationRunObservation &observation, std::string &error) {
+bool McapRunObserver::OnSimStep(const SimRunInfo &,
+    const SimRunObservation &observation, std::string &error) {
   return Consume(observation, error);
 }
 
-bool McapRunObserver::Consume(const SimulationRunObservation &observation,
+bool McapRunObserver::Consume(const SimRunObservation &observation,
     std::string &error) {
   if (!started_) {
     error = "MCAP recorder was not started";
@@ -74,7 +74,7 @@ bool McapRunObserver::Consume(const SimulationRunObservation &observation,
   return true;
 }
 
-bool McapRunObserver::OnRunFinished(const SimulationRunInfo &,
+bool McapRunObserver::OnRunFinished(const SimRunInfo &,
     const RunnerResult &, std::string &error) {
   if (!started_) {
     return true;

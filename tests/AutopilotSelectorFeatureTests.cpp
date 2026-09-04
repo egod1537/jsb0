@@ -20,7 +20,7 @@ void TestInteractionUpdatesModelAndEmitsSemanticEvent() {
             parentEvent = event;
           }});
 
-  controller.HandleEvent({gui::AutopilotSelection::Baseline},
+  controller.OnAutopilotSourceSelected({gui::AutopilotSelection::Baseline},
       {.baselineAvailable = true});
 
   assert(controller.GetModel().GetSelection()
@@ -36,7 +36,7 @@ void TestUnavailableSelectionIsRejected() {
           [&eventCount](
               const gui::AutopilotSelectionChanged &) { ++eventCount; }});
 
-  controller.HandleEvent({gui::AutopilotSelection::Baseline},
+  controller.OnAutopilotSourceSelected({gui::AutopilotSelection::Baseline},
       {.baselineAvailable = false});
 
   assert(
@@ -51,7 +51,7 @@ void TestAuthoritativePropsForceSafeSelection() {
           [&parentEvent](const gui::AutopilotSelectionChanged &event) {
             parentEvent = event;
           }});
-  controller.HandleEvent({gui::AutopilotSelection::Baseline},
+  controller.OnAutopilotSourceSelected({gui::AutopilotSelection::Baseline},
       {.baselineAvailable = true});
   parentEvent.reset();
 

@@ -10,7 +10,7 @@ struct TestMessage {
 };
 
 void TestOneSubscriberReceivesMessage() {
-  application::messaging::MessageBus bus;
+  app::messaging::MessageBus bus;
   int received = 0;
   auto subscription = bus.Subscribe<TestMessage>(
       [&received](const TestMessage &message) { received = message.value; });
@@ -20,7 +20,7 @@ void TestOneSubscriberReceivesMessage() {
 }
 
 void TestMultipleSubscribersReceiveMessage() {
-  application::messaging::MessageBus bus;
+  app::messaging::MessageBus bus;
   int first = 0;
   int second = 0;
   auto firstSubscription = bus.Subscribe<TestMessage>(
@@ -34,7 +34,7 @@ void TestMultipleSubscribersReceiveMessage() {
 }
 
 void TestExplicitUnsubscribeWorks() {
-  application::messaging::MessageBus bus;
+  app::messaging::MessageBus bus;
   int count = 0;
   auto subscription =
       bus.Subscribe<TestMessage>([&count](const TestMessage &) { ++count; });
@@ -45,7 +45,7 @@ void TestExplicitUnsubscribeWorks() {
 }
 
 void TestSubscriptionDestructionUnsubscribes() {
-  application::messaging::MessageBus bus;
+  app::messaging::MessageBus bus;
   int count = 0;
   {
     auto subscription =
@@ -57,14 +57,14 @@ void TestSubscriptionDestructionUnsubscribes() {
 }
 
 void TestPublishingWithoutSubscribersIsSafe() {
-  application::messaging::MessageBus bus;
+  app::messaging::MessageBus bus;
   bus.Publish(TestMessage{.value = 7});
 }
 
 void TestSubscriberSelfRemovalDuringPublishIsSafe() {
-  application::messaging::MessageBus bus;
+  app::messaging::MessageBus bus;
   int calls = 0;
-  application::messaging::Subscription subscription;
+  app::messaging::Subscription subscription;
   subscription =
       bus.Subscribe<TestMessage>([&subscription, &calls](const TestMessage &) {
         ++calls;
@@ -77,9 +77,9 @@ void TestSubscriberSelfRemovalDuringPublishIsSafe() {
 }
 
 void TestRemovingAnotherSubscriberDuringPublishSkipsIt() {
-  application::messaging::MessageBus bus;
+  app::messaging::MessageBus bus;
   int removedSubscriberCalls = 0;
-  application::messaging::Subscription removedSubscription;
+  app::messaging::Subscription removedSubscription;
   auto removingSubscription =
       bus.Subscribe<TestMessage>([&removedSubscription](const TestMessage &) {
         removedSubscription.Reset();
@@ -95,9 +95,9 @@ void TestRemovingAnotherSubscriberDuringPublishSkipsIt() {
 }
 
 void TestMessageBusDestructionBeforeSubscriptionIsSafe() {
-  application::messaging::Subscription subscription;
+  app::messaging::Subscription subscription;
   {
-    auto bus = std::make_unique<application::messaging::MessageBus>();
+    auto bus = std::make_unique<app::messaging::MessageBus>();
     subscription = bus->Subscribe<TestMessage>([](const TestMessage &) {});
   }
 
@@ -106,13 +106,13 @@ void TestMessageBusDestructionBeforeSubscriptionIsSafe() {
 }
 
 void TestSubscriptionMoveConstructionAndAssignment() {
-  application::messaging::MessageBus bus;
+  app::messaging::MessageBus bus;
   int movedSubscriberCalls = 0;
   int replacedSubscriberCalls = 0;
 
   auto source = bus.Subscribe<TestMessage>(
       [&movedSubscriberCalls](const TestMessage &) { ++movedSubscriberCalls; });
-  application::messaging::Subscription moved(std::move(source));
+  app::messaging::Subscription moved(std::move(source));
   assert(!source);
   bus.Publish(TestMessage{});
   assert(movedSubscriberCalls == 1);

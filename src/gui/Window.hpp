@@ -27,7 +27,7 @@ protected:
   virtual void PrepareWindow();
   virtual ImGuiWindowFlags GetWindowFlags() const;
   virtual void OnRender();
-  virtual void OnRender(const sim::SimulationSnapshot &snapshot);
+  virtual void OnRender(const sim::SimSnapshot &snapshot);
 
 private:
   // Title presentation

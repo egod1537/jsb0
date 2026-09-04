@@ -12,10 +12,10 @@ public:
   void SynchronizeBaseline(const sim::BaselineRollHoldConfig &config);
 
   // Feature events
-  void Handle(const BaselineRollHoldValueChanged &event);
-  void Handle(const BaselineRollHoldTuningResetRequested &event);
-  void Handle(const BaselinePitchHoldTuningResetRequested &event);
-  void Handle(const Px4AttitudeViewStateChanged &event);
+  void OnEvent(const BaselineRollHoldValueChanged &event);
+  void OnEvent(const BaselineRollHoldTuningResetRequested &event);
+  void OnEvent(const BaselinePitchHoldTuningResetRequested &event);
+  void OnEvent(const Px4AttitudeViewStateChanged &event);
 
 private:
   BaselineAutopilotPanelState &baseline_;

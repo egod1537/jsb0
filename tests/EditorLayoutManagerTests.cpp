@@ -21,7 +21,7 @@ public:
       : Window(std::move(title), {}, std::move(id)) {}
 
 private:
-  void OnRender(const sim::SimulationSnapshot &) override {}
+  void OnRender(const sim::SimSnapshot &) override {}
 };
 
 class FakeLayoutBackend final : public gui::IEditorLayoutBackend {

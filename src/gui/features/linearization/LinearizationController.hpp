@@ -2,8 +2,8 @@
 
 #include "gui/features/linearization/LinearizationEvents.hpp"
 
-namespace application {
-class SimulationMessageClient;
+namespace app {
+class SimMessageClient;
 }
 
 namespace gui {
@@ -14,14 +14,14 @@ struct LinearizationModel {
 class LinearizationController {
 public:
   explicit LinearizationController(
-      application::SimulationMessageClient &client);
+      app::SimMessageClient &client);
 
   const LinearizationModel &GetModel() const { return model_; }
-  void Handle(const AutomaticLinearizationChanged &event);
-  void Handle(const LinearizationValueTransformChanged &event);
+  void OnEvent(const AutomaticLinearizationChanged &event);
+  void OnEvent(const LinearizationValueTransformChanged &event);
 
 private:
-  application::SimulationMessageClient &client_;
+  app::SimMessageClient &client_;
   LinearizationModel model_;
 };
 } // namespace gui

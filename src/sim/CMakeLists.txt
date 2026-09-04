@@ -14,7 +14,7 @@ add_library(jsb_sim_core STATIC
   analysis/LinearizationService.cpp
   telemetry/TelemetryChannel.cpp
   telemetry/TelemetryRegistry.cpp
-  telemetry/SimulationTelemetryPublisher.cpp
+  telemetry/SimTelemetryPublisher.cpp
   telemetry/recording/TelemetryRecordingService.cpp
   Aircraft.cpp
   linearization/AsyncAircraftLinearizer.cpp
@@ -24,14 +24,12 @@ add_library(jsb_sim_core STATIC
   linearization/LinearizationResult.cpp
   linearization/LinearizationPerturbation.cpp
   linearization/LinearizationStateVector.cpp
-  Component.cpp
   ErrorTracker.cpp
   execution/ExecutionVariant.cpp
   execution/ExecutionVariantResolver.cpp
   InitialCondition.cpp
-  StateLogger.cpp
-  scenario/SimulationScenario.cpp
-  scenario/SimulationScenarioSerializer.cpp
+  scenario/SimScenario.cpp
+  scenario/SimScenarioSerializer.cpp
   control/ManualFlightControlController.cpp
   control/FlightControlManager.cpp
   gnc/TrimSolver.cpp
@@ -92,10 +90,10 @@ target_link_libraries(jsb_sim_core
 
 add_library(jsb_sim_runtime STATIC
   runtime/AutopilotConfigurationService.cpp
-  runtime/SimulationInstanceSet.cpp
-  runtime/SimulationComparison.cpp
-  runtime/SimulationRuntime.cpp
-  runtime/SimulationSnapshotBuilder.cpp
+  runtime/SimInstanceSet.cpp
+  runtime/SimComparison.cpp
+  runtime/SimRuntime.cpp
+  runtime/SimSnapshotBuilder.cpp
 )
 target_compile_features(jsb_sim_runtime PUBLIC cxx_std_20)
 set_target_properties(jsb_sim_runtime PROPERTIES CXX_SCAN_FOR_MODULES OFF)

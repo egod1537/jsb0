@@ -8,7 +8,7 @@
 #include <imgui.h>
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class ToolbarBuilder::Impl {
 public:
   ToolbarAlignment Alignment = ToolbarAlignment::Left;
@@ -179,4 +179,4 @@ ToolbarBuilder::operator UIElement() const {
 }
 
 ToolbarBuilder Toolbar() { return ToolbarBuilder(); }
-} // namespace FlightUI
+} // namespace ui

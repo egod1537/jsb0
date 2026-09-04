@@ -1,7 +1,7 @@
 # GUI GNC feature architecture
 
 The GNC editor keeps simulation/controller state behind the existing typed
-messaging boundary. GUI code never reaches into `SimulationRuntime` or a
+messaging boundary. GUI code never reaches into `SimRuntime` or a
 concrete autopilot.
 
 ## Ownership
@@ -49,9 +49,9 @@ per second CAS. No unit conversion occurs in `GNCController`.
 
 ```text
 panel event -> feature controller -> GNC composition controller
-            -> SimulationMessageClient -> typed command -> runtime
+            -> SimMessageClient -> typed command -> runtime
 
-runtime snapshot -> SimulationMessageClient cache -> GNCWindow
+runtime snapshot -> SimMessageClient cache -> GNCWindow
                  -> feature synchronization/model
 ```
 

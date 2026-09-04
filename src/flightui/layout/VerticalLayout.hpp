@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace FlightUI {
+namespace ui {
 class VerticalLayoutBuilder {
 public:
   // Lifetime
@@ -37,4 +37,4 @@ private:
 
 VerticalLayoutBuilder VerticalLayout();
 VerticalLayoutBuilder VerticalLayout(Children children);
-} // namespace FlightUI
+} // namespace ui

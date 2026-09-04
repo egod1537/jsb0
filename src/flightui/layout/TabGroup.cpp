@@ -7,7 +7,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class TabBuilder::Impl {
 public:
   std::string Label;
@@ -131,12 +131,12 @@ UIElement TabBuilder::operator[](Children children) const {
     }
 
     const std::string label = MakeTabLabel(state.Label, state.Id);
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::DisabledScope disabledScope(!state.Enabled);
     const bool isSelected = ImGui::BeginTabItem(
         label.c_str(), state.Open == nullptr ? nullptr : &localOpen,
         state.Flags);
 
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
 
     if (isSelected) {
       for (const UIElement &childElement : children) {
@@ -240,10 +240,10 @@ UIElement TabGroupBuilder::operator[](Children children) const {
     }
 
     const std::string id = state.Id.empty() ? state.Name : state.Id;
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::DisabledScope disabledScope(!state.Enabled);
 
     if (ImGui::BeginTabBar(id.c_str(), state.Flags)) {
-      Internal::ShowTooltipIfHovered(state.Tooltip);
+      internal::ShowTooltipIfHovered(state.Tooltip);
 
       for (const UIElement &childElement : children) {
         childElement.Render();
@@ -259,4 +259,4 @@ TabBuilder Tab(std::string label) { return TabBuilder(std::move(label)); }
 TabGroupBuilder TabGroup(std::string name) {
   return TabGroupBuilder(std::move(name));
 }
-} // namespace FlightUI
+} // namespace ui

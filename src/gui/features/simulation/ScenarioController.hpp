@@ -1,8 +1,8 @@
 #pragma once
 
 #include "gui/architecture/EventSink.hpp"
-#include "gui/features/simulation/SimulationEvents.hpp"
-#include "sim/scenario/SimulationScenario.hpp"
+#include "gui/features/simulation/SimEvents.hpp"
+#include "sim/scenario/SimScenario.hpp"
 #include "sim/execution/ExecutionRequest.hpp"
 
 #include <filesystem>
@@ -11,8 +11,8 @@
 
 namespace gui {
 struct ScenarioFileModel {
-  sim::SimulationScenario draft;
-  sim::SimulationScenario cleanScenario;
+  sim::SimScenario draft;
+  sim::SimScenario cleanScenario;
   sim::ExecutionVariant executionVariant = sim::ExecutionVariant::Primary;
   sim::ScenarioSource source;
   std::filesystem::path directory;
@@ -26,7 +26,7 @@ struct ScenarioFileModel {
 };
 
 struct ScenarioDraftChanged {
-  sim::SimulationScenario draft;
+  sim::SimScenario draft;
 };
 
 struct ExecutionVariantChanged {
@@ -45,12 +45,12 @@ public:
 
   // Immutable file state for the scenario view
   const ScenarioFileModel &GetModel() const { return model_; }
-  sim::SimulationScenario &EditDraftForCompatibility() { return model_.draft; }
+  sim::SimScenario &EditDraftForCompatibility() { return model_.draft; }
   bool IsDirty() const;
 
   // Scenario and file intents
-  void Handle(const ScenarioDraftChanged &event);
-  void Handle(const ExecutionVariantChanged &event);
+  void OnEvent(const ScenarioDraftChanged &event);
+  void OnEvent(const ExecutionVariantChanged &event);
   void NewScenario();
   void ResetDefaults();
   void RefreshAvailableScenarios();
@@ -59,7 +59,7 @@ public:
   bool SaveAs(const std::filesystem::path &path);
   bool ResolveFileName(std::string_view input, std::filesystem::path &path);
   bool Apply();
-  void Handle(const ScenarioApplyCompleted &event);
+  void OnEvent(const ScenarioApplyCompleted &event);
 
 private:
   std::filesystem::path ResolvePath(const std::filesystem::path &path) const;

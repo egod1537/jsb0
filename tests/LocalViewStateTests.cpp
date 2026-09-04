@@ -1,14 +1,14 @@
 #include "gui/panels/AutopilotPanel.hpp"
 #include "gui/panels/BaselineAutopilotPanel.hpp"
 #include "common/math/Math.hpp"
-#include "gui/GUIConfig.hpp"
+#include "gui/features/monitor/MonitorConfig.hpp"
 #include "gui/features/flightviz/FlightVisualizer.hpp"
 #include "gui/windows/GNCWindow.hpp"
 #include "gui/features/monitor/plots/CourseTrackingAcceptance.hpp"
 #include "gui/features/monitor/plots/PitchTrackingAcceptance.hpp"
 #include "gui/features/monitor/plots/RollTrackingAcceptance.hpp"
 #include "gui/windows/viz/FlightVizWindow.hpp"
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -69,15 +69,15 @@ void TestBaselineUnavailableIsSafe() {
 }
 
 void TestFlightVizWindowsUseIndependentSlotsAndIds() {
-  gui::FlightVizWindow primaryWindow(sim::SimulationSlot::Primary);
-  gui::FlightVizWindow baselineWindow(sim::SimulationSlot::Baseline);
+  gui::FlightVizWindow primaryWindow(sim::SimSlot::Primary);
+  gui::FlightVizWindow baselineWindow(sim::SimSlot::Baseline);
 
   assert(primaryWindow.GetTitle() == "Flight Viz · Primary");
   assert(primaryWindow.GetWindowId() == "FlightVizPrimary");
-  assert(primaryWindow.GetSimulationSlot() == sim::SimulationSlot::Primary);
+  assert(primaryWindow.GetSimSlot() == sim::SimSlot::Primary);
   assert(baselineWindow.GetTitle() == "Flight Viz · Baseline");
   assert(baselineWindow.GetWindowId() == "FlightVizBaseline");
-  assert(baselineWindow.GetSimulationSlot() == sim::SimulationSlot::Baseline);
+  assert(baselineWindow.GetSimSlot() == sim::SimSlot::Baseline);
   assert(&primaryWindow.GetVisualizer() != &baselineWindow.GetVisualizer());
 
   primaryWindow.GetVisualizer().SetViewMode(viz::ViewMode::ThirdPerson);
@@ -97,13 +97,13 @@ void TestShadowUsesFixedWorldProjection() {
   constexpr double OriginLatitudeRad = 0.65;
   constexpr double OriginLongitudeRad = 2.2;
 
-  sim::SimulationInstanceSnapshot primary;
+  sim::SimInstanceSnapshot primary;
   primary.available = true;
   primary.fdmState.state.latitudeRad = OriginLatitudeRad;
   primary.fdmState.state.longitudeRad = OriginLongitudeRad;
   primary.aircraft.altitudeAslM = math::FeetToMeters(4000.0);
 
-  sim::SimulationInstanceSnapshot baseline = primary;
+  sim::SimInstanceSnapshot baseline = primary;
   baseline.fdmState.state.latitudeRad += LatitudeOffsetRad;
   baseline.fdmState.state.longitudeRad += LongitudeOffsetRad;
 
@@ -142,7 +142,7 @@ void TestShadowUsesFixedWorldProjection() {
 }
 
 void TestFlightVizPreservesSiAircraftStateAndControls() {
-  sim::SimulationInstanceSnapshot source;
+  sim::SimInstanceSnapshot source;
   source.available = true;
   source.aircraft.simulationTimeSec = 1.0;
   source.aircraft.altitudeAglM = 365.76;
@@ -267,10 +267,10 @@ void TestPitchTrackingToleranceBandIsCommandRelative() {
 }
 
 void TestTrackingToleranceConfigDefaults() {
-  const gui::GUIConfig config;
-  assert(config.monitor.rollTrackingToleranceDeg == 0.1);
-  assert(config.monitor.pitchTrackingToleranceDeg == 0.1);
-  assert(config.monitor.courseTrackingToleranceDeg == 1.0);
+  const gui::MonitorConfig config;
+  assert(config.rollTrackingToleranceDeg == 0.1);
+  assert(config.pitchTrackingToleranceDeg == 0.1);
+  assert(config.courseTrackingToleranceDeg == 1.0);
 }
 } // namespace
 

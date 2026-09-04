@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 struct KeyValueItem {
   std::string Label;
@@ -142,13 +142,13 @@ KeyValueGridBuilder::operator UIElement() const {
     constexpr ImGuiTableFlags Flags = ImGuiTableFlags_SizingStretchProp
                                       | ImGuiTableFlags_NoSavedSettings
                                       | ImGuiTableFlags_PadOuterX;
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::DisabledScope disabledScope(!state.Enabled);
 
     if (!ImGui::BeginTable(state.Id.c_str(), tableColumnCount, Flags)) {
       return;
     }
 
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
 
     for (int column = 0; column < tableColumnCount; ++column) {
       const bool isLabelColumn = column % 2 == 0;
@@ -176,4 +176,4 @@ KeyValueGridBuilder::operator UIElement() const {
 KeyValueGridBuilder KeyValueGrid(std::string id) {
   return KeyValueGridBuilder(std::move(id));
 }
-} // namespace FlightUI
+} // namespace ui

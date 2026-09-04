@@ -8,7 +8,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class ButtonBuilder::Impl {
 public:
   std::string Label;
@@ -111,19 +111,19 @@ ButtonBuilder &ButtonBuilder::Id(std::string id) {
 ButtonBuilder::operator UIElement() const {
   Impl state = *m_Impl;
   return CreateElement([state] {
-    Internal::IdScope idScope(state.Id);
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::IdScope idScope(state.Id);
+    internal::DisabledScope disabledScope(!state.Enabled);
 
     if (ImGui::Button(state.Label.c_str(), ToImVec2(UiSize(state.Size)))
         && state.OnClick) {
       state.OnClick();
     }
 
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
 ButtonBuilder Button(std::string label, Action onClick) {
   return ButtonBuilder(std::move(label), std::move(onClick));
 }
-} // namespace FlightUI
+} // namespace ui

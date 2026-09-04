@@ -3,7 +3,7 @@
 #include <functional>
 #include <utility>
 
-namespace application::messaging {
+namespace app::messaging {
 class MessageBus;
 
 class Subscription {
@@ -26,4 +26,4 @@ private:
 
   std::function<void()> unsubscribe_;
 };
-} // namespace application::messaging
+} // namespace app::messaging

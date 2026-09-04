@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace application::messaging {
+namespace app::messaging {
 // A small synchronous, in-process type-based message dispatcher.
 //
 // Publish invokes callbacks before returning, on the caller thread. The bus
@@ -104,4 +104,4 @@ private:
 
   std::shared_ptr<State> state_;
 };
-} // namespace application::messaging
+} // namespace app::messaging

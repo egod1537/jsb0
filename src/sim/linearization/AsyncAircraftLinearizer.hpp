@@ -2,13 +2,13 @@
 
 #include "sim/FDMState.hpp"
 #include "sim/InitialCondition.hpp"
-#include "sim/SimulationConfig.h"
 #include "sim/linearization/LinearizationResult.hpp"
 
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace sim {
 class AsyncAircraftLinearizer {
@@ -26,8 +26,9 @@ public:
   AsyncAircraftLinearizer &operator=(
       const AsyncAircraftLinearizer &other) = delete;
 
-  bool Submit(std::uint64_t generation, const SimulationConfig &config,
-      const InitialCondition &initialCondition, FDMState sourceState);
+  bool Submit(std::uint64_t generation, std::string_view aircraftName,
+      double simulationHz, const InitialCondition &initialCondition,
+      FDMState sourceState);
   bool IsBusy() const;
   std::optional<Completion> TakeCompletion();
 

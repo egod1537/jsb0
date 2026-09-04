@@ -1,12 +1,12 @@
 #include "messaging/MessageBus.hpp"
-#include "messaging/SimulationMessageAdapter.hpp"
-#include "messaging/SimulationMessageClient.hpp"
+#include "messaging/GuiSimBridge.hpp"
+#include "messaging/SimMessageClient.hpp"
 #include "sim/Simulation.hpp"
 #include "sim/gnc/autopilot/MyAutopilot.hpp"
 #include "sim/gnc/autopilot/PX4Autopilot.hpp"
-#include "sim/runtime/SimulationRuntime.hpp"
+#include "sim/runtime/SimRuntime.hpp"
 #include "sim/execution/ExecutionVariantResolver.hpp"
-#include "sim/scenario/SimulationScenario.hpp"
+#include "sim/scenario/SimScenario.hpp"
 #include "common/math/Math.hpp"
 
 #include <cassert>
@@ -28,12 +28,12 @@ std::unique_ptr<sim::Simulation> MakeBaselineSimulation() {
       std::make_unique<gnc::PX4Autopilot>());
 }
 
-sim::ExecutionRequest MakeRequest(const sim::SimulationScenario &scenario,
+sim::ExecutionRequest MakeRequest(const sim::SimScenario &scenario,
     sim::ExecutionVariant variant = sim::ExecutionVariant::Primary) {
   return {.scenario = scenario, .variant = variant};
 }
 
-sim::ResolvedExecutionSpec Resolve(const sim::SimulationScenario &scenario,
+sim::ResolvedExecutionSpec Resolve(const sim::SimScenario &scenario,
     sim::ExecutionVariant variant) {
   sim::ResolvedExecutionSpec resolved;
   std::string error;
@@ -44,56 +44,56 @@ sim::ResolvedExecutionSpec Resolve(const sim::SimulationScenario &scenario,
 }
 
 void TestInteractiveRuntimeExecution() {
-  application::messaging::MessageBus bus;
-  sim::SimulationRuntime runtime(MakePrimarySimulation());
-  application::messaging::SimulationMessageAdapter adapter(bus, runtime);
-  application::SimulationMessageClient control(bus);
+  app::messaging::MessageBus bus;
+  sim::SimRuntime runtime(MakePrimarySimulation());
+  app::messaging::GuiSimBridge bridge(bus, runtime);
+  app::SimMessageClient control(bus);
 
-  assert(control.GetSimulationExecutionState()
-         == application::SimulationExecutionState::Stopped);
+  assert(control.GetSimExecutionState()
+         == app::SimExecutionState::Stopped);
   assert(!control.GetScenarioExecutionStatus().has_value());
-  assert(!control.GetSimulationSnapshot().appliedExecution.has_value());
-  assert(!control.RunExecution(MakeRequest(sim::SimulationScenario{})));
-  assert(runtime.Initialize(sim::SimulationConfig{}));
-  adapter.PublishState();
+  assert(!control.GetSimSnapshot().appliedExecution.has_value());
+  assert(!control.RunExecution(MakeRequest(sim::SimScenario{})));
+  assert(runtime.Initialize());
+  bridge.PublishState();
 
   control.StartSimulation();
-  assert(control.GetSimulationExecutionState()
-         == application::SimulationExecutionState::Running);
+  assert(control.GetSimExecutionState()
+         == app::SimExecutionState::Running);
   assert(runtime.Tick());
-  adapter.PublishState();
+  bridge.PublishState();
   const double runningTime =
-      control.GetSimulationSnapshot().primary.aircraft.simulationTimeSec;
+      control.GetSimSnapshot().primary.aircraft.simulationTimeSec;
   assert(runningTime > 0.0);
 
   control.PauseSimulation();
-  control.RequestSimulationTick();
-  assert(control.GetPendingSimulationTickCount() == 1);
+  control.RequestSimTick();
+  assert(control.GetPendingSimTickCount() == 1);
   assert(runtime.Tick());
-  adapter.PublishState();
-  assert(control.GetPendingSimulationTickCount() == 0);
-  assert(control.GetSimulationSnapshot().primary.aircraft.simulationTimeSec
+  bridge.PublishState();
+  assert(control.GetPendingSimTickCount() == 0);
+  assert(control.GetSimSnapshot().primary.aircraft.simulationTimeSec
          > runningTime);
 
   assert(control.ResetSimulation());
-  assert(control.GetSimulationExecutionState()
-         == application::SimulationExecutionState::Paused);
+  assert(control.GetSimExecutionState()
+         == app::SimExecutionState::Paused);
   control.ResumeSimulation();
   control.StopSimulation();
-  assert(control.GetSimulationExecutionState()
-         == application::SimulationExecutionState::Stopped);
+  assert(control.GetSimExecutionState()
+         == app::SimExecutionState::Stopped);
 }
 
 void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
-  application::messaging::MessageBus bus;
-  sim::SimulationRuntime runtime(MakePrimarySimulation(),
+  app::messaging::MessageBus bus;
+  sim::SimRuntime runtime(MakePrimarySimulation(),
       MakeBaselineSimulation());
-  assert(runtime.Initialize(sim::SimulationConfig{}));
-  application::messaging::SimulationMessageAdapter adapter(bus, runtime);
-  application::SimulationMessageClient control(bus);
-  adapter.PublishState();
+  assert(runtime.Initialize());
+  app::messaging::GuiSimBridge bridge(bus, runtime);
+  app::SimMessageClient control(bus);
+  bridge.PublishState();
 
-  sim::SimulationScenario scenario;
+  sim::SimScenario scenario;
   scenario.name = "Dual Roll Hold";
   scenario.initialCondition.altitudeAslM = math::FeetToMeters(4200.0);
   scenario.initialCondition.calibratedAirspeedMps =
@@ -106,23 +106,23 @@ void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
   scenario.events.front().command.rollRad = math::DegToRad(8.0);
   scenario.durationSec = 12.0;
 
-  sim::SimulationScenario invalidScenario = scenario;
+  sim::SimScenario invalidScenario = scenario;
   invalidScenario.settlingBandRad = -1.0;
   assert(!control.RunExecution(MakeRequest(invalidScenario)));
-  assert(control.GetSimulationExecutionState()
-         == application::SimulationExecutionState::Stopped);
+  assert(control.GetSimExecutionState()
+         == app::SimExecutionState::Stopped);
   assert(!control.GetScenarioExecutionStatus().has_value());
 
   assert(control.RunExecution(MakeRequest(scenario)));
-  assert(control.GetSimulationExecutionState()
-         == application::SimulationExecutionState::Running);
+  assert(control.GetSimExecutionState()
+         == app::SimExecutionState::Running);
   const auto status = control.GetScenarioExecutionStatus();
   assert(status.has_value());
   assert(status->name == scenario.name);
   assert(status->elapsedSec == 0.0);
   assert(status->durationSec == scenario.durationSec);
 
-  const sim::SimulationSnapshot snapshot = control.GetSimulationSnapshot();
+  const sim::SimSnapshot snapshot = control.GetSimSnapshot();
   assert(snapshot.appliedExecution.has_value());
   assert(snapshot.appliedExecution->scenario == scenario);
   assert(snapshot.appliedExecution->variant == sim::ExecutionVariant::Primary);
@@ -146,17 +146,17 @@ void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
                   - scenario.events.front().command.rollRad)
          < 1.0e-12);
   const auto primaryTelemetry =
-      control.GetTelemetrySnapshot(sim::SimulationSlot::Primary);
+      control.GetTelemetrySnapshot(sim::SimSlot::Primary);
   const auto baselineTelemetry =
-      control.GetTelemetrySnapshot(sim::SimulationSlot::Baseline);
+      control.GetTelemetrySnapshot(sim::SimSlot::Baseline);
   assert(primaryTelemetry != nullptr && primaryTelemetry->available);
   assert(baselineTelemetry != nullptr && baselineTelemetry->available);
   assert(primaryTelemetry != baselineTelemetry);
 
   control.StopSimulation();
-  const sim::SimulationSnapshot stopped = control.GetSimulationSnapshot();
+  const sim::SimSnapshot stopped = control.GetSimSnapshot();
   assert(
-      stopped.status.executionState == sim::SimulationExecutionState::Stopped);
+      stopped.status.executionState == sim::SimExecutionState::Stopped);
   assert(!stopped.status.scenario.has_value());
   assert(stopped.appliedExecution.has_value());
   assert(stopped.appliedExecution->scenario == scenario);
@@ -165,29 +165,29 @@ void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
   assert(!stopped.baselineAutopilot->baselineRollHold.enabled);
 
   assert(!control.RunExecution(MakeRequest(invalidScenario)));
-  const sim::SimulationSnapshot afterRejectedApply =
-      control.GetSimulationSnapshot();
+  const sim::SimSnapshot afterRejectedApply =
+      control.GetSimSnapshot();
   assert(afterRejectedApply.appliedExecution.has_value());
   assert(afterRejectedApply.appliedExecution->scenario == scenario);
 }
 
 void TestBaselineScenarioSelectsBaselineWithoutRebuild() {
-  sim::SimulationRuntime runtime(MakePrimarySimulation(),
+  sim::SimRuntime runtime(MakePrimarySimulation(),
       MakeBaselineSimulation());
-  assert(runtime.Initialize(sim::SimulationConfig{}));
-  sim::SimulationScenario scenario;
+  assert(runtime.Initialize());
+  sim::SimScenario scenario;
   scenario.runTrim = false;
   scenario.events.front().timeSec = 0.0;
   scenario.durationSec = 0.1;
   assert(
       runtime.RunExecution(Resolve(scenario, sim::ExecutionVariant::Baseline)));
-  const sim::SimulationSnapshot running = runtime.GetSnapshot();
+  const sim::SimSnapshot running = runtime.GetSnapshot();
   assert(running.primaryAutopilot.strategyName == "PX4Autopilot");
   assert(running.primaryAutopilot.baselineRollHold.enabled);
   assert(running.baselineAutopilot.has_value());
   assert(running.baselineAutopilot->strategyName == "MyAutopilot");
   runtime.Stop();
-  const sim::SimulationSnapshot restored = runtime.GetSnapshot();
+  const sim::SimSnapshot restored = runtime.GetSnapshot();
   assert(restored.primaryAutopilot.strategyName == "MyAutopilot");
   assert(restored.baselineAutopilot->strategyName == "PX4Autopilot");
 }

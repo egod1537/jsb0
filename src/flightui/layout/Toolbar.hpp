@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 enum class ToolbarAlignment {
   Left,
   Right,
@@ -55,4 +55,4 @@ private:
 };
 
 ToolbarBuilder Toolbar();
-} // namespace FlightUI
+} // namespace ui

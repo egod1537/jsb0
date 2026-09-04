@@ -1,0 +1,714 @@
+#include "SimRunner.hpp"
+
+#include "common/crypto/Sha256.hpp"
+#include "sim/runtime/SimComparison.hpp"
+#include "sim/scenario/SimScenarioSerializer.hpp"
+
+#include <yaml-cpp/yaml.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <ctime>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <system_error>
+#include <utility>
+
+namespace runner {
+namespace {
+using Clock = std::chrono::steady_clock;
+
+std::string GetWallClockTimestamp() {
+  const auto now = std::chrono::system_clock::now();
+  const std::time_t time = std::chrono::system_clock::to_time_t(now);
+  std::tm utc{};
+#ifdef _WIN32
+  gmtime_s(&utc, &time);
+#else
+  gmtime_r(&time, &utc);
+#endif
+  std::ostringstream stream;
+  stream << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+  return stream.str();
+}
+
+std::string JsonEscape(std::string_view value) {
+  std::string escaped;
+  for (const char character : value) {
+    switch (character) {
+    case '\\':
+      escaped += "\\\\";
+      break;
+    case '"':
+      escaped += "\\\"";
+      break;
+    case '\n':
+      escaped += "\\n";
+      break;
+    case '\r':
+      escaped += "\\r";
+      break;
+    case '\t':
+      escaped += "\\t";
+      break;
+    default:
+      escaped.push_back(character);
+      break;
+    }
+  }
+  return escaped;
+}
+
+bool PrepareOutputDirectory(const std::filesystem::path &directory,
+    std::string &error) {
+  if (directory.empty()) {
+    error = "output directory is empty";
+    return false;
+  }
+  std::error_code filesystemError;
+  std::filesystem::create_directories(directory, filesystemError);
+  if (filesystemError || !std::filesystem::is_directory(directory)) {
+    error =
+        "output directory is not writable: "
+        + (filesystemError ? filesystemError.message() : directory.string());
+    return false;
+  }
+  return true;
+}
+
+bool ReadFileBytes(const std::filesystem::path &path,
+    std::string_view artifactName, std::string &bytes, std::string &error) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    error =
+        "Could not open " + std::string(artifactName) + ": " + path.string();
+    return false;
+  }
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  if (input.bad()) {
+    error =
+        "Could not read " + std::string(artifactName) + ": " + path.string();
+    return false;
+  }
+  bytes = buffer.str();
+  return true;
+}
+
+bool WriteScenarioSnapshot(const std::filesystem::path &directory,
+    const std::filesystem::path &sourcePath, std::string_view bytes,
+    std::string &error) {
+  const std::filesystem::path destination = directory / "scenario.yaml";
+  std::error_code pathError;
+  const std::filesystem::path absoluteSource =
+      std::filesystem::absolute(sourcePath, pathError).lexically_normal();
+  pathError.clear();
+  const std::filesystem::path absoluteDestination =
+      std::filesystem::absolute(destination, pathError).lexically_normal();
+  if (!pathError && absoluteSource == absoluteDestination) {
+    return true;
+  }
+  std::ofstream output(destination, std::ios::binary | std::ios::trunc);
+  if (!output) {
+    error = "could not open scenario.yaml for writing";
+    return false;
+  }
+  output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+  if (!output) {
+    error = "could not write scenario.yaml";
+    return false;
+  }
+  return true;
+}
+
+bool LoadControllerParameters(const std::filesystem::path &directory,
+    const sim::SimScenario &scenario,
+    sim::ExecutionParameterSet &parameters, std::string &error) {
+  const std::filesystem::path path = directory / "parameters.yaml";
+  if (!std::filesystem::is_regular_file(path)) {
+    return true;
+  }
+  try {
+    const YAML::Node root = YAML::LoadFile(path.string());
+    const YAML::Node values = root["controller_parameters"];
+    if (!root.IsMap() || root.size() != 1 || !values || !values.IsMap()) {
+      error =
+          "parameters.yaml must contain only a controller_parameters mapping";
+      return false;
+    }
+    for (const auto &entry : values) {
+      const std::string id = entry.first.as<std::string>();
+      if (std::find(scenario.controllerParameters.begin(),
+              scenario.controllerParameters.end(),
+              id)
+          == scenario.controllerParameters.end()) {
+        error =
+            "controller parameter '" + id + "' is not declared by the Scenario";
+        return false;
+      }
+      const double value = entry.second.as<double>();
+      if (!std::isfinite(value)) {
+        error = "controller parameter '" + id + "' must be finite";
+        return false;
+      }
+      parameters[id] = value;
+    }
+  } catch (const YAML::Exception &exception) {
+    error = "could not parse parameters.yaml: " + std::string(exception.what());
+    return false;
+  }
+  return true;
+}
+
+bool WriteManifest(const std::filesystem::path &directory,
+    const SimRunInfo &info, const RunnerResult &result,
+    std::string &error) {
+  std::ofstream output(directory / "run.json",
+      std::ios::binary | std::ios::trunc);
+  if (!output) {
+    error = "could not open run.json for writing";
+    return false;
+  }
+  output << std::setprecision(17)
+         << "{\n"
+            "  \"contract_version\": \""
+         << JSB_CONTRACT_VERSION
+         << "\",\n"
+            "  \"runtime\": {\n"
+            "    \"branch\": \""
+         << JsonEscape(JSB_RUNTIME_BRANCH)
+         << "\",\n"
+            "    \"commit\": \""
+         << JsonEscape(JSB_GIT_COMMIT)
+         << "\",\n"
+            "    \"application_version\": \""
+         << JsonEscape(JSB_APPLICATION_VERSION)
+         << "\"\n"
+            "  },\n"
+            "  \"scenario\": {\n"
+            "    \"name\": \""
+         << JsonEscape(info.scenarioName)
+         << "\",\n"
+            "    \"file\": \""
+         << JsonEscape(info.scenarioFile)
+         << "\",\n"
+            "    \"digest_sha256\": \""
+         << JsonEscape(info.scenarioDigest)
+         << "\",\n"
+            "    \"schema_version\": "
+         << info.scenarioSchemaVersion
+         << ",\n"
+            "    \"scenario_type\": \""
+         << JsonEscape(info.scenarioType)
+         << "\"\n"
+            "  },\n"
+            "  \"telemetry_schema_version\": "
+         << JSB_TELEMETRY_SCHEMA_VERSION
+         << ",\n"
+            "  \"aircraft\": \""
+         << JsonEscape(info.aircraft)
+         << "\",\n"
+            "  \"mode\": \"compare\",\n"
+            "  \"execution\": {\n"
+            "    \"variants\": [\"baseline\", \"primary\"]\n"
+            "  },\n";
+  if (!info.parameterFile.empty()) {
+    output << "  \"parameters\": {\n"
+              "    \"file\": \""
+           << JsonEscape(info.parameterFile)
+           << "\",\n"
+              "    \"digest_sha256\": \""
+           << JsonEscape(info.parameterDigest)
+           << "\",\n"
+              "    \"variants\": [\"baseline\"]\n"
+              "  },\n";
+  }
+  output << "  \"started_at\": \"" << JsonEscape(info.startedAt)
+         << "\",\n"
+            "  \"ended_at\": \""
+         << JsonEscape(result.endedAt)
+         << "\",\n"
+            "  \"duration_s\": "
+         << info.durationSec
+         << ",\n"
+            "  \"status\": \""
+         << JsonEscape(result.status) << "\",\n";
+  const std::string_view baselineStatus =
+      result.baselineStatus.empty() ? std::string_view(result.status)
+                                    : std::string_view(result.baselineStatus);
+  const std::string_view primaryStatus =
+      result.primaryStatus.empty() ? std::string_view(result.status)
+                                   : std::string_view(result.primaryStatus);
+  output << "  \"results\": {\n"
+            "    \"baseline\": {\"status\": \""
+         << JsonEscape(baselineStatus) << '"';
+  if (!result.baselineError.empty()) {
+    output << ", \"error\": \"" << JsonEscape(result.baselineError) << '"';
+  }
+  output << "},\n"
+            "    \"primary\": {\"status\": \""
+         << JsonEscape(primaryStatus) << '"';
+  if (!result.primaryError.empty()) {
+    output << ", \"error\": \"" << JsonEscape(result.primaryError) << '"';
+  }
+  output << "}\n"
+            "  },\n"
+            "  \"simulation_dt_s\": "
+         << info.dtSec
+         << ",\n"
+            "  \"simulation_time_s\": "
+         << result.simulationTimeSec
+         << ",\n"
+            "  \"wall_time_s\": "
+         << result.wallTimeSec
+         << ",\n"
+            "  \"realtime_factor\": "
+         << result.realtimeFactor
+         << ",\n"
+            "  \"steps\": "
+         << result.steps;
+  if (!result.error.empty()) {
+    output << ",\n"
+              "  \"error\": \""
+           << JsonEscape(result.error) << '"';
+    std::string_view failureCategory = "runtime";
+    std::string_view failureCode = "GENERAL_FAILURE";
+    switch (result.exitCode) {
+    case RunnerExitCode::ScenarioLoadFailure:
+      failureCategory = "scenario";
+      failureCode = "SCENARIO_INVALID";
+      break;
+    case RunnerExitCode::SimInitializationFailure:
+      failureCode = "RUNTIME_INITIALIZATION_FAILED";
+      break;
+    case RunnerExitCode::SimExecutionFailure:
+      failureCode = "RUNTIME_EXECUTION_FAILED";
+      break;
+    case RunnerExitCode::OutputFailure:
+      failureCategory = "artifact";
+      failureCode = "ARTIFACT_WRITE_FAILED";
+      break;
+    case RunnerExitCode::GeneralFailure:
+      if (result.status == "interrupted") {
+        failureCategory = "interruption";
+        failureCode = "RUN_INTERRUPTED";
+      }
+      break;
+    case RunnerExitCode::InvalidArguments:
+      failureCategory = "invocation";
+      failureCode = "INVALID_ARGUMENTS";
+      break;
+    case RunnerExitCode::Success:
+      break;
+    }
+    output << ",\n"
+              "  \"failure\": {\n"
+              "    \"category\": \""
+           << failureCategory
+           << "\",\n"
+              "    \"code\": \""
+           << failureCode
+           << "\",\n"
+              "    \"message\": \""
+           << JsonEscape(result.error)
+           << "\",\n"
+              "    \"simulation_time_s\": "
+           << result.simulationTimeSec
+           << "\n"
+              "  }";
+  }
+  output << "\n}\n";
+  if (!output) {
+    error = "could not write run.json";
+    return false;
+  }
+  return true;
+}
+
+void SetOutputFailure(RunnerResult &result, std::string error) {
+  result.status = "failed";
+  result.exitCode = RunnerExitCode::OutputFailure;
+  if (result.error.empty()) {
+    result.error = std::move(error);
+  } else if (!error.empty() && result.error != error) {
+    result.error += "; ";
+    result.error += error;
+  }
+}
+
+void WriteFinalManifest(const SimRunInfo &info, RunnerResult &result) {
+  if (result.endedAt.empty()) {
+    result.endedAt = GetWallClockTimestamp();
+  }
+  std::string error;
+  if (!WriteManifest(info.outputDirectory, info, result, error)) {
+    SetOutputFailure(result, std::move(error));
+  }
+}
+} // namespace
+
+void SimRunner::AddObserver(ISimRunObserver &observer) {
+  observers_.push_back(&observer);
+}
+
+namespace {
+class IExecutionSession {
+public:
+  virtual ~IExecutionSession() = default;
+  virtual bool IsRunning() const = 0;
+  virtual bool Tick() = 0;
+  virtual void Stop() = 0;
+  virtual void Shutdown() = 0;
+  virtual double GetSimulationTimeSec() const = 0;
+  virtual std::uint64_t GetStepCount() const = 0;
+  virtual const std::string &GetLastError() const = 0;
+  virtual SimRunObservation TakeObservation() = 0;
+  virtual void PopulateVariantResults(RunnerResult &result) const = 0;
+};
+
+std::string ComparisonStatus(sim::ComparisonExecutionState state,
+    std::string_view runStatus) {
+  switch (state) {
+  case sim::ComparisonExecutionState::Completed:
+    return "completed";
+  case sim::ComparisonExecutionState::Failed:
+    return "failed";
+  case sim::ComparisonExecutionState::Stopped:
+    return runStatus == "interrupted" ? "interrupted" : "failed";
+  case sim::ComparisonExecutionState::Running:
+    return "failed";
+  }
+  return "failed";
+}
+
+class ComparisonExecutionSession final : public IExecutionSession {
+public:
+  static std::unique_ptr<ComparisonExecutionSession> Create(
+      const sim::ComparisonExecutionRequest &request, std::string &error,
+      std::optional<sim::ExecutionVariant> &failedVariant) {
+    auto comparison =
+        sim::SimComparison::Create(request, error, {}, &failedVariant);
+    return comparison == nullptr
+               ? nullptr
+               : std::unique_ptr<ComparisonExecutionSession>(
+                     new ComparisonExecutionSession(std::move(comparison)));
+  }
+
+  bool IsRunning() const override { return comparison_->IsRunning(); }
+
+  bool Tick() override {
+    if (!comparison_->Tick()) {
+      return false;
+    }
+    const sim::ComparisonObservation source = comparison_->TakeObservation();
+    observation_.telemetry = source.telemetry;
+    observation_.scenarioEvents = source.scenarioEvents;
+    return true;
+  }
+
+  void Stop() override { comparison_->Stop(); }
+  void Shutdown() override { comparison_->Shutdown(); }
+  double GetSimulationTimeSec() const override {
+    return comparison_->GetSimulationTimeSec();
+  }
+  std::uint64_t GetStepCount() const override {
+    return comparison_->GetStepCount();
+  }
+  const std::string &GetLastError() const override {
+    return comparison_->GetLastError();
+  }
+
+  SimRunObservation TakeObservation() override {
+    return std::exchange(observation_, {});
+  }
+
+  void PopulateVariantResults(RunnerResult &result) const override {
+    const sim::ComparisonVariantResult &baseline =
+        comparison_->GetVariantResult(sim::ExecutionVariant::Baseline);
+    const sim::ComparisonVariantResult &primary =
+        comparison_->GetVariantResult(sim::ExecutionVariant::Primary);
+    result.baselineStatus = ComparisonStatus(baseline.state, result.status);
+    result.baselineError = baseline.error;
+    result.primaryStatus = ComparisonStatus(primary.state, result.status);
+    result.primaryError = primary.error;
+    if (result.status != "completed") {
+      if (result.baselineError.empty()
+          && baseline.state == sim::ComparisonExecutionState::Failed) {
+        result.baselineError = result.error;
+      }
+      if (result.primaryError.empty()
+          && primary.state == sim::ComparisonExecutionState::Failed) {
+        result.primaryError = result.error;
+      }
+      if (result.baselineError.empty()
+          && baseline.state == sim::ComparisonExecutionState::Stopped) {
+        result.baselineError =
+            primary.state == sim::ComparisonExecutionState::Failed
+                ? "stopped because primary failed"
+                : result.error;
+      }
+      if (result.primaryError.empty()
+          && primary.state == sim::ComparisonExecutionState::Stopped) {
+        result.primaryError =
+            baseline.state == sim::ComparisonExecutionState::Failed
+                ? "stopped because baseline failed"
+                : result.error;
+      }
+    }
+  }
+
+private:
+  explicit ComparisonExecutionSession(
+      std::unique_ptr<sim::SimComparison> comparison)
+      : comparison_(std::move(comparison)) {
+    const sim::ComparisonObservation source = comparison_->TakeObservation();
+    observation_.telemetry = source.telemetry;
+    observation_.scenarioEvents = source.scenarioEvents;
+  }
+
+  std::unique_ptr<sim::SimComparison> comparison_;
+  SimRunObservation observation_;
+};
+} // namespace
+
+RunnerResult SimRunner::Run(const RunnerOptions &options,
+    const volatile std::sig_atomic_t *running) {
+  RunnerResult result;
+  std::string error;
+  if (!PrepareOutputDirectory(options.outputDirectory, error)) {
+    result.exitCode = RunnerExitCode::OutputFailure;
+    result.error = std::move(error);
+    return result;
+  }
+
+  SimRunInfo info{
+      .scenarioName = options.scenarioPath.stem().string(),
+      .scenarioFile = "scenario.yaml",
+      .startedAt = GetWallClockTimestamp(),
+      .outputDirectory = options.outputDirectory,
+  };
+
+  std::string scenarioBytes;
+  if (!ReadFileBytes(options.scenarioPath,
+          "scenario file",
+          scenarioBytes,
+          error)) {
+    result.exitCode = RunnerExitCode::ScenarioLoadFailure;
+    result.error = std::move(error);
+    WriteFinalManifest(info, result);
+    return result;
+  }
+  info.scenarioDigest = common::crypto::Sha256Hex(scenarioBytes);
+  if (!WriteScenarioSnapshot(options.outputDirectory,
+          options.scenarioPath,
+          scenarioBytes,
+          error)) {
+    result.exitCode = RunnerExitCode::OutputFailure;
+    result.error = std::move(error);
+    WriteFinalManifest(info, result);
+    return result;
+  }
+
+  sim::SimScenario scenario;
+  sim::ScenarioLoadMetadata loadMetadata;
+  if (!sim::SimScenarioSerializer::Deserialize(scenarioBytes,
+          scenario,
+          error,
+          &loadMetadata)) {
+    result.exitCode = RunnerExitCode::ScenarioLoadFailure;
+    result.error = std::move(error);
+    WriteFinalManifest(info, result);
+    return result;
+  }
+  for (const std::string &warning : loadMetadata.warnings) {
+    std::cerr << "[runner] warning: " << warning << '\n';
+  }
+  if (loadMetadata.legacyVariant) {
+    result.exitCode = RunnerExitCode::ScenarioLoadFailure;
+    result.error = "Deprecated scenario field 'autopilot' cannot be used in "
+                   "headless execution. Remove it from the Scenario; baseline "
+                   "and primary are always run together.";
+    WriteFinalManifest(info, result);
+    return result;
+  }
+  if (!sim::ValidateSimScenario(scenario, &error)) {
+    result.exitCode = RunnerExitCode::ScenarioLoadFailure;
+    result.error = std::move(error);
+    info.scenarioName = scenario.name;
+    info.durationSec = scenario.durationSec;
+    WriteFinalManifest(info, result);
+    return result;
+  }
+
+  info.scenarioName = scenario.name;
+  info.scenarioSchemaVersion =
+      static_cast<std::uint32_t>(scenario.schemaVersion);
+  info.scenarioType = scenario.scenarioType;
+  info.aircraft = scenario.aircraft;
+  info.dtSec = scenario.dtSec;
+  info.durationSec = scenario.durationSec;
+  const sim::ScenarioSource source{
+      .file = info.scenarioFile,
+      .digestSha256 = info.scenarioDigest,
+  };
+  sim::ExecutionParameterSet baselineParameters;
+  const std::filesystem::path parameterPath =
+      options.outputDirectory / "parameters.yaml";
+  if (std::filesystem::is_regular_file(parameterPath)) {
+    std::string parameterBytes;
+    if (!ReadFileBytes(parameterPath,
+            "parameters.yaml",
+            parameterBytes,
+            error)) {
+      result.exitCode = RunnerExitCode::ScenarioLoadFailure;
+      result.error = std::move(error);
+      WriteFinalManifest(info, result);
+      return result;
+    }
+    info.parameterFile = "parameters.yaml";
+    info.parameterDigest = common::crypto::Sha256Hex(parameterBytes);
+  }
+  if (!LoadControllerParameters(options.outputDirectory,
+          scenario,
+          baselineParameters,
+          error)) {
+    result.exitCode = RunnerExitCode::ScenarioLoadFailure;
+    result.error = std::move(error);
+    WriteFinalManifest(info, result);
+    return result;
+  }
+  const sim::ComparisonExecutionRequest executionRequest{
+      .scenario = scenario,
+      .source = source,
+      .baselineParameters = std::move(baselineParameters),
+      .primaryParameters = {},
+  };
+  std::optional<sim::ExecutionVariant> failedVariant;
+  std::unique_ptr<IExecutionSession> session =
+      ComparisonExecutionSession::Create(executionRequest,
+          error,
+          failedVariant);
+  if (session == nullptr) {
+    result.exitCode = RunnerExitCode::SimInitializationFailure;
+    result.error = std::move(error);
+    result.baselineStatus = "failed";
+    result.primaryStatus = "failed";
+    if (failedVariant == sim::ExecutionVariant::Baseline) {
+      result.baselineError = result.error;
+      result.primaryError = "stopped because baseline initialization failed";
+    } else if (failedVariant == sim::ExecutionVariant::Primary) {
+      result.baselineError = "stopped because primary initialization failed";
+      result.primaryError = result.error;
+    } else {
+      result.baselineError = result.error;
+      result.primaryError = result.error;
+    }
+    WriteFinalManifest(info, result);
+    return result;
+  }
+
+  std::vector<ISimRunObserver *> startedObservers;
+  const SimRunObservation initialObservation =
+      session->TakeObservation();
+  for (ISimRunObserver *observer : observers_) {
+    std::string observerError;
+    if (!observer->OnRunStarted(info, initialObservation, observerError)) {
+      result.exitCode = RunnerExitCode::OutputFailure;
+      result.error = observerError.empty() ? "run observer failed to start"
+                                           : std::move(observerError);
+      session->Stop();
+      result.simulationTimeSec = 0.0;
+      session->PopulateVariantResults(result);
+      for (ISimRunObserver *startedObserver : startedObservers) {
+        observerError.clear();
+        if (!startedObserver->OnRunFinished(info, result, observerError)) {
+          SetOutputFailure(result,
+              observerError.empty() ? "run observer failed to finalize"
+                                    : std::move(observerError));
+        }
+      }
+      session->Shutdown();
+      WriteFinalManifest(info, result);
+      return result;
+    }
+    startedObservers.push_back(observer);
+  }
+
+  std::cout << "[runner] scenario: " << scenario.name << '\n'
+            << "[runner] variants: baseline, primary\n";
+  std::cout << "[runner] dt: " << std::fixed << std::setprecision(6)
+            << scenario.dtSec << '\n'
+            << "[runner] duration: " << std::setprecision(3)
+            << scenario.durationSec << '\n'
+            << "[runner] starting\n";
+  const Clock::time_point start = Clock::now();
+  while (session->IsRunning()) {
+    if (running != nullptr && *running == 0) {
+      result.status = "interrupted";
+      result.exitCode = RunnerExitCode::GeneralFailure;
+      result.error = "interrupted by signal";
+      session->Stop();
+      break;
+    }
+    if (!session->Tick()) {
+      result.status = "failed";
+      result.exitCode = RunnerExitCode::SimExecutionFailure;
+      result.error = session->GetLastError();
+      session->Stop();
+      break;
+    }
+    result.steps = session->GetStepCount();
+    const SimRunObservation observation = session->TakeObservation();
+    for (ISimRunObserver *observer : startedObservers) {
+      std::string observerError;
+      if (!observer->OnSimStep(info, observation, observerError)) {
+        result.status = "failed";
+        result.exitCode = RunnerExitCode::OutputFailure;
+        result.error = observerError.empty()
+                           ? "run observer failed to consume simulation step"
+                           : std::move(observerError);
+        session->Stop();
+        break;
+      }
+    }
+    if (result.exitCode == RunnerExitCode::OutputFailure) {
+      break;
+    }
+  }
+  const std::chrono::duration<double> wallDuration = Clock::now() - start;
+  result.wallTimeSec = wallDuration.count();
+  result.steps = session->GetStepCount();
+  result.simulationTimeSec = session->GetSimulationTimeSec();
+  result.realtimeFactor = result.wallTimeSec > 0.0
+                              ? result.simulationTimeSec / result.wallTimeSec
+                              : 0.0;
+  if (result.error.empty()) {
+    result.status = "completed";
+    result.exitCode = RunnerExitCode::Success;
+  }
+  session->PopulateVariantResults(result);
+  for (ISimRunObserver *observer : startedObservers) {
+    std::string observerError;
+    if (!observer->OnRunFinished(info, result, observerError)) {
+      SetOutputFailure(result,
+          observerError.empty() ? "run observer failed to finalize"
+                                : std::move(observerError));
+    }
+  }
+  session->Shutdown();
+
+  WriteFinalManifest(info, result);
+  std::cout << "[runner] " << result.status << '\n'
+            << "[runner] sim time: " << std::fixed << std::setprecision(2)
+            << result.simulationTimeSec << " s\n"
+            << "[runner] wall time: " << std::setprecision(2)
+            << result.wallTimeSec << " s\n"
+            << "[runner] speed: " << std::setprecision(2)
+            << result.realtimeFactor << "x realtime\n";
+  return result;
+}
+} // namespace runner

@@ -7,7 +7,7 @@
 #include <optional>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 using ScalarEditorChangedAction = std::function<void(double)>;
 
 std::optional<double> NormalizeScalarEditorValue(double value, double minimum,
@@ -63,4 +63,4 @@ private:
 };
 
 ScalarEditorBuilder ScalarEditor(std::string id, double value);
-} // namespace FlightUI
+} // namespace ui

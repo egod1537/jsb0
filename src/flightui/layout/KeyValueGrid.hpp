@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 class KeyValueGridBuilder {
 public:
   // Lifetime
@@ -44,4 +44,4 @@ private:
 };
 
 KeyValueGridBuilder KeyValueGrid(std::string id);
-} // namespace FlightUI
+} // namespace ui

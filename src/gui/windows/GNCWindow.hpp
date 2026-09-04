@@ -25,7 +25,7 @@ public:
   }
 
 protected:
-  void OnRender(const sim::SimulationSnapshot &snapshot) override;
+  void OnRender(const sim::SimSnapshot &snapshot) override;
 
 private:
   // Dependencies

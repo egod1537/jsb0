@@ -237,7 +237,8 @@ bool MyAutopilot::SubmitLinearization(sim::Aircraft &aircraft,
 
   sim::FDMState sourceState = aircraft.ExtractFDMState(sim::FDMStateFlags::All);
   if (asyncLinearizer_->Submit(linearizationGeneration_,
-          aircraft.GetConfig(),
+          aircraft.GetAircraftName(),
+          aircraft.GetSimulationHz(),
           aircraft.GetCurrentCondition(),
           std::move(sourceState))) {
     lastLinearizationCycleSimTimeSec_ = simulationTimeSec;

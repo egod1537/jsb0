@@ -2,7 +2,7 @@
 
 #include "flightui/core/UICommon.hpp"
 
-namespace FlightUI {
+namespace ui {
 inline constexpr float ReferenceUIWidth = 1280.0F;
 inline constexpr float ReferenceUIHeight = 720.0F;
 inline constexpr float MinimumUIScale = 0.70F;
@@ -15,4 +15,4 @@ float GetUIScale();
 float Ui(float value);
 Vector2 Ui(Vector2 value);
 Vector2 UiSize(Vector2 value);
-} // namespace FlightUI
+} // namespace ui

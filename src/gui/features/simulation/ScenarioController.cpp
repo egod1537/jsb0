@@ -1,7 +1,7 @@
 #include "gui/features/simulation/ScenarioController.hpp"
 #include "common/crypto/Sha256.hpp"
 
-#include "sim/scenario/SimulationScenarioSerializer.hpp"
+#include "sim/scenario/SimScenarioSerializer.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -64,16 +64,16 @@ bool ScenarioController::IsDirty() const {
   return model_.draft != model_.cleanScenario;
 }
 
-void ScenarioController::Handle(const ScenarioDraftChanged &event) {
+void ScenarioController::OnEvent(const ScenarioDraftChanged &event) {
   model_.draft = event.draft;
 }
 
-void ScenarioController::Handle(const ExecutionVariantChanged &event) {
+void ScenarioController::OnEvent(const ExecutionVariantChanged &event) {
   model_.executionVariant = event.variant;
 }
 
 void ScenarioController::NewScenario() {
-  model_.draft = sim::SimulationScenario{};
+  model_.draft = sim::SimScenario{};
   model_.cleanScenario = model_.draft;
   model_.currentFilePath.clear();
   model_.source = {};
@@ -83,7 +83,7 @@ void ScenarioController::NewScenario() {
 }
 
 void ScenarioController::ResetDefaults() {
-  model_.draft = sim::SimulationScenario{};
+  model_.draft = sim::SimScenario{};
 }
 
 void ScenarioController::RefreshAvailableScenarios() {
@@ -108,10 +108,10 @@ void ScenarioController::RefreshAvailableScenarios() {
 
 bool ScenarioController::Load(const std::filesystem::path &path) {
   const std::filesystem::path resolvedPath = ResolvePath(path);
-  sim::SimulationScenario loadedScenario;
+  sim::SimScenario loadedScenario;
   sim::ScenarioLoadMetadata loadMetadata;
   std::string error;
-  if (!sim::SimulationScenarioSerializer::Load(resolvedPath,
+  if (!sim::SimScenarioSerializer::Load(resolvedPath,
           loadedScenario,
           error,
           &loadMetadata)) {
@@ -151,7 +151,7 @@ bool ScenarioController::Save() {
 bool ScenarioController::SaveAs(const std::filesystem::path &path) {
   const std::filesystem::path resolvedPath = ResolvePath(path);
   std::string error;
-  if (!sim::SimulationScenarioSerializer::Save(resolvedPath,
+  if (!sim::SimScenarioSerializer::Save(resolvedPath,
           model_.draft,
           error)) {
     SetStatus(std::move(error), true);
@@ -160,7 +160,7 @@ bool ScenarioController::SaveAs(const std::filesystem::path &path) {
 
   model_.source.file = resolvedPath.string();
   model_.source.digestSha256 = common::crypto::Sha256Hex(
-      sim::SimulationScenarioSerializer::Serialize(model_.draft));
+      sim::SimScenarioSerializer::Serialize(model_.draft));
   model_.cleanScenario = model_.draft;
   model_.currentFilePath = resolvedPath;
   model_.suggestedFileName = resolvedPath.filename().string();
@@ -192,7 +192,7 @@ bool ScenarioController::ResolveFileName(std::string_view input,
 
 bool ScenarioController::Apply() {
   std::string validationError;
-  if (!sim::ValidateSimulationScenario(model_.draft, &validationError)) {
+  if (!sim::ValidateSimScenario(model_.draft, &validationError)) {
     model_.lastApplySucceeded = false;
     SetStatus(std::move(validationError), true);
     return false;
@@ -217,7 +217,7 @@ bool ScenarioController::Apply() {
   return model_.lastApplySucceeded;
 }
 
-void ScenarioController::Handle(const ScenarioApplyCompleted &event) {
+void ScenarioController::OnEvent(const ScenarioApplyCompleted &event) {
   model_.applyPending = false;
   model_.lastApplySucceeded = event.succeeded;
   if (event.succeeded) {

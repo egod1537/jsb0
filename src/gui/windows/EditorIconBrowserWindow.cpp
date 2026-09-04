@@ -26,11 +26,11 @@ EditorIconBrowserWindow::EditorIconBrowserWindow(EditorIconRegistry &icons)
   SetVisible(false);
 }
 
-void EditorIconBrowserWindow::OnRender(const sim::SimulationSnapshot &) {
+void EditorIconBrowserWindow::OnRender(const sim::SimSnapshot &) {
   const std::vector<EditorIconInfo> &iconIndex = icons_.GetIndex();
 
   ImGui::SetNextItemWidth(
-      std::min(FlightUI::Ui(380.0F), ImGui::GetContentRegionAvail().x * 0.6F));
+      std::min(ui::Ui(380.0F), ImGui::GetContentRegionAvail().x * 0.6F));
   const bool searchChanged = ImGui::InputTextWithHint("##EditorIconSearch",
       "Search icon name or relative path",
       searchText_.data(),
@@ -57,15 +57,15 @@ void EditorIconBrowserWindow::OnRender(const sim::SimulationSnapshot &) {
 
   ImGui::TableSetupColumn("Preview",
       ImGuiTableColumnFlags_WidthFixed,
-      FlightUI::Ui(54.0F));
+      ui::Ui(54.0F));
   ImGui::TableSetupColumn("Asset Name",
       ImGuiTableColumnFlags_WidthFixed,
-      FlightUI::Ui(240.0F));
+      ui::Ui(240.0F));
   ImGui::TableSetupColumn("Relative Name", ImGuiTableColumnFlags_WidthStretch);
   ImGui::TableHeadersRow();
 
-  const float previewSize = FlightUI::Ui(PreviewSize);
-  const float rowHeight = FlightUI::Ui(RowHeight);
+  const float previewSize = ui::Ui(PreviewSize);
+  const float rowHeight = ui::Ui(RowHeight);
   ImGuiListClipper clipper;
   clipper.Begin(static_cast<int>(filteredIcons_.size()), rowHeight);
   while (clipper.Step()) {

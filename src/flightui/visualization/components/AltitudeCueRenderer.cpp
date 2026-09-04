@@ -108,8 +108,8 @@ void AltitudeCueRenderer::Render(RenderContext &context) const {
       "AGL %.1f m",
       aircraft.state.altitudeAglM);
   context.canvas.GetDrawList().AddText(
-      ImVec2(projectedLabel->x + FlightUI::Ui(8.0F),
-          projectedLabel->y - FlightUI::Ui(8.0F)),
+      ImVec2(projectedLabel->x + ui::Ui(8.0F),
+          projectedLabel->y - ui::Ui(8.0F)),
       IM_COL32(255, 226, 150, 255),
       label);
 }

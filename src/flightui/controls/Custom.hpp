@@ -2,6 +2,6 @@
 
 #include "flightui/core/UIElement.hpp"
 
-namespace FlightUI {
+namespace ui {
 UIElement Custom(Action drawAction);
 }

@@ -1,18 +1,18 @@
 #include "gui/features/linearization/LinearizationController.hpp"
 
-#include "messaging/SimulationMessageClient.hpp"
+#include "messaging/SimMessageClient.hpp"
 
 namespace gui {
 LinearizationController::LinearizationController(
-    application::SimulationMessageClient &client)
+    app::SimMessageClient &client)
     : client_(client) {}
 
-void LinearizationController::Handle(
+void LinearizationController::OnEvent(
     const AutomaticLinearizationChanged &event) {
   client_.SetAutomaticLinearizationEnabled(event.enabled);
 }
 
-void LinearizationController::Handle(
+void LinearizationController::OnEvent(
     const LinearizationValueTransformChanged &event) {
   model_.valueTransform = event.transform;
 }

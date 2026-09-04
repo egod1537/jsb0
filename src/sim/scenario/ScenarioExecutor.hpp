@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sim/scenario/SimulationScenario.hpp"
+#include "sim/scenario/SimScenario.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -33,7 +33,7 @@ public:
   explicit ScenarioExecutor(Simulation &simulation);
 
   // Execution lifecycle
-  bool Start(const SimulationScenario &scenario, double dtSec);
+  bool Start(const SimScenario &scenario, double dtSec);
   ScenarioStepResult Step();
   void Stop();
 
@@ -45,7 +45,7 @@ public:
   double GetStepSizeSec() const;
   std::uint64_t GetStepCount() const;
   std::uint64_t GetTargetStepCount() const;
-  const SimulationScenario *GetScenario() const;
+  const SimScenario *GetScenario() const;
   const std::string &GetLastError() const;
   std::vector<ScenarioCommandActivation> TakeCommandActivations();
 
@@ -63,7 +63,7 @@ private:
   Simulation &simulation_;
 
   // Run configuration
-  SimulationScenario scenario_;
+  SimScenario scenario_;
   double dtSec_ = 0.0;
   std::uint64_t targetStepCount_ = 0;
   std::vector<std::uint64_t> eventStepIndices_;

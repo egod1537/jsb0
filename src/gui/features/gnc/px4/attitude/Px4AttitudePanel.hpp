@@ -7,12 +7,12 @@ struct BaselineAutopilotPanelProps;
 
 class Px4AttitudePanel {
 public:
-  static FlightUI::UIElement BuildRoll(
+  static ui::UIElement BuildRoll(
       const BaselineAutopilotPanelProps &props);
-  static FlightUI::UIElement BuildPitch(
+  static ui::UIElement BuildPitch(
       const BaselineAutopilotPanelProps &props);
-  static FlightUI::UIElement BuildCourse(
+  static ui::UIElement BuildCourse(
       const BaselineAutopilotPanelProps &props);
-  static FlightUI::UIElement BuildYaw(const BaselineAutopilotPanelProps &props);
+  static ui::UIElement BuildYaw(const BaselineAutopilotPanelProps &props);
 };
 } // namespace gui

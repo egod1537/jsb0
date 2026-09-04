@@ -11,7 +11,6 @@
 #include <vector>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr const char *PopupId = "New Scenario...";
@@ -40,8 +39,8 @@ const char *TrimModeLabel(gnc::TrimMode mode) {
   return "Unknown";
 }
 
-UI::PropertyGridBuilder MakeGrid(const char *id) {
-  return UI::PropertyGrid(id)
+ui::PropertyGridBuilder MakeGrid(const char *id) {
+  return ui::PropertyGrid(id)
       .LabelWidth(LabelWidth)
       .ColumnSpacing(6.0F)
       .RowPadding(2.0F)
@@ -63,13 +62,13 @@ void ScenarioSetupPopup::Cancel() {
   closeRequested_ = true;
 }
 
-void ScenarioSetupPopup::Draw(const sim::SimulationSnapshot &snapshot) {
+void ScenarioSetupPopup::Draw(const sim::SimSnapshot &snapshot) {
   if (openRequested_) {
     ImGui::OpenPopup(PopupId);
     openRequested_ = false;
   }
 
-  ImGui::SetNextWindowSize(ImVec2(UI::Ui(PopupWidth), UI::Ui(PopupHeight)),
+  ImGui::SetNextWindowSize(ImVec2(ui::Ui(PopupWidth), ui::Ui(PopupHeight)),
       ImGuiCond_Appearing);
   if (!ImGui::BeginPopupModal(PopupId,
           nullptr,
@@ -105,15 +104,15 @@ void ScenarioSetupPopup::DrawSelection() {
     }
   }
 
-  UI::PropertyGridBuilder fields = MakeGrid("ScenarioSetupSelection");
+  ui::PropertyGridBuilder fields = MakeGrid("ScenarioSetupSelection");
   if (labels.empty()) {
     fields.Add("Scenario Selection",
-        UI::TextDisabled("No .yaml scenarios found"));
+        ui::TextDisabled("No .yaml scenarios found"));
   } else {
     const std::vector<std::filesystem::path> paths =
         model.availableScenarioFiles;
     fields.Add("Scenario Selection",
-        UI::Combo("##ScenarioSelection", selectedIndex, labels)
+        ui::Combo("##ScenarioSelection", selectedIndex, labels)
             .OnChanged([this, paths](int index) {
               if (index >= 0
                   && static_cast<std::size_t>(index) < paths.size()) {
@@ -124,19 +123,19 @@ void ScenarioSetupPopup::DrawSelection() {
 
   const int variantIndex = VariantIndex(model.executionVariant);
   fields.Add("Autopilot",
-      UI::Combo("##ExecutionVariant", variantIndex, {"Baseline", "Primary"})
+      ui::Combo("##ExecutionVariant", variantIndex, {"Baseline", "Primary"})
           .Tooltip("Execution Variant; the Scenario definition remains shared")
           .OnChanged([this](int index) {
-            controller_.Handle(
+            controller_.OnEvent(
                 ExecutionVariantChanged{VariantFromIndex(index)});
           }));
-  static_cast<UI::UIElement>(fields).Render();
+  static_cast<ui::UIElement>(fields).Render();
 
   ImGui::TextDisabled("Directory: %s", model.directory.string().c_str());
   if (!model.statusMessage.empty()) {
     if (model.statusIsError) {
-      static_cast<UI::UIElement>(
-          UI::StatusBadge("Error", UI::StatusTone::Error))
+      static_cast<ui::UIElement>(
+          ui::StatusBadge("Error", ui::StatusTone::Error))
           .Render();
       ImGui::SameLine();
     }
@@ -146,18 +145,18 @@ void ScenarioSetupPopup::DrawSelection() {
 
 void ScenarioSetupPopup::DrawSummary() {
   const ScenarioFileModel &model = controller_.GetModel();
-  const sim::SimulationScenario &scenario = model.draft;
+  const sim::SimScenario &scenario = model.draft;
 
   ImGui::SeparatorText("Scenario");
-  UI::PropertyGridBuilder identity = MakeGrid("ScenarioSetupIdentity");
-  identity.Add("Name / ID", UI::Text(scenario.name))
-      .Add("Scenario Type", UI::Text(scenario.scenarioType))
-      .Add("Aircraft", UI::Text(scenario.aircraft))
+  ui::PropertyGridBuilder identity = MakeGrid("ScenarioSetupIdentity");
+  identity.Add("Name / ID", ui::Text(scenario.name))
+      .Add("Scenario Type", ui::Text(scenario.scenarioType))
+      .Add("Aircraft", ui::Text(scenario.aircraft))
       .Add("Duration",
-          UI::ValueLabel("##SetupDuration", scenario.durationSec, "%.3f s"))
+          ui::ValueLabel("##SetupDuration", scenario.durationSec, "%.3f s"))
       .Add("Time Step",
-          UI::ValueLabel("##SetupTimeStep", scenario.dtSec, "%.6f s"));
-  static_cast<UI::UIElement>(identity).Render();
+          ui::ValueLabel("##SetupTimeStep", scenario.dtSec, "%.6f s"));
+  static_cast<ui::UIElement>(identity).Render();
 
   ImGui::SeparatorText("Initial Condition");
   const sim::InitialCondition &condition = scenario.initialCondition;
@@ -168,26 +167,26 @@ void ScenarioSetupPopup::DrawSummary() {
       math::RadToDeg(condition.rollRad),
       math::RadToDeg(condition.pitchRad),
       math::RadToDeg(condition.headingRad));
-  UI::PropertyGridBuilder initial = MakeGrid("ScenarioSetupInitial");
+  ui::PropertyGridBuilder initial = MakeGrid("ScenarioSetupInitial");
   initial
       .Add("Altitude ASL",
-          UI::ValueLabel(
+          ui::ValueLabel(
               "##SetupAltitude", condition.altitudeAslM, "%.3f m"))
       .Add("CAS",
-          UI::ValueLabel("##SetupAirspeed",
+          ui::ValueLabel("##SetupAirspeed",
               condition.calibratedAirspeedMps,
               "%.3f m/s"))
-      .Add("Attitude", UI::Text(attitudeSummary))
+      .Add("Attitude", ui::Text(attitudeSummary))
       .Add("Environment",
-          UI::Text(scenario.windEnabled ? "Wind enabled" : "No wind"))
+          ui::Text(scenario.windEnabled ? "Wind enabled" : "No wind"))
       .Add("Trim",
-          UI::Text(std::string(scenario.runTrim ? "Enabled, " : "Disabled, ")
+          ui::Text(std::string(scenario.runTrim ? "Enabled, " : "Disabled, ")
                    + TrimModeLabel(scenario.trimMode)));
-  static_cast<UI::UIElement>(initial).Render();
+  static_cast<ui::UIElement>(initial).Render();
 
   ImGui::SeparatorText("Events / Commands");
   if (scenario.events.empty()) {
-    UI::TextDisabled("No events.").Render();
+    ui::TextDisabled("No events.").Render();
   } else {
     for (const sim::ScenarioEventDefinition &event : scenario.events) {
       char summary[128]{};
@@ -196,15 +195,15 @@ void ScenarioSetupPopup::DrawSummary() {
           "%.3f s   roll command = %.3f deg",
           event.timeSec,
           math::RadToDeg(event.command.rollRad));
-      UI::Text(summary).Render();
+      ui::Text(summary).Render();
     }
   }
 }
 
-void ScenarioSetupPopup::DrawActions(const sim::SimulationSnapshot &snapshot) {
+void ScenarioSetupPopup::DrawActions(const sim::SimSnapshot &snapshot) {
   ImGui::Spacing();
   ImGui::Separator();
-  const float buttonWidth = UI::Ui(120.0F);
+  const float buttonWidth = ui::Ui(120.0F);
   const float totalWidth = buttonWidth * 2.0F + ImGui::GetStyle().ItemSpacing.x;
   ImGui::SetCursorPosX(
       ImGui::GetCursorPosX()
@@ -215,7 +214,7 @@ void ScenarioSetupPopup::DrawActions(const sim::SimulationSnapshot &snapshot) {
   ImGui::SameLine();
 
   const bool isStopped =
-      snapshot.status.executionState == sim::SimulationExecutionState::Stopped;
+      snapshot.status.executionState == sim::SimExecutionState::Stopped;
   ImGui::BeginDisabled(!isStopped);
   if (ImGui::Button("Apply Scenario", ImVec2(buttonWidth, 0.0F))
       && controller_.Apply()) {

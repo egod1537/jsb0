@@ -20,7 +20,6 @@
 #include <vector>
 
 namespace gui::plotting {
-namespace UI = FlightUI;
 
 namespace {
 constexpr std::size_t MinimumRenderedSamplesPerChannel = 512;
@@ -138,15 +137,15 @@ void DrawTrackingToleranceBand(
   DrawDashedPlotLine(samples,
       tolerance,
       packedBoundaryColor,
-      UI::Ui(TrackingToleranceBoundaryDashLength),
-      UI::Ui(TrackingToleranceBoundaryGapLength),
-      std::max(1.0F, UI::Ui(TrackingToleranceBoundaryThickness)));
+      ui::Ui(TrackingToleranceBoundaryDashLength),
+      ui::Ui(TrackingToleranceBoundaryGapLength),
+      std::max(1.0F, ui::Ui(TrackingToleranceBoundaryThickness)));
   DrawDashedPlotLine(samples,
       -tolerance,
       packedBoundaryColor,
-      UI::Ui(TrackingToleranceBoundaryDashLength),
-      UI::Ui(TrackingToleranceBoundaryGapLength),
-      std::max(1.0F, UI::Ui(TrackingToleranceBoundaryThickness)));
+      ui::Ui(TrackingToleranceBoundaryDashLength),
+      ui::Ui(TrackingToleranceBoundaryGapLength),
+      std::max(1.0F, ui::Ui(TrackingToleranceBoundaryThickness)));
   ImPlot::PopPlotClipRect();
 }
 
@@ -287,8 +286,8 @@ void MonitorPlotRenderer::Draw(MonitorPlotState &plot,
     DrawTelemetryLegend(plot, renderedSeries);
   }
 
-  UI::PlotBuilder plotBuilder =
-      UI::Plot("##TelemetryPlot" + std::to_string(plot.id))
+  ui::PlotBuilder plotBuilder =
+      ui::Plot("##TelemetryPlot" + std::to_string(plot.id))
           .Height(plotHeight)
           .Flags(ImPlotFlags_NoTitle | ImPlotFlags_NoInputs
                  | ImPlotFlags_NoBoxSelect)
@@ -313,10 +312,10 @@ void MonitorPlotRenderer::Draw(MonitorPlotState &plot,
     }
     const telemetry::TelemetrySample *data = series.samples.data();
     plotBuilder.AddLine(series.plotLabel,
-        UI::DataView(&data->timeSec,
+        ui::DataView(&data->timeSec,
             series.samples.size(),
             sizeof(telemetry::TelemetrySample)),
-        UI::DataView(&data->value,
+        ui::DataView(&data->value,
             series.samples.size(),
             sizeof(telemetry::TelemetrySample)),
         series.color);
@@ -328,7 +327,7 @@ void MonitorPlotRenderer::Draw(MonitorPlotState &plot,
       DrawTelemetryHoverTooltip(renderedSeries, *hoverTimeSec, plot.yAxisLabel);
     }
   });
-  UI::UIElement plotElement = plotBuilder;
+  ui::UIElement plotElement = plotBuilder;
   plotElement.Render();
 
   if (plot.channels.empty()) {

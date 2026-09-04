@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 class StatusBadgeBuilder {
 public:
   // Lifetime
@@ -35,4 +35,4 @@ private:
 };
 
 StatusBadgeBuilder StatusBadge(std::string label, StatusTone tone);
-} // namespace FlightUI
+} // namespace ui

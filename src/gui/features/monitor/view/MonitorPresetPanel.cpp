@@ -7,7 +7,6 @@
 #include <imgui.h>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 enum class PresetSelectionAction {
@@ -19,18 +18,18 @@ enum class PresetSelectionAction {
 
 PresetSelectionAction DrawPresetSelectionHeader() {
   PresetSelectionAction action = PresetSelectionAction::NoChange;
-  const UI::UIElement toolbar =
-      UI::Toolbar()
+  const ui::UIElement toolbar =
+      ui::Toolbar()
           .Id("PresetSelection")
           .Compact()
           .Height(26.0F)
-          .Left(UI::Text("Selection"))
-          .Right(UI::HorizontalLayout().Spacing(
-              4.0F)[+UI::Button("All").OnAction([&action] {
+          .Left(ui::Text("Selection"))
+          .Right(ui::HorizontalLayout().Spacing(
+              4.0F)[+ui::Button("All").OnAction([&action] {
             action = PresetSelectionAction::SelectAll;
-          }) + UI::Button("None").OnAction([&action] {
+          }) + ui::Button("None").OnAction([&action] {
             action = PresetSelectionAction::SelectNone;
-          }) + UI::Button("Reset").OnAction([&action] {
+          }) + ui::Button("Reset").OnAction([&action] {
             action = PresetSelectionAction::Reset;
           })]);
   toolbar.Render();

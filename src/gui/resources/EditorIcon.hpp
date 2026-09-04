@@ -18,7 +18,7 @@ struct EditorIconInfo {
   std::string relativeName;
 };
 
-namespace EditorIconAliases {
+namespace editor_icon_aliases {
 inline constexpr const char *GNC = "d_SettingsIcon";
 inline constexpr const char *Scenario = "d_TextAsset Icon";
 inline constexpr const char *FlightViz = "d_SceneViewCamera";
@@ -30,5 +30,5 @@ inline constexpr const char *Monitor = "d_UnityEditor.ProfilerWindow";
 inline constexpr const char *Simulation = "d_PlayButton";
 inline constexpr const char *Linearization =
     "d_UnityEditor.Graphs.AnimatorControllerTool";
-} // namespace EditorIconAliases
+} // namespace editor_icon_aliases
 } // namespace gui

@@ -1,28 +1,25 @@
 #include "gui/windows/FlightConsoleWindow.hpp"
 #include "flightui/FlightUI.hpp"
-#include "sim/SimulationConfig.h"
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 
 namespace gui {
-namespace UI = FlightUI;
 
 FlightConsoleWindow::FlightConsoleWindow() : Window("Flight Console") {}
 
-void FlightConsoleWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
-  const sim::SimulationConfig &config = snapshot.config;
+void FlightConsoleWindow::OnRender(const sim::SimSnapshot &snapshot) {
   const sim::InitialCondition &initialCondition =
       snapshot.defaultInitialCondition;
 
   // clang-format off
-  FlightUI::UIElement content =
-      UI::VerticalLayout()
+  ui::UIElement content =
+      ui::VerticalLayout()
       [
-        +UI::Heading("JSB Flight Console")
-        + UI::Text("Aircraft: " + config.aircraftName)
-        + UI::ValueLabel("Simulation", config.simulationHz, "%.1f Hz")
-        + UI::ValueLabel("Initial altitude ASL", initialCondition.altitudeAslM,
+        +ui::Heading("JSB Flight Console")
+        + ui::Text("Aircraft: " + snapshot.aircraftName)
+        + ui::ValueLabel("Simulation", snapshot.simulationHz, "%.1f Hz")
+        + ui::ValueLabel("Initial altitude ASL", initialCondition.altitudeAslM,
                          "%.1f m")
-        + UI::ValueLabel("Initial CAS",
+        + ui::ValueLabel("Initial CAS",
                          initialCondition.calibratedAirspeedMps, "%.1f m/s")
       ];
   // clang-format on

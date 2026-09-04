@@ -1,11 +1,11 @@
 #include "runner/McapRunObserver.hpp"
-#include "runner/SimulationRunner.hpp"
+#include "runner/SimRunner.hpp"
 
 #include "contract/telemetry/mcap/McapRecordingReader.hpp"
 #include "contract/telemetry/mcap/McapTelemetrySchema.hpp"
-#include "sim/scenario/SimulationScenarioSerializer.hpp"
-#include "sim/runtime/SimulationComparison.hpp"
-#include "sim/runtime/SimulationRuntime.hpp"
+#include "sim/scenario/SimScenarioSerializer.hpp"
+#include "sim/runtime/SimComparison.hpp"
+#include "sim/runtime/SimRuntime.hpp"
 #include "telemetry/simulation.pb.h"
 
 #include <google/protobuf/descriptor.pb.h>
@@ -29,7 +29,7 @@ using runner::McapRunObserver;
 using runner::RunnerExitCode;
 using runner::RunnerOptions;
 using runner::RunnerResult;
-using runner::SimulationRunner;
+using runner::SimRunner;
 using telemetry::recording::McapRecordingReader;
 using telemetry::recording::RecordedChannelInfo;
 using telemetry::recording::RecordedSample;
@@ -78,7 +78,7 @@ RunnerOptions MakeOptions(const std::filesystem::path &output) {
 RunnerResult RunWithMcap(const RunnerOptions &options,
     const volatile std::sig_atomic_t *running = nullptr) {
   McapRunObserver observer;
-  SimulationRunner runner;
+  SimRunner runner;
   runner.AddObserver(observer);
   return runner.Run(options, running);
 }
@@ -158,7 +158,7 @@ void TestSuccessfulRunArtifactsAndSignals() {
       "failed to open runner MCAP: " + reader.GetLastError());
   Require(reader.GetRunInfo().scenarioName == "Headless Smoke",
       "runner MCAP scenario metadata is incorrect");
-  Require(reader.GetRunInfo().simulationDtSec == sim::DefaultSimulationDtSec,
+  Require(reader.GetRunInfo().simulationDtSec == opts::simulation::DtSec,
       "runner MCAP timestep metadata is incorrect");
   Require(reader.GetRunInfo().contractVersion == "2.0.0",
       "runner MCAP contract version is incorrect");
@@ -360,7 +360,7 @@ void TestInvalidParameterSetsAreRejected() {
 
   const RunnerResult outOfRange =
       runInvalid("out-of-range", "controller_parameters:\n  FW_R_TC: 9.0\n");
-  Require(outOfRange.exitCode == RunnerExitCode::SimulationInitializationFailure
+  Require(outOfRange.exitCode == RunnerExitCode::SimInitializationFailure
               && outOfRange.error.find("outside") != std::string::npos,
       "runner accepted an out-of-range controller parameter");
 
@@ -632,15 +632,15 @@ void TestInvalidScenarioFailsBeforeSimulationStarts() {
 }
 
 void TestOneComparisonRuntimeInitializationFailure() {
-  sim::SimulationScenario scenario;
+  sim::SimScenario scenario;
   std::string error;
   Require(
-      sim::SimulationScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
+      sim::SimScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
           scenario,
           error),
       "failed to load comparison initialization fixture");
   std::optional<sim::ExecutionVariant> failedVariant;
-  const auto comparison = sim::SimulationComparison::Create(
+  const auto comparison = sim::SimComparison::Create(
       scenario,
       {},
       error,
@@ -648,9 +648,9 @@ void TestOneComparisonRuntimeInitializationFailure() {
           std::string &factoryError) {
         if (execution.variant == sim::ExecutionVariant::Primary) {
           factoryError = "injected primary creation failure";
-          return std::unique_ptr<sim::SimulationRuntime>{};
+          return std::unique_ptr<sim::SimRuntime>{};
         }
-        return sim::SimulationRuntime::CreateForExecution(execution,
+        return sim::SimRuntime::CreateForExecution(execution,
             factoryError);
       },
       &failedVariant);
@@ -665,21 +665,21 @@ void TestOneComparisonRuntimeInitializationFailure() {
 }
 
 void TestOneVariantFailureStopsComparison() {
-  sim::SimulationScenario scenario;
+  sim::SimScenario scenario;
   std::string error;
   Require(
-      sim::SimulationScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
+      sim::SimScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
           scenario,
           error),
       "failed to load variant-failure fixture");
-  sim::SimulationRuntime *primaryRuntime = nullptr;
-  auto comparison = sim::SimulationComparison::Create(scenario,
+  sim::SimRuntime *primaryRuntime = nullptr;
+  auto comparison = sim::SimComparison::Create(scenario,
       {},
       error,
       [&](const sim::ResolvedExecutionSpec &execution,
           std::string &factoryError) {
         auto runtime =
-            sim::SimulationRuntime::CreateForExecution(execution, factoryError);
+            sim::SimRuntime::CreateForExecution(execution, factoryError);
         if (execution.variant == sim::ExecutionVariant::Primary) {
           primaryRuntime = runtime.get();
         }
@@ -705,10 +705,10 @@ void TestOneVariantFailureStopsComparison() {
 }
 
 void TestVariantParameterBoundary() {
-  sim::SimulationScenario scenario;
+  sim::SimScenario scenario;
   std::string error;
   Require(
-      sim::SimulationScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
+      sim::SimScenarioSerializer::Load(JSB_TEST_HEADLESS_SCENARIO_PATH,
           scenario,
           error),
       "failed to load parameter-boundary fixture");
@@ -721,7 +721,7 @@ void TestVariantParameterBoundary() {
       .baselineParameters = {{"FW_RR_FF", 2.7}},
       .primaryParameters = {},
   };
-  auto comparison = sim::SimulationComparison::Create(request,
+  auto comparison = sim::SimComparison::Create(request,
       error,
       [&](const sim::ResolvedExecutionSpec &execution,
           std::string &factoryError) {
@@ -732,7 +732,7 @@ void TestVariantParameterBoundary() {
           sawPrimaryParameters =
               execution.parameters == request.primaryParameters;
         }
-        return sim::SimulationRuntime::CreateForExecution(execution,
+        return sim::SimRuntime::CreateForExecution(execution,
             factoryError);
       });
   Require(comparison != nullptr, "parameterized comparison failed: " + error);

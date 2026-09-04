@@ -51,19 +51,19 @@ void TelemetryOverlay::Render(RenderContext &context) const {
       aircraftState.simulationTimeSec,
       viewMode);
   drawList.AddText(
-      ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(10.0F)),
+      ImVec2(min.x + ui::Ui(10.0F), min.y + ui::Ui(10.0F)),
       IM_COL32(232, 238, 246, 255),
       line);
 
   const std::string flightState = FormatTelemetryFlightState(aircraftState);
   drawList.AddText(
-      ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(30.0F)),
+      ImVec2(min.x + ui::Ui(10.0F), min.y + ui::Ui(30.0F)),
       IM_COL32(232, 238, 246, 255),
       flightState.c_str());
 
   const std::string attitude = FormatTelemetryAttitude(aircraftState);
   drawList.AddText(
-      ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(50.0F)),
+      ImVec2(min.x + ui::Ui(10.0F), min.y + ui::Ui(50.0F)),
       IM_COL32(232, 238, 246, 255),
       attitude.c_str());
 
@@ -76,7 +76,7 @@ void TelemetryOverlay::Render(RenderContext &context) const {
       controlInput.throttle,
       aircraft.pitchTrim);
   drawList.AddText(
-      ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(70.0F)),
+      ImVec2(min.x + ui::Ui(10.0F), min.y + ui::Ui(70.0F)),
       IM_COL32(178, 189, 202, 255),
       line);
 }

@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace FlightUI::Internal {
+namespace ui::internal {
 class IdScope {
 public:
   explicit IdScope(const std::string &id);
@@ -37,4 +37,4 @@ private:
 };
 
 void ShowTooltipIfHovered(const std::string &tooltip);
-} // namespace FlightUI::Internal
+} // namespace ui::internal

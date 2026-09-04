@@ -1,5 +1,6 @@
 #include "sim/linearization/AsyncAircraftLinearizer.hpp"
 
+#include "common/Options.hpp"
 #include "sim/linearization/AircraftLinearizer.hpp"
 
 #include <condition_variable>
@@ -23,8 +24,9 @@ public:
     worker_.join();
   }
 
-  bool Submit(std::uint64_t generation, const SimulationConfig &config,
-      const InitialCondition &initialCondition, FDMState sourceState) {
+  bool Submit(std::uint64_t generation, std::string_view aircraftName,
+      double simulationHz, const InitialCondition &initialCondition,
+      FDMState sourceState) {
     const std::scoped_lock lock(mutex_);
     if (stopRequested_ || pendingRequest_ || running_ || completion_) {
       return false;
@@ -32,7 +34,8 @@ public:
 
     pendingRequest_ = Request{
         .generation = generation,
-        .config = config,
+        .aircraftName = std::string(aircraftName),
+        .simulationHz = simulationHz,
         .initialCondition = initialCondition,
         .sourceState = std::move(sourceState),
     };
@@ -55,30 +58,28 @@ public:
 private:
   struct Request {
     std::uint64_t generation{};
-    SimulationConfig config;
+    std::string aircraftName;
+    double simulationHz = opts::simulation::Hz;
     InitialCondition initialCondition;
     FDMState sourceState;
   };
 
-  static bool HasSameConfiguration(const SimulationConfig &left,
-      const SimulationConfig &right) {
-    return left.aircraftName == right.aircraftName
-           && left.simulationHz == right.simulationHz;
-  }
-
   Completion Process(Request request) {
     Completion completion{.generation = request.generation};
     try {
-      if (!linearizerConfig_
-          || !HasSameConfiguration(*linearizerConfig_, request.config)) {
+      if (linearizer_ == nullptr || linearizerAircraftName_ != request.aircraftName
+          || linearizerSimulationHz_ != request.simulationHz) {
         auto linearizer = std::make_unique<AircraftLinearizer>();
-        if (!linearizer->Initialize(request.config, request.initialCondition)) {
+        if (!linearizer->Initialize(request.aircraftName,
+                request.simulationHz,
+                request.initialCondition)) {
           completion.errorMessage =
               "Failed to initialize asynchronous aircraft linearizer";
           return completion;
         }
         linearizer_ = std::move(linearizer);
-        linearizerConfig_ = request.config;
+        linearizerAircraftName_ = std::move(request.aircraftName);
+        linearizerSimulationHz_ = request.simulationHz;
       }
 
       completion.linearization = linearizer_->Linearize(request.sourceState);
@@ -128,7 +129,8 @@ private:
   std::optional<Completion> completion_;
 
   std::unique_ptr<AircraftLinearizer> linearizer_;
-  std::optional<SimulationConfig> linearizerConfig_;
+  std::string linearizerAircraftName_;
+  double linearizerSimulationHz_ = 0.0;
 };
 
 AsyncAircraftLinearizer::AsyncAircraftLinearizer()
@@ -137,10 +139,11 @@ AsyncAircraftLinearizer::AsyncAircraftLinearizer()
 AsyncAircraftLinearizer::~AsyncAircraftLinearizer() = default;
 
 bool AsyncAircraftLinearizer::Submit(std::uint64_t generation,
-    const SimulationConfig &config, const InitialCondition &initialCondition,
-    FDMState sourceState) {
+    std::string_view aircraftName, double simulationHz,
+    const InitialCondition &initialCondition, FDMState sourceState) {
   return impl_->Submit(generation,
-      config,
+      aircraftName,
+      simulationHz,
       initialCondition,
       std::move(sourceState));
 }

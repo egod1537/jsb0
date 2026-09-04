@@ -6,18 +6,13 @@
 
 namespace {
 gnc::IAutopilotAnalysis *FindAnalysis(sim::Simulation &simulation) {
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  return manager != nullptr
-             ? dynamic_cast<gnc::IAutopilotAnalysis *>(&manager->GetAutopilot())
-             : nullptr;
+  return dynamic_cast<gnc::IAutopilotAnalysis *>(
+      &simulation.GetFlightControlManager().GetAutopilot());
 }
 
 const gnc::IAutopilotAnalysis *FindAnalysis(const sim::Simulation &simulation) {
-  const auto *manager =
-      simulation.GetComponent<control::FlightControlManager>();
-  return manager != nullptr ? dynamic_cast<const gnc::IAutopilotAnalysis *>(
-                                  &manager->GetAutopilot())
-                            : nullptr;
+  return dynamic_cast<const gnc::IAutopilotAnalysis *>(
+      &simulation.GetFlightControlManager().GetAutopilot());
 }
 } // namespace
 

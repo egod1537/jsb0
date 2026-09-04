@@ -47,7 +47,7 @@ void MonitorController::SetInput(MonitorInput input) {
   }
   const telemetry::TelemetryTimeRange &range =
       *input_.primary->publishedTimeRange;
-  Handle(MonitorTelemetryRangeChanged{
+  OnEvent(MonitorTelemetryRangeChanged{
       {std::min(0.0, range.minSec), range.maxSec}});
 }
 
@@ -60,11 +60,11 @@ std::vector<MonitorPlotProps> MonitorController::BuildPlotProps() const {
   return props;
 }
 
-void MonitorController::Handle(const MonitorEvent &event) {
-  std::visit([this](const auto &typedEvent) { Handle(typedEvent); }, event);
+void MonitorController::OnEvent(const MonitorEvent &event) {
+  std::visit([this](const auto &typedEvent) { OnEvent(typedEvent); }, event);
 }
 
-void MonitorController::Handle(const MonitorLiveChanged &event) {
+void MonitorController::OnEvent(const MonitorLiveChanged &event) {
   state_.timeline.live = event.enabled;
   if (event.enabled) {
     UpdateLiveRanges();
@@ -73,30 +73,30 @@ void MonitorController::Handle(const MonitorLiveChanged &event) {
   }
 }
 
-void MonitorController::Handle(const MonitorViewRangeChanged &event) {
+void MonitorController::OnEvent(const MonitorViewRangeChanged &event) {
   state_.timeline.viewRange = event.range;
   state_.timeline.viewWindowSec = event.range.maxSec - event.range.minSec;
   ClampViewRange();
 }
 
-void MonitorController::Handle(const MonitorVisibleRangeChanged &event) {
+void MonitorController::OnEvent(const MonitorVisibleRangeChanged &event) {
   state_.timeline.visibleRange = event.range;
   state_.timeline.liveWindowSec = event.range.maxSec - event.range.minSec;
   ClampVisibleRange();
 }
 
-void MonitorController::Handle(const MonitorCursorMoved &event) {
+void MonitorController::OnEvent(const MonitorCursorMoved &event) {
   state_.timeline.cursorTimeSec = Clamp(event.timeSec,
       state_.timeline.totalRange.minSec,
       state_.timeline.totalRange.maxSec);
   state_.timeline.cursorInitialized = true;
 }
 
-void MonitorController::Handle(const MonitorSelectedRangeChanged &event) {
+void MonitorController::OnEvent(const MonitorSelectedRangeChanged &event) {
   state_.timeline.selectedRange = event.range;
 }
 
-void MonitorController::Handle(const MonitorZoomRequested &event) {
+void MonitorController::OnEvent(const MonitorZoomRequested &event) {
   if (!std::isfinite(event.wheelDelta) || event.wheelDelta == 0.0) {
     return;
   }
@@ -128,7 +128,7 @@ void MonitorController::Handle(const MonitorZoomRequested &event) {
   ClampViewRange();
 }
 
-void MonitorController::Handle(const MonitorPanRequested &event) {
+void MonitorController::OnEvent(const MonitorPanRequested &event) {
   if (!std::isfinite(event.deltaSec) || state_.timeline.live) {
     return;
   }
@@ -140,7 +140,7 @@ void MonitorController::Handle(const MonitorPanRequested &event) {
   ClampVisibleRange();
 }
 
-void MonitorController::Handle(const MonitorTelemetryRangeChanged &event) {
+void MonitorController::OnEvent(const MonitorTelemetryRangeChanged &event) {
   state_.timeline.totalRange = event.range;
   state_.timeline.historyRange = event.range;
   if (state_.timeline.live) {
@@ -153,11 +153,11 @@ void MonitorController::Handle(const MonitorTelemetryRangeChanged &event) {
   }
 }
 
-void MonitorController::Handle(const MonitorStateChanged &event) {
+void MonitorController::OnEvent(const MonitorStateChanged &event) {
   state_ = event.state;
 }
 
-void MonitorController::Handle(
+void MonitorController::OnEvent(
     const MonitorAutomaticLinearizationChanged &event) {
   parentEvents_.Emit(event);
 }

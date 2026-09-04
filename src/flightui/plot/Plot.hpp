@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace FlightUI {
+namespace ui {
 struct PlotAxisRange {
   double Min;
   double Max;
@@ -124,4 +124,4 @@ private:
 };
 
 PlotBuilder Plot(std::string title);
-} // namespace FlightUI
+} // namespace ui

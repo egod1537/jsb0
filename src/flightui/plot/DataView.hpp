@@ -4,7 +4,7 @@
 #include <span>
 #include <vector>
 
-namespace FlightUI {
+namespace ui {
 enum class DataType {
   None,
   Double,
@@ -41,4 +41,4 @@ private:
   std::size_t m_Stride;
   DataType m_Type;
 };
-} // namespace FlightUI
+} // namespace ui

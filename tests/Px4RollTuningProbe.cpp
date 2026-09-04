@@ -175,11 +175,7 @@ std::string Format(double value, int precision = 3) {
 }
 
 control::FlightControlManager &Manager(sim::Simulation &simulation) {
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  if (!manager) {
-    throw std::runtime_error("FlightControlManager is missing");
-  }
-  return *manager;
+  return simulation.GetFlightControlManager();
 }
 
 gnc::PX4Autopilot &Autopilot(sim::Simulation &simulation) {
@@ -468,9 +464,7 @@ private:
   double Reset(Gains gains, bool direct) {
     simulation_ = std::make_unique<sim::Simulation>(
         std::make_unique<gnc::PX4Autopilot>());
-    sim::SimulationConfig config;
-    config.simulationHz = hz_;
-    if (!simulation_->Initialize(config)) {
+    if (!simulation_->Initialize(opts::simulation::AircraftName, hz_)) {
       throw std::runtime_error(
           "Failed to initialize a fresh tuning simulation");
     }

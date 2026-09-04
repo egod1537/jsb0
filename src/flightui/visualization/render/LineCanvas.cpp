@@ -17,7 +17,7 @@ void LineCanvas::Fill(ImU32 color) {
 }
 
 void LineCanvas::Border(ImU32 color, float thickness) {
-  drawList_.AddRect(min_, max_, color, 0.0F, 0, FlightUI::Ui(thickness));
+  drawList_.AddRect(min_, max_, color, 0.0F, 0, ui::Ui(thickness));
 }
 
 void LineCanvas::Line(Vec3 a, Vec3 b, ImU32 color, float thickness) {
@@ -46,7 +46,7 @@ void LineCanvas::Line(Vec3 a, Vec3 b, ImU32 color, float thickness) {
     return;
   }
 
-  drawList_.AddLine(*projectedA, *projectedB, color, FlightUI::Ui(thickness));
+  drawList_.AddLine(*projectedA, *projectedB, color, ui::Ui(thickness));
 }
 
 std::optional<ImVec2> LineCanvas::ProjectPoint(Vec3 point) const {

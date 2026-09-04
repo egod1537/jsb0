@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 
 namespace gui {
 struct BaselineRollHoldConfigChanged {

@@ -8,7 +8,7 @@
 #include <cmath>
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 constexpr float DefaultInputWidth = 88.0F;
 constexpr float DefaultSpacing = 6.0F;
@@ -249,4 +249,4 @@ ScalarEditorBuilder::operator UIElement() const {
 ScalarEditorBuilder ScalarEditor(std::string id, double value) {
   return ScalarEditorBuilder(std::move(id), value);
 }
-} // namespace FlightUI
+} // namespace ui

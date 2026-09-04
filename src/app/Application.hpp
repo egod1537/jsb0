@@ -1,25 +1,23 @@
 #pragma once
 
-#include "integration/flightgear/FlightGearSystem.hpp"
 #include "messaging/MessageBus.hpp"
-#include "sim/SimulationConfig.h"
 
 #include <csignal>
 #include <cstdint>
 #include <memory>
 
 namespace sim {
-class SimulationRuntime;
+class SimRuntime;
 }
 namespace gui {
 class GUI;
 }
-namespace application {
-class SimulationMessageClient;
+namespace app {
+class SimMessageClient;
 namespace messaging {
-class SimulationMessageAdapter;
+class GuiSimBridge;
 }
-} // namespace application
+} // namespace app
 
 class Application {
 public:
@@ -27,28 +25,23 @@ public:
   Application();
   ~Application();
   Application(std::unique_ptr<gui::GUI> gui,
-      std::unique_ptr<sim::SimulationRuntime> simulationRuntime,
-      sim::SimulationConfig simConfig);
+      std::unique_ptr<sim::SimRuntime> simRuntime);
   bool Run(const volatile std::sig_atomic_t &running);
 
 private:
   // Application lifecycle
-  bool Start();
-  bool RunMainLoop(const volatile std::sig_atomic_t &running);
-  bool TickSimulation();
+  bool Initialize();
+
+  bool RunTick(const volatile std::sig_atomic_t &running);
+  bool Tick();
   void TickGUI();
-  void Exit();
+
+  void Shutdown();
 
   // Owned services
-  application::messaging::MessageBus messageBus_;
-  std::unique_ptr<sim::SimulationRuntime> simulationRuntime_;
-  std::unique_ptr<application::messaging::SimulationMessageAdapter>
-      simulationMessageAdapter_;
-  std::unique_ptr<application::SimulationMessageClient>
-      simulationMessageClient_;
+  app::messaging::MessageBus messageBus_;
+  std::unique_ptr<sim::SimRuntime> simRuntime_;
+  std::unique_ptr<app::messaging::GuiSimBridge> guiSimBridge_;
+  std::unique_ptr<app::SimMessageClient> simMessageClient_;
   std::unique_ptr<gui::GUI> gui_;
-  flightgear::FlightGearSystem flightGear_;
-
-  // Configuration
-  sim::SimulationConfig simConfig_;
 };

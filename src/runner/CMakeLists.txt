@@ -1,7 +1,7 @@
 add_library(jsb_runner STATIC
   McapRunObserver.cpp
   RunnerOptions.cpp
-  SimulationRunner.cpp
+  SimRunner.cpp
 )
 
 target_compile_features(jsb_runner PUBLIC cxx_std_20)

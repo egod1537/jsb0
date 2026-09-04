@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 struct PropertyRowState {
   std::string Label;
@@ -246,7 +246,7 @@ PropertyTableBuilder::operator UIElement() const {
     constexpr ImGuiTableFlags Flags = ImGuiTableFlags_SizingStretchProp
                                       | ImGuiTableFlags_NoSavedSettings
                                       | ImGuiTableFlags_NoPadOuterX;
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::DisabledScope disabledScope(!state.Enabled);
     const ImVec2 cellPadding{Ui(state.ColumnSpacing * 0.5F),
         Ui(state.RowPadding)};
     ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, cellPadding);
@@ -261,7 +261,7 @@ PropertyTableBuilder::operator UIElement() const {
       return;
     }
 
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
     if (useTwoColumns) {
       const float minimumLabelWidth = Ui(state.MinimumLabelWidth);
       const float maximumLabelWidth =
@@ -297,7 +297,7 @@ PropertyTableBuilder::operator UIElement() const {
       ImGui::TableSetColumnIndex(0);
       ImGui::AlignTextToFramePadding();
       ImGui::TextDisabled("%s", state.Rows[index].Label.c_str());
-      Internal::ShowTooltipIfHovered(state.Rows[index].Tooltip);
+      internal::ShowTooltipIfHovered(state.Rows[index].Tooltip);
       if (useTwoColumns) {
         ImGui::TableSetColumnIndex(1);
       } else {
@@ -331,4 +331,4 @@ PropertyGridBuilder PropertyGrid(std::string id) {
 PropertyRowBuilder PropertyRow(std::string label) {
   return PropertyRowBuilder(std::move(label));
 }
-} // namespace FlightUI
+} // namespace ui

@@ -16,8 +16,8 @@ FlightControlManager::FlightControlManager(
   }
 }
 
-bool FlightControlManager::OnTick(const sim::Tick &tick) {
-  sim::Aircraft &aircraft = GetAircraft();
+void FlightControlManager::Tick(sim::Aircraft &aircraft,
+    const sim::Tick &tick) {
   if (auto *analysis =
           dynamic_cast<gnc::IAutopilotAnalysis *>(autopilot_.get())) {
     analysis->UpdateLinearization(aircraft, tick);
@@ -25,8 +25,6 @@ bool FlightControlManager::OnTick(const sim::Tick &tick) {
   if (const auto input = ProduceControlInput(aircraft, tick)) {
     aircraft.GetControls().SetInput(*input);
   }
-
-  return true;
 }
 
 std::optional<ControlInput> FlightControlManager::ProduceControlInput(
@@ -66,7 +64,7 @@ const gnc::IAutopilot &FlightControlManager::GetAutopilot() const {
 
 void FlightControlManager::ResetControllers() {
   mode_ = FlightControlMode::Manual;
-  manualController_.OnReset();
+  manualController_.Reset();
   autopilot_->Reset();
 }
 

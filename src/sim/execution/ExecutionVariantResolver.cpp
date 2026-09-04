@@ -9,7 +9,7 @@ namespace sim {
 bool ExecutionVariantResolver::Resolve(const ExecutionRequest &request,
     ResolvedExecutionSpec &resolved, std::string &error) {
   std::string validationError;
-  if (!ValidateSimulationScenario(request.scenario, &validationError)) {
+  if (!ValidateSimScenario(request.scenario, &validationError)) {
     error = std::move(validationError);
     return false;
   }

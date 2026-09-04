@@ -56,10 +56,10 @@ public:
   std::span<T> span() { return {data(), size()}; }
 
   // Plot integration
-  FlightUI::DataView data_view() const
+  ui::DataView data_view() const
     requires(std::is_same_v<T, double> || std::is_same_v<T, float>)
   {
-    return FlightUI::DataView(data(), size());
+    return ui::DataView(data(), size());
   }
 
   // Logical indexing

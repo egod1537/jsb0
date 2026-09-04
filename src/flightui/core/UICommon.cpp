@@ -4,7 +4,7 @@
 
 #include <imgui.h>
 
-namespace FlightUI::Internal {
+namespace ui::internal {
 IdScope::IdScope(const std::string &id) : m_Active(!id.empty()) {
   if (m_Active) {
     ImGui::PushID(id.c_str());
@@ -48,9 +48,9 @@ void ShowTooltipIfHovered(const std::string &tooltip) {
 
   ImGui::SetTooltip("%s", tooltip.c_str());
 }
-} // namespace FlightUI::Internal
+} // namespace ui::internal
 
-namespace FlightUI {
+namespace ui {
 double GetTime() { return ImGui::GetTime(); }
 
 namespace {
@@ -87,4 +87,4 @@ bool IsCurrentWindowFocused() {
 }
 
 bool WantsTextInput() { return ImGui::GetIO().WantTextInput; }
-} // namespace FlightUI
+} // namespace ui

@@ -6,7 +6,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 UIElement Text(std::string text) {
   return CreateElement(
       [text = std::move(text)] { ImGui::TextUnformatted(text.c_str()); });
@@ -21,4 +21,4 @@ UIElement TextWrapped(std::string text) {
   return CreateElement(
       [text = std::move(text)] { ImGui::TextWrapped("%s", text.c_str()); });
 }
-} // namespace FlightUI
+} // namespace ui

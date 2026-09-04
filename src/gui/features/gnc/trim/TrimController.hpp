@@ -2,24 +2,24 @@
 
 #include "gui/features/gnc/trim/TrimEvents.hpp"
 
-namespace application {
-class SimulationMessageClient;
+namespace app {
+class SimMessageClient;
 }
 
 namespace gui {
 class TrimController {
 public:
-  TrimController(application::SimulationMessageClient &client,
+  TrimController(app::SimMessageClient &client,
       gnc::TrimRequest &request, bool &resultOpen, bool &residualOpen,
       bool &inProgress);
 
-  void Handle(const TrimRequested &event);
-  void Handle(const TrimRequestValueChanged &event);
-  void Handle(const TrimExecutionRequested &event);
-  void Handle(const TrimViewStateChanged &event);
+  void OnEvent(const TrimRequested &event);
+  void OnEvent(const TrimRequestValueChanged &event);
+  void OnEvent(const TrimExecutionRequested &event);
+  void OnEvent(const TrimViewStateChanged &event);
 
 private:
-  application::SimulationMessageClient &client_;
+  app::SimMessageClient &client_;
   gnc::TrimRequest &request_;
   bool &resultOpen_;
   bool &residualOpen_;

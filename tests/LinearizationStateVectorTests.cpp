@@ -353,8 +353,7 @@ int main() {
     TestInputVectorRoundTrip();
 
     sim::Aircraft aircraft;
-    Require(
-        aircraft.Initialize(sim::SimulationConfig{}, sim::InitialCondition{}),
+    Require(aircraft.Initialize(sim::InitialCondition{}),
         "Aircraft failed to initialize for derivative tests");
     TestStateDerivativeVectorOrdering(aircraft);
     TestEulerRateKinematics(aircraft);

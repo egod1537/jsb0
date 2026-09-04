@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 float uiScale = 1.0F;
 
@@ -44,4 +44,4 @@ Vector2 UiSize(Vector2 value) {
   }
   return value;
 }
-} // namespace FlightUI
+} // namespace ui

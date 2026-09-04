@@ -1,7 +1,6 @@
 #include "sim/Aircraft.hpp"
 #include "sim/ErrorTracker.hpp"
 #include "sim/Simulation.hpp"
-#include "sim/StateLogger.hpp"
 #include "sim/gnc/ControlContext.hpp"
 #include "sim/gnc/autopilot/IAutopilot.hpp"
 #include "sim/gnc/autopilot/IAutopilotAnalysis.hpp"
@@ -345,15 +344,8 @@ void RequireTelemetryNear(const telemetry::TelemetryRegistry &actual,
   }
 }
 
-sim::SimulationConfig MakeConfig() {
-  sim::SimulationConfig config{};
-  config.simulationHz = 120.0;
-  return config;
-}
-
 void StartSimulation(sim::Simulation &simulation) {
-  Require(simulation.Initialize(MakeConfig()),
-      "Simulation failed to initialize");
+  Require(simulation.Initialize(), "Simulation failed to initialize");
 }
 
 double GetSimTime(const sim::Simulation &simulation) {
@@ -366,11 +358,7 @@ sim::Tick MakeTestTick(const sim::Simulation &simulation) {
 
 control::FlightControlManager &GetFlightControlManager(
     sim::Simulation &simulation) {
-  auto *flightControlManager =
-      simulation.GetComponent<control::FlightControlManager>();
-  Require(flightControlManager != nullptr,
-      "Simulation does not contain FlightControlManager");
-  return *flightControlManager;
+  return simulation.GetFlightControlManager();
 }
 
 gnc::MyAutopilot &GetMyAutopilot(sim::Simulation &simulation) {
@@ -406,66 +394,6 @@ void WaitForLinearizationResult(sim::Simulation &simulation,
   }
 }
 
-struct ComponentLifecycleCounts {
-  int initialize = 0;
-  int reset = 0;
-  int preTick = 0;
-  int tick = 0;
-  int postTick = 0;
-  int shutdown = 0;
-};
-
-class LifecycleTestComponent final : public sim::Component {
-public:
-  explicit LifecycleTestComponent(ComponentLifecycleCounts &counts)
-      : counts_(counts) {}
-
-protected:
-  bool OnInitialize() override {
-    ++counts_.initialize;
-    return true;
-  }
-  bool OnReset() override {
-    ++counts_.reset;
-    return true;
-  }
-  bool OnPreTick(const sim::Tick &) override {
-    ++counts_.preTick;
-    return true;
-  }
-  bool OnTick(const sim::Tick &) override {
-    ++counts_.tick;
-    return true;
-  }
-  bool OnPostTick(const sim::Tick &) override {
-    ++counts_.postTick;
-    return true;
-  }
-  void OnShutdown() override { ++counts_.shutdown; }
-
-private:
-  ComponentLifecycleCounts &counts_;
-};
-
-class ComponentLookupTestComponent final : public sim::Component {
-public:
-  bool FoundLifecycleComponent() const { return foundLifecycleComponent_; }
-  bool HasAircraftAccess() const { return hasAircraftAccess_; }
-
-protected:
-  bool OnInitialize() override {
-    foundLifecycleComponent_ =
-        GetComponent<LifecycleTestComponent>() != nullptr;
-    hasAircraftAccess_ =
-        std::isfinite(GetAircraft().GetAircraftState().simulationTimeSec);
-    return foundLifecycleComponent_ && hasAircraftAccess_;
-  }
-
-private:
-  bool foundLifecycleComponent_ = false;
-  bool hasAircraftAccess_ = false;
-};
-
 class RegistryTestController final : public gnc::Controller {
 public:
   explicit RegistryTestController(int &resetCount) : resetCount_(resetCount) {}
@@ -491,61 +419,6 @@ void TestErrorTrackerOwnsErrorState() {
   errorTracker.SetErrorIfEmpty("fallback error");
   Require(errorTracker.GetLastError() == "fallback error",
       "Fallback error was not stored");
-}
-
-void TestSimulationComponentLifecycle() {
-  sim::Simulation simulation(std::make_unique<gnc::MyAutopilot>());
-  ComponentLifecycleCounts counts;
-  auto *component = simulation.AddComponent<LifecycleTestComponent>(counts);
-  auto *lookup = simulation.AddComponent<ComponentLookupTestComponent>();
-
-  Require(component != nullptr, "Failed to add lifecycle test component");
-  Require(lookup != nullptr, "Failed to add component lookup test component");
-  Require(simulation.GetComponent<sim::StateLogger>() != nullptr,
-      "Simulation does not contain StateLogger");
-  Require(counts.initialize == 0,
-      "Component initialized before Simulation initialization");
-  Require(simulation.GetComponent<LifecycleTestComponent>() == component,
-      "GetComponent did not return the added component");
-
-  StartSimulation(simulation);
-  Require(counts.initialize == 1, "Component was not initialized");
-  Require(lookup->FoundLifecycleComponent(),
-      "Component could not find another component through its owner");
-  Require(lookup->HasAircraftAccess(),
-      "Component could not access Aircraft through its protected helper");
-
-  const sim::Simulation &constSimulation = simulation;
-  Require(constSimulation.GetComponent<ComponentLookupTestComponent>()
-              == lookup,
-      "Const GetComponent did not return the added component");
-
-  Require(simulation.Tick(), "Component lifecycle tick failed");
-  Require(counts.preTick == 1 && counts.tick == 1 && counts.postTick == 1,
-      "Component tick lifecycle hooks were not called");
-
-  Require(simulation.Reset(), "Component lifecycle reset failed");
-  Require(counts.reset == 1, "Component reset hook was not called");
-
-  Require(simulation.RemoveComponent<LifecycleTestComponent>(),
-      "Failed to remove lifecycle test component");
-  Require(counts.shutdown == 1,
-      "Removing a component did not run its shutdown hook");
-  Require(simulation.GetComponent<LifecycleTestComponent>() == nullptr,
-      "Removed component is still accessible");
-
-  ComponentLifecycleCounts lateCounts;
-  auto *lateComponent =
-      simulation.AddComponent<LifecycleTestComponent>(lateCounts);
-  Require(lateComponent != nullptr, "Failed to add late component");
-  Require(lateCounts.initialize == 1,
-      "Component added after initialization was not initialized immediately");
-  Require(simulation.RemoveComponent<LifecycleTestComponent>(),
-      "Failed to remove late component");
-  Require(lateCounts.shutdown == 1,
-      "Late component shutdown hook was not called");
-
-  simulation.Shutdown();
 }
 
 void TestTickAdvancesOneStep() {
@@ -581,26 +454,21 @@ void TestStepUsesRequestedDeltaTime() {
 }
 
 void TestDefault120HzClockAndTelemetryTimestamps() {
-  sim::SimulationConfig config;
-  RequireNear(config.simulationHz,
+  RequireNear(opts::simulation::Hz,
       120.0,
       SimTimeTolerance,
       "Default simulation rate is not 120 Hz");
-  RequireNear(config.GetDT(),
-      sim::DefaultSimulationDtSec,
+  RequireNear(1.0 / opts::simulation::Hz,
+      opts::simulation::DtSec,
       SimTimeTolerance,
       "Default simulation dt does not use the canonical timestep");
 
   sim::Simulation simulation(std::make_unique<gnc::MyAutopilot>());
-  ComponentLifecycleCounts counts;
-  simulation.AddComponent<LifecycleTestComponent>(counts);
-  Require(simulation.Initialize(config), "Default-rate simulation failed");
+  Require(simulation.Initialize(), "Default-rate simulation failed");
   for (int tick = 0; tick < 120; ++tick) {
     Require(simulation.Tick(), "Default-rate simulation tick failed");
   }
 
-  Require(counts.tick == 120 && counts.postTick == 120,
-      "Controller/component tick count diverged from physics tick count");
   RequireNear(simulation.GetTime(),
       1.0,
       SimTimeTolerance,
@@ -614,7 +482,7 @@ void TestDefault120HzClockAndTelemetryTimestamps() {
       "Telemetry did not publish once per physics tick");
   for (std::size_t index = 0; index < samples.GetSize(); ++index) {
     RequireNear(samples[index].timeSec,
-        static_cast<double>(index + 1) * sim::DefaultSimulationDtSec,
+        static_cast<double>(index + 1) * opts::simulation::DtSec,
         SimTimeTolerance,
         "Telemetry timestamp diverged from post-step simulation time");
     if (index > 0) {
@@ -626,9 +494,8 @@ void TestDefault120HzClockAndTelemetryTimestamps() {
 
 double MeasureMaximumAileronSlew(double simulationHz) {
   sim::Simulation simulation(std::make_unique<gnc::MyAutopilot>());
-  sim::SimulationConfig config;
-  config.simulationHz = simulationHz;
-  Require(simulation.Initialize(config), "Actuator-rate simulation failed");
+  Require(simulation.Initialize(opts::simulation::AircraftName, simulationHz),
+      "Actuator-rate simulation failed");
   auto &manager = GetFlightControlManager(simulation);
   manager.SetMode(control::FlightControlMode::Manual);
   double previousPosition = simulation.GetAircraft()
@@ -1176,7 +1043,7 @@ void TestNavigationProperties() {
   initialCondition.headingRad = 0.0;
   initialCondition.calibratedAirspeedMps =
       math::KnotsToMetersPerSecond(100.0);
-  Require(aircraft.Initialize(MakeConfig(), initialCondition),
+  Require(aircraft.Initialize(initialCondition),
       "Aircraft failed to initialize for navigation property test");
 
   sim::FDMState state = aircraft.ExtractFDMState(sim::FDMStateFlags::State);
@@ -1711,8 +1578,7 @@ void TestPx4PitchHoldTunedEnvelope() {
 
   for (const Transition &transition : Transitions) {
     sim::Simulation simulation(std::make_unique<gnc::PX4Autopilot>());
-    sim::SimulationConfig config;
-    Require(simulation.Initialize(config),
+    Require(simulation.Initialize(),
         "PX4 Pitch Hold acceptance initialization failed");
     sim::InitialCondition initial = simulation.GetDefaultInitialCondition();
     initial.altitudeAslM = math::FeetToMeters(3000.0);
@@ -1739,7 +1605,7 @@ void TestPx4PitchHoldTunedEnvelope() {
     autopilot.SetPitchHoldEnabled(true);
     manager.SetMode(control::FlightControlMode::Autopilot);
 
-    const double hz = config.simulationHz;
+    constexpr double hz = opts::simulation::Hz;
     const int steadyTicks = std::lround(SteadyWindowSec * hz);
     const int preconditionTicks = std::lround(PreconditionSec * hz);
     double sourceMaximumErrorDeg = 0.0;
@@ -3166,9 +3032,9 @@ void TestFDMStateAndControlSynchronization() {
   targetCondition.calibratedAirspeedMps =
       math::KnotsToMetersPerSecond(70.0);
 
-  Require(source.Initialize(MakeConfig(), sourceCondition),
+  Require(source.Initialize(sourceCondition),
       "Source Aircraft failed to initialize");
-  Require(target.Initialize(MakeConfig(), targetCondition),
+  Require(target.Initialize(targetCondition),
       "Target Aircraft failed to initialize");
 
   sim::FDMState sourceControlSetup =
@@ -3254,9 +3120,9 @@ void TestFDMStateAndControlSynchronization() {
 void TestFDMPropulsionAndEnvironmentSynchronization() {
   sim::Aircraft source;
   sim::Aircraft target;
-  Require(source.Initialize(MakeConfig(), {}),
+  Require(source.Initialize({}),
       "Source Aircraft failed to initialize");
-  Require(target.Initialize(MakeConfig(), {}),
+  Require(target.Initialize({}),
       "Target Aircraft failed to initialize");
 
   constexpr sim::FDMStateFlags Flags =
@@ -3394,7 +3260,6 @@ void TestFDMPropulsionAndEnvironmentSynchronization() {
 int main() {
   try {
     TestErrorTrackerOwnsErrorState();
-    TestSimulationComponentLifecycle();
     TestTickAdvancesOneStep();
     TestStepUsesRequestedDeltaTime();
     TestDefault120HzClockAndTelemetryTimestamps();

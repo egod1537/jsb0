@@ -9,7 +9,6 @@ if(JSB_BUILD_EDITOR)
   target_link_libraries(jsb_app
     PUBLIC
       jsb_editor
-      jsb_flightgear
     PRIVATE
       jsb_messaging
       jsb_sim_runtime

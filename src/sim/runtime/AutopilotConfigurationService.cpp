@@ -6,7 +6,7 @@
 #include "sim/gnc/autopilot/MyAutopilot.hpp"
 #include "sim/gnc/autopilot/PX4Autopilot.hpp"
 #include "sim/gnc/control/attitude/Px4RollParameterMetadata.hpp"
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -15,10 +15,8 @@ namespace sim {
 bool AutopilotConfigurationService::ApplyPrimary(Simulation &simulation,
     const PrimaryRollHoldConfig &config, bool &tuningChanged) {
   tuningChanged = false;
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  auto *autopilot = manager != nullptr ? dynamic_cast<gnc::MyAutopilot *>(
-                                             &manager->GetAutopilot())
-                                       : nullptr;
+  auto &manager = simulation.GetFlightControlManager();
+  auto *autopilot = dynamic_cast<gnc::MyAutopilot *>(&manager.GetAutopilot());
   if (autopilot == nullptr) {
     return false;
   }
@@ -30,8 +28,8 @@ bool AutopilotConfigurationService::ApplyPrimary(Simulation &simulation,
   settings.rateLoop.proportionalGain = config.rollRateProportionalGain;
   autopilot->SetRollHoldSettings(settings);
   autopilot->SetRollHoldEnabled(config.enabled);
-  manager->SetMode(config.enabled ? control::FlightControlMode::Autopilot
-                                  : control::FlightControlMode::Manual);
+  manager.SetMode(config.enabled ? control::FlightControlMode::Autopilot
+                                 : control::FlightControlMode::Manual);
 
   tuningChanged = previous.attitudeLoop.proportionalGain
                       != settings.attitudeLoop.proportionalGain
@@ -43,10 +41,8 @@ bool AutopilotConfigurationService::ApplyPrimary(Simulation &simulation,
 bool AutopilotConfigurationService::ApplyBaseline(Simulation &simulation,
     const BaselineRollHoldConfig &config, bool &tuningChanged) {
   tuningChanged = false;
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  auto *autopilot = manager != nullptr ? dynamic_cast<gnc::PX4Autopilot *>(
-                                             &manager->GetAutopilot())
-                                       : nullptr;
+  auto &manager = simulation.GetFlightControlManager();
+  auto *autopilot = dynamic_cast<gnc::PX4Autopilot *>(&manager.GetAutopilot());
   if (autopilot == nullptr) {
     return false;
   }
@@ -115,11 +111,11 @@ bool AutopilotConfigurationService::ApplyBaseline(Simulation &simulation,
   autopilot->SetPitchHoldEnabled(config.pitchHoldEnabled);
   autopilot->SetTecsEnabled(config.tecsEnabled);
   autopilot->SetCourseHoldEnabled(config.courseHoldEnabled);
-  manager->SetMode(config.enabled || config.pitchHoldEnabled
-                           || config.tecsEnabled || config.courseHoldEnabled
-                           || config.yawRateControlEnabled
-                       ? control::FlightControlMode::Autopilot
-                       : control::FlightControlMode::Manual);
+  manager.SetMode(config.enabled || config.pitchHoldEnabled
+                          || config.tecsEnabled || config.courseHoldEnabled
+                          || config.yawRateControlEnabled
+                      ? control::FlightControlMode::Autopilot
+                      : control::FlightControlMode::Manual);
 
   tuningChanged =
       previous.timeConstantSec != settings.timeConstantSec
@@ -143,10 +139,8 @@ bool AutopilotConfigurationService::ApplyExecutionParameters(
             + std::string(ToString(execution.variant)) + "'";
     return false;
   }
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  auto *autopilot = manager != nullptr ? dynamic_cast<gnc::PX4Autopilot *>(
-                                             &manager->GetAutopilot())
-                                       : nullptr;
+  auto &manager = simulation.GetFlightControlManager();
+  auto *autopilot = dynamic_cast<gnc::PX4Autopilot *>(&manager.GetAutopilot());
   if (autopilot == nullptr) {
     error = "baseline controller parameters require PX4Autopilot";
     return false;

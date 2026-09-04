@@ -5,11 +5,11 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 UIElement Latex(std::string source, LatexOptions options) {
   return CreateElement(
       [source = std::move(source), options] {
-        Internal::GetLatexRenderer().Render(source, options);
+        internal::GetLatexRenderer().Render(source, options);
       });
 }
-} // namespace FlightUI
+} // namespace ui

@@ -4,9 +4,11 @@
 #include <stdexcept>
 
 namespace sim {
-bool AircraftLinearizer::Initialize(const SimulationConfig &config,
+bool AircraftLinearizer::Initialize(
+    std::string_view aircraftName, double simulationHz,
     const InitialCondition &initialCondition) {
-  initialized_ = aircraft_.Initialize(config, initialCondition);
+  initialized_ =
+      aircraft_.Initialize(aircraftName, simulationHz, initialCondition);
   if (!initialized_) {
     return false;
   }

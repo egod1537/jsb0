@@ -20,7 +20,7 @@ public:
   void Render(const AutopilotSelectorProps &props);
 
   // Interaction handling
-  void HandleEvent(const AutopilotSourceSelected &event,
+  void OnAutopilotSourceSelected(const AutopilotSourceSelected &event,
       const AutopilotSelectorProps &props);
 
 private:

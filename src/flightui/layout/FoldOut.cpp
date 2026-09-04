@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class FoldOutBuilder::Impl {
 public:
   std::string Label;
@@ -225,7 +225,7 @@ UIElement FoldOutBuilder::operator[](Children children) const {
       ImGui::SetNextItemOpen(true, ImGuiCond_Once);
     }
 
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::DisabledScope disabledScope(!state.Enabled);
     const bool hasHeaderLeft = state.HeaderLeft.IsValid();
     const bool hasHeaderRight = state.HeaderRight.IsValid();
     const std::string label = hasHeaderLeft
@@ -248,7 +248,7 @@ UIElement FoldOutBuilder::operator[](Children children) const {
       ImGui::PopStyleColor(3);
     }
 
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
 
     const ImVec2 headerMinimum = ImGui::GetItemRectMin();
     const ImVec2 headerMaximum = ImGui::GetItemRectMax();
@@ -331,4 +331,4 @@ UIElement FoldOutBuilder::operator[](Children children) const {
 FoldOutBuilder FoldOut(std::string label) {
   return FoldOutBuilder(std::move(label));
 }
-} // namespace FlightUI
+} // namespace ui

@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 using InputDoubleChangedAction = std::function<void(double)>;
 
 class InputDoubleBuilder {
@@ -49,4 +49,4 @@ private:
 };
 
 InputDoubleBuilder InputDouble(std::string label, double value);
-} // namespace FlightUI
+} // namespace ui

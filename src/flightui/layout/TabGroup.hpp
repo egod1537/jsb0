@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 class TabBuilder {
 public:
   // Lifetime
@@ -82,4 +82,4 @@ private:
 
 TabBuilder Tab(std::string label);
 TabGroupBuilder TabGroup(std::string name);
-} // namespace FlightUI
+} // namespace ui

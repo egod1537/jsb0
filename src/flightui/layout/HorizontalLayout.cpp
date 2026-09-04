@@ -7,7 +7,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class HorizontalLayoutBuilder::Impl {
 public:
   Children ChildrenList;
@@ -103,4 +103,4 @@ HorizontalLayoutBuilder HorizontalLayout() { return HorizontalLayoutBuilder(); }
 HorizontalLayoutBuilder HorizontalLayout(Children children) {
   return HorizontalLayoutBuilder(std::move(children));
 }
-} // namespace FlightUI
+} // namespace ui

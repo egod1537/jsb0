@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 enum class PropertyGridLayout {
   SingleColumn,
   TwoColumns,
@@ -91,4 +91,4 @@ using PropertyGridBuilder = PropertyTableBuilder;
 PropertyTableBuilder PropertyTable(std::string id);
 PropertyGridBuilder PropertyGrid(std::string id);
 PropertyRowBuilder PropertyRow(std::string label);
-} // namespace FlightUI
+} // namespace ui

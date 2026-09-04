@@ -7,7 +7,7 @@
 
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class ToggleBuilder::Impl {
 public:
   std::string Label;
@@ -83,17 +83,17 @@ ToggleBuilder &ToggleBuilder::Id(std::string id) {
 ToggleBuilder::operator UIElement() const {
   Impl state = *m_Impl;
   return CreateElement([state] {
-    Internal::IdScope idScope(state.Id);
-    Internal::DisabledScope disabledScope(!state.Enabled);
+    internal::IdScope idScope(state.Id);
+    internal::DisabledScope disabledScope(!state.Enabled);
     bool value = state.Value;
     if (ImGui::Checkbox(state.Label.c_str(), &value) && state.OnChanged) {
       state.OnChanged(value);
     }
-    Internal::ShowTooltipIfHovered(state.Tooltip);
+    internal::ShowTooltipIfHovered(state.Tooltip);
   });
 }
 
 ToggleBuilder Toggle(std::string label, bool value) {
   return ToggleBuilder(std::move(label), value);
 }
-} // namespace FlightUI
+} // namespace ui

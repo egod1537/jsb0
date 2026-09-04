@@ -5,11 +5,11 @@
 
 namespace gnc {
 bool TrimService::Compute(sim::Aircraft &aircraft, const TrimRequest &request) {
-  return StoreSolvedResult(TrimSolver::Solve(aircraft, request));
+  return StoreSolvedResult(trim_solver::Solve(aircraft, request));
 }
 
 bool TrimService::ComputeCurrentState(sim::Aircraft &aircraft, TrimMode mode) {
-  return StoreSolvedResult(TrimSolver::SolveCurrentState(aircraft, mode));
+  return StoreSolvedResult(trim_solver::SolveCurrentState(aircraft, mode));
 }
 
 bool TrimService::ApplyStored(sim::Aircraft &aircraft) const {

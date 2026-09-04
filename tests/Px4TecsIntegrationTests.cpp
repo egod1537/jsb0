@@ -20,7 +20,7 @@
 #include <vector>
 
 namespace {
-constexpr double SimulationHz = 120.0;
+constexpr double SimHz = 120.0;
 constexpr double CommandTimeSec = 5.0;
 constexpr double RunDurationSec = 70.0;
 constexpr double TailWindowSec = 10.0;
@@ -115,11 +115,7 @@ struct Options {
 };
 
 control::FlightControlManager &Manager(sim::Simulation &simulation) {
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  if (manager == nullptr) {
-    throw std::runtime_error("FlightControlManager is missing");
-  }
-  return *manager;
+  return simulation.GetFlightControlManager();
 }
 
 double Mean(const std::vector<double> &values) {
@@ -197,11 +193,11 @@ double CalculateSettlingTime(const std::vector<Sample> &samples,
   if (!violationObserved) {
     return 0.0;
   }
-  if (lastViolationTimeSec >= RunDurationSec - 1.0 / SimulationHz) {
+  if (lastViolationTimeSec >= RunDurationSec - 1.0 / SimHz) {
     return std::numeric_limits<double>::infinity();
   }
   return std::max(0.0,
-      lastViolationTimeSec - CommandTimeSec + 1.0 / SimulationHz);
+      lastViolationTimeSec - CommandTimeSec + 1.0 / SimHz);
 }
 
 void ApplyTuningOverrides(gnc::Px4TecsSettings &settings,
@@ -332,24 +328,22 @@ Metrics Evaluate(const std::vector<Sample> &samples, double targetAltitudeM,
         std::max(metrics.tailPitchTrackingErrorDeg, std::abs(error));
   }
   metrics.elevatorSaturationDurationSec =
-      static_cast<double>(saturatedElevatorSamples) / SimulationHz;
+      static_cast<double>(saturatedElevatorSamples) / SimHz;
   metrics.throttleSaturationDurationSec =
-      static_cast<double>(saturatedThrottleSamples) / SimulationHz;
+      static_cast<double>(saturatedThrottleSamples) / SimHz;
   metrics.tailElevatorSaturationDurationSec =
-      static_cast<double>(tailSaturatedElevatorSamples) / SimulationHz;
+      static_cast<double>(tailSaturatedElevatorSamples) / SimHz;
   metrics.tailThrottleSaturationDurationSec =
-      static_cast<double>(tailSaturatedThrottleSamples) / SimulationHz;
+      static_cast<double>(tailSaturatedThrottleSamples) / SimHz;
   metrics.tailPitchLimitDurationSec =
-      static_cast<double>(tailPitchLimitedSamples) / SimulationHz;
+      static_cast<double>(tailPitchLimitedSamples) / SimHz;
   return metrics;
 }
 
 Metrics Execute(const ScenarioDefinition &scenario,
     const TuningOverrides &overrides) {
   sim::Simulation simulation(std::make_unique<gnc::PX4Autopilot>());
-  sim::SimulationConfig config;
-  config.simulationHz = SimulationHz;
-  if (!simulation.Initialize(config)) {
+  if (!simulation.Initialize(opts::simulation::AircraftName, SimHz)) {
     throw std::runtime_error("TECS simulation initialization failed");
   }
   sim::InitialCondition initial = simulation.GetDefaultInitialCondition();
@@ -388,11 +382,11 @@ Metrics Execute(const ScenarioDefinition &scenario,
   manager.SetMode(control::FlightControlMode::Autopilot);
 
   std::vector<Sample> samples;
-  samples.reserve(static_cast<std::size_t>(RunDurationSec * SimulationHz));
+  samples.reserve(static_cast<std::size_t>(RunDurationSec * SimHz));
   bool commandApplied = false;
-  for (int index = 0; index < std::lround(RunDurationSec * SimulationHz);
+  for (int index = 0; index < std::lround(RunDurationSec * SimHz);
       ++index) {
-    const double timeSec = static_cast<double>(index) / SimulationHz;
+    const double timeSec = static_cast<double>(index) / SimHz;
     if (timeSec >= CommandTimeSec && !commandApplied) {
       if (scenario.kind == ScenarioKind::Underspeed) {
         gnc::Px4TecsSettings protectionSettings = autopilot.GetTecsSettings();

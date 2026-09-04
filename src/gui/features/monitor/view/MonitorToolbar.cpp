@@ -10,7 +10,6 @@
 #include <optional>
 
 namespace gui {
-namespace UI = FlightUI;
 
 void MonitorView::DrawToolbar(const telemetry::TelemetrySnapshot &telemetry) {
   if (ImGui::Button("+ Plot")) {
@@ -41,7 +40,7 @@ void MonitorView::DrawToolbar(const telemetry::TelemetrySnapshot &telemetry) {
   ImGui::SameLine();
   if (noEmptySlotMessage_) {
     ImGui::TextColored(
-        UI::GetDarkEditorSemanticColor(UI::SemanticColor::Warning),
+        ui::GetDarkEditorSemanticColor(ui::SemanticColor::Warning),
         "No empty plot slots. Change the layout or remove a plot.");
     ImGui::SameLine();
   }
@@ -84,7 +83,7 @@ void MonitorView::DrawDisplayModeSelector() {
   ImGui::TextUnformatted("Mode:");
   const auto drawModeButton = [this](const char *label,
                                   MonitorDisplayMode mode) {
-    ImGui::SameLine(0.0F, UI::Ui(2.0F));
+    ImGui::SameLine(0.0F, ui::Ui(2.0F));
     const bool isSelected = displayMode_ == mode;
     if (isSelected) {
       ImGui::PushStyleColor(ImGuiCol_Button,

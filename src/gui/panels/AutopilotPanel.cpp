@@ -3,20 +3,19 @@
 #include "flightui/FlightUI.hpp"
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float AutopilotTargetInputWidth = 140.0F;
 constexpr float HoldCaptureButtonWidth = 96.0F;
 constexpr float AutopilotParameterLabelWidth = 148.0F;
 
-UI::UIElement MakeAutopilotTargetRow(const char *targetLabel,
+ui::UIElement MakeAutopilotTargetRow(const char *targetLabel,
     const char *inputId, bool enabled, double targetValue,
     architecture::EventSink<PrimaryRollHoldValueChanged> events,
     double step = 1.0, double fastStep = 10.0) {
-  return UI::HorizontalLayout().Spacing(
-      8.0F)[+UI::TextDisabled(targetLabel)
-            + UI::InputDouble(inputId, targetValue)
+  return ui::HorizontalLayout().Spacing(
+      8.0F)[+ui::TextDisabled(targetLabel)
+            + ui::InputDouble(inputId, targetValue)
                 .Width(AutopilotTargetInputWidth)
                 .Step(step)
                 .FastStep(fastStep)
@@ -24,22 +23,22 @@ UI::UIElement MakeAutopilotTargetRow(const char *targetLabel,
                 .OnChanged([events](double value) {
                   events.Emit({PrimaryRollHoldField::TargetDeg, value});
                 })
-            + UI::Text(enabled ? "Hold" : "Off")];
+            + ui::Text(enabled ? "Hold" : "Off")];
 }
 
-UI::UIElement MakeRollHoldStatusRow(const AutopilotPanelProps &props) {
+ui::UIElement MakeRollHoldStatusRow(const AutopilotPanelProps &props) {
   // clang-format off
-  return UI::HorizontalLayout()
+  return ui::HorizontalLayout()
       .Spacing(8.0F)
       [
-        +UI::ValueLabel("Current Roll", props.currentRollDeg, "%.2f deg")
-        + UI::ValueLabel(
+        +ui::ValueLabel("Current Roll", props.currentRollDeg, "%.2f deg")
+        + ui::ValueLabel(
               "Roll Rate", props.currentRollRateDegPerSec, "%.2f deg/s")
-        + UI::ValueLabel("Aileron", props.currentAileron, "%.3f")
-        + UI::StatusBadge(props.state.rollHold ? "Not Implemented" : "Inactive",
-              props.state.rollHold ? UI::StatusTone::Warning
-                                   : UI::StatusTone::Neutral)
-        + UI::Button("Capture")
+        + ui::ValueLabel("Aileron", props.currentAileron, "%.3f")
+        + ui::StatusBadge(props.state.rollHold ? "Not Implemented" : "Inactive",
+              props.state.rollHold ? ui::StatusTone::Warning
+                                   : ui::StatusTone::Neutral)
+        + ui::Button("Capture")
               .Enabled(props.events.IsConnected())
               .OnAction([events = props.events,
                             value = props.currentRollDeg] {
@@ -50,15 +49,15 @@ UI::UIElement MakeRollHoldStatusRow(const AutopilotPanelProps &props) {
   // clang-format on
 }
 
-UI::UIElement MakeRollHoldParametersFoldOut(AutopilotPanelState &state,
+ui::UIElement MakeRollHoldParametersFoldOut(AutopilotPanelState &state,
     architecture::EventSink<PrimaryRollHoldValueChanged> events) {
-  UI::PropertyGridBuilder parameters =
-      UI::PropertyGrid("PrimaryRollHoldParameters")
+  ui::PropertyGridBuilder parameters =
+      ui::PropertyGrid("PrimaryRollHoldParameters")
           .LabelWidth(AutopilotParameterLabelWidth)
           .AlternatingRows();
   parameters
-      .Add(UI::PropertyRow(
-          "Roll Angle P Gain")[UI::ScalarEditor("RollAngleProportionalGain",
+      .Add(ui::PropertyRow(
+          "Roll Angle P Gain")[ui::ScalarEditor("RollAngleProportionalGain",
           state.rollAngleProportionalGain)
               .ShowSlider(false)
               .Step(0.01)
@@ -68,8 +67,8 @@ UI::UIElement MakeRollHoldParametersFoldOut(AutopilotPanelState &state,
                 events.Emit(
                     {PrimaryRollHoldField::AngleProportionalGain, value});
               })])
-      .Add(UI::PropertyRow(
-          "Roll Rate P Gain")[UI::ScalarEditor("RollRateProportionalGain",
+      .Add(ui::PropertyRow(
+          "Roll Rate P Gain")[ui::ScalarEditor("RollRateProportionalGain",
           state.rollRateProportionalGain)
               .ShowSlider(false)
               .Step(0.01)
@@ -80,16 +79,16 @@ UI::UIElement MakeRollHoldParametersFoldOut(AutopilotPanelState &state,
                     {PrimaryRollHoldField::RateProportionalGain, value});
               })]);
 
-  return UI::FoldOut("P-P Parameters")
+  return ui::FoldOut("P-P Parameters")
       .Open(state.rollHoldParametersOpen)
       .Section()
       .Id("RollHoldParameters")[parameters];
 }
 
-UI::UIElement MakeRollHoldSection(const AutopilotPanelProps &props) {
+ui::UIElement MakeRollHoldSection(const AutopilotPanelProps &props) {
   AutopilotPanelState &state = props.state;
-  const UI::UIElement content =
-      UI::VerticalLayout().Spacing(6.0F)
+  const ui::UIElement content =
+      ui::VerticalLayout().Spacing(6.0F)
       + MakeAutopilotTargetRow("Target Roll (deg)",
           "##RollHoldTarget",
           state.rollHold,
@@ -98,7 +97,7 @@ UI::UIElement MakeRollHoldSection(const AutopilotPanelProps &props) {
       + MakeRollHoldStatusRow(props)
       + MakeRollHoldParametersFoldOut(state, props.events);
 
-  return UI::ToggleFoldOut("Roll Hold", state.rollHold)
+  return ui::ToggleFoldOut("Roll Hold", state.rollHold)
       .Id("RollHoldSection")
       .DefaultOpen()
       .OnChanged([events = props.events](bool enabled) {
@@ -109,8 +108,8 @@ UI::UIElement MakeRollHoldSection(const AutopilotPanelProps &props) {
 } // namespace
 
 void AutopilotPanel::Draw(const AutopilotPanelProps &props) {
-  const UI::UIElement layout = UI::VerticalLayout().Spacing(8.0F)
-                               + UI::Heading("Autopilot Controls")
+  const ui::UIElement layout = ui::VerticalLayout().Spacing(8.0F)
+                               + ui::Heading("Autopilot Controls")
                                + MakeRollHoldSection(props);
   layout.Render();
 }

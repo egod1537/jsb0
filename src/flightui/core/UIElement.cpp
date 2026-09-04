@@ -4,7 +4,7 @@
 #include <memory>
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 class UIElement::Impl {
 public:
   virtual ~Impl() = default;
@@ -74,4 +74,4 @@ UIElement CreateElement(Action renderAction) {
   return UIElement(
       std::make_shared<ActionElementImpl>(std::move(renderAction)));
 }
-} // namespace FlightUI
+} // namespace ui

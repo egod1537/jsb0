@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace FlightUI {
+namespace ui {
 class LatexRenderer {
 public:
   virtual ~LatexRenderer() = default;
@@ -14,8 +14,8 @@ public:
       const std::string &source, const LatexOptions &options) = 0;
 };
 
-namespace Internal {
+namespace internal {
 void SetLatexRenderer(std::unique_ptr<LatexRenderer> renderer);
 LatexRenderer &GetLatexRenderer();
-} // namespace Internal
-} // namespace FlightUI
+} // namespace internal
+} // namespace ui

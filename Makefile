@@ -3,7 +3,7 @@ BASH ?= /usr/bin/bash
 BUILD_DIR ?= build
 CMAKE_CONFIGURE_ARGS ?= -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
-.PHONY: configure build build-console test fg run clean \
+.PHONY: configure build build-console test run clean \
 	px4-setup px4-build px4-run px4-status
 
 configure:
@@ -17,9 +17,6 @@ build-console: configure
 
 test: build
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
-
-fg:
-	$(BASH) ./scripts/run-flightgear.sh
 
 run:
 	$(BASH) ./scripts/run-console.sh

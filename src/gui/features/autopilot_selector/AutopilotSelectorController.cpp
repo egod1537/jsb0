@@ -22,11 +22,11 @@ void AutopilotSelectorController::Render(const AutopilotSelectorProps &props) {
       props,
       architecture::EventSink<AutopilotSourceSelected>{
           [this, props](const AutopilotSourceSelected &event) {
-            HandleEvent(event, props);
+            OnAutopilotSourceSelected(event, props);
           }});
 }
 
-void AutopilotSelectorController::HandleEvent(
+void AutopilotSelectorController::OnAutopilotSourceSelected(
     const AutopilotSourceSelected &event, const AutopilotSelectorProps &props) {
   Select(event.selection, props);
 }

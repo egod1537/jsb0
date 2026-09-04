@@ -1,8 +1,8 @@
 #include "gui/features/simulation/ScenarioController.hpp"
 #include "gui/features/simulation/ScenarioSetupPopup.hpp"
 #include "gui/windows/ScenarioWindow.hpp"
-#include "sim/scenario/SimulationScenario.hpp"
-#include "sim/scenario/SimulationScenarioSerializer.hpp"
+#include "sim/scenario/SimScenario.hpp"
+#include "sim/scenario/SimScenarioSerializer.hpp"
 #include "common/math/Math.hpp"
 
 #include <cassert>
@@ -24,7 +24,7 @@ void RequireNear(double actual, double expected) {
   assert(std::abs(actual - expected) <= Tolerance);
 }
 
-void RequireDefaultScenario(const sim::SimulationScenario &scenario) {
+void RequireDefaultScenario(const sim::SimScenario &scenario) {
   assert(scenario.name == "Roll Hold 5deg 30s");
   RequireNear(scenario.initialCondition.altitudeAslM,
       math::FeetToMeters(3000.0));
@@ -37,7 +37,7 @@ void RequireDefaultScenario(const sim::SimulationScenario &scenario) {
   assert(scenario.runTrim);
   assert(scenario.trimMode == gnc::TrimMode::Full);
   RequireNear(scenario.durationSec, 30.0);
-  RequireNear(scenario.dtSec, sim::DefaultSimulationDtSec);
+  RequireNear(scenario.dtSec, opts::simulation::DtSec);
   RequireNear(scenario.events.front().timeSec, 5.0);
   RequireNear(scenario.events.front().command.rollRad, math::DegToRad(5.0));
   RequireNear(scenario.settlingBandRad, math::DegToRad(0.5));
@@ -48,17 +48,17 @@ void RequireDefaultScenario(const sim::SimulationScenario &scenario) {
 
 void TestScenarioValidation() {
   std::string error;
-  assert(sim::ValidateSimulationScenario(sim::SimulationScenario{}, &error));
+  assert(sim::ValidateSimScenario(sim::SimScenario{}, &error));
   assert(error.empty());
 
-  const auto requireInvalid = [](sim::SimulationScenario scenario,
+  const auto requireInvalid = [](sim::SimScenario scenario,
                                   const std::string &expectedField) {
     std::string validationError;
-    assert(!sim::ValidateSimulationScenario(scenario, &validationError));
+    assert(!sim::ValidateSimScenario(scenario, &validationError));
     assert(validationError.find(expectedField) != std::string::npos);
   };
 
-  sim::SimulationScenario scenario;
+  sim::SimScenario scenario;
   scenario.initialCondition.calibratedAirspeedMps = -1.0;
   requireInvalid(scenario, "initial_condition.airspeed_kts");
 
@@ -94,7 +94,7 @@ std::filesystem::path MakeTemporaryScenarioDirectory() {
 }
 
 void TestYamlRoundTrip() {
-  sim::SimulationScenario source;
+  sim::SimScenario source;
   source.name = "Edited YAML Scenario";
   source.controllerParameters = {"FW_RR_P", "FW_RR_I"};
   source.initialCondition.altitudeAslM = math::FeetToMeters(4250.5);
@@ -114,23 +114,23 @@ void TestYamlRoundTrip() {
   source.overshootLimitRad = math::DegToRad(0.75);
   source.maxOscillationCycles = 3.0;
 
-  const std::string yaml = sim::SimulationScenarioSerializer::Serialize(source);
+  const std::string yaml = sim::SimScenarioSerializer::Serialize(source);
   assert(yaml.find("initial_condition:") != std::string::npos);
   assert(yaml.find("controller_parameters:") != std::string::npos);
   assert(yaml.find("mode: Ground") != std::string::npos);
 
-  sim::SimulationScenario parsed;
+  sim::SimScenario parsed;
   std::string error;
-  assert(sim::SimulationScenarioSerializer::Deserialize(yaml, parsed, error));
+  assert(sim::SimScenarioSerializer::Deserialize(yaml, parsed, error));
   assert(error.empty());
   assert(parsed == source);
 }
 
 void TestInvalidYamlIsTransactional() {
-  const sim::SimulationScenario original;
-  sim::SimulationScenario destination = original;
+  const sim::SimScenario original;
+  sim::SimScenario destination = original;
   destination.name = "Keep Me";
-  const sim::SimulationScenario before = destination;
+  const sim::SimScenario before = destination;
   std::string error;
 
   const std::string missingFieldYaml = R"(
@@ -163,27 +163,27 @@ events:
       type: roll_hold
       roll_deg: 5
 )";
-  assert(!sim::SimulationScenarioSerializer::Deserialize(missingFieldYaml,
+  assert(!sim::SimScenarioSerializer::Deserialize(missingFieldYaml,
       destination,
       error));
   assert(error.find("acceptance") != std::string::npos);
   assert(destination == before);
 
   std::string invalidTypeYaml =
-      sim::SimulationScenarioSerializer::Serialize(original);
+      sim::SimScenarioSerializer::Serialize(original);
   const std::size_t airspeedPosition =
       invalidTypeYaml.find("airspeed_kts: 100");
   assert(airspeedPosition != std::string::npos);
   invalidTypeYaml.replace(airspeedPosition,
       std::string("airspeed_kts: 100").size(),
       "airspeed_kts: fast");
-  assert(!sim::SimulationScenarioSerializer::Deserialize(invalidTypeYaml,
+  assert(!sim::SimScenarioSerializer::Deserialize(invalidTypeYaml,
       destination,
       error));
   assert(error.find("initial_condition.airspeed_kts") != std::string::npos);
   assert(destination == before);
 
-  assert(!sim::SimulationScenarioSerializer::Deserialize("name: [unterminated",
+  assert(!sim::SimScenarioSerializer::Deserialize("name: [unterminated",
       destination,
       error));
   assert(error.find("YAML parse error") != std::string::npos);
@@ -221,7 +221,7 @@ void TestScenarioControllerFileLifecycle() {
     std::ofstream invalidOutput(invalidFile, std::ios::binary);
     invalidOutput << "name: [invalid";
   }
-  const sim::SimulationScenario beforeInvalidLoad = controller.GetModel().draft;
+  const sim::SimScenario beforeInvalidLoad = controller.GetModel().draft;
   const std::filesystem::path connectedBeforeInvalidLoad =
       controller.GetModel().currentFilePath;
   assert(!controller.Load(invalidFile));
@@ -265,7 +265,7 @@ void TestScenarioApplyAndPopupLifecycle() {
       gui::architecture::EventSink<gui::ScenarioLaunchRequested>{
           [&launchCount, &controllerPtr](const gui::ScenarioLaunchRequested &) {
             ++launchCount;
-            controllerPtr->Handle(gui::ScenarioApplyCompleted{
+            controllerPtr->OnEvent(gui::ScenarioApplyCompleted{
                 .succeeded = true,
             });
           }});
@@ -282,9 +282,9 @@ void TestScenarioApplyAndPopupLifecycle() {
   assert(launchCount == 1);
   assert(controller.GetModel().lastApplySucceeded);
 
-  sim::SimulationScenario invalid = controller.GetModel().draft;
+  sim::SimScenario invalid = controller.GetModel().draft;
   invalid.durationSec = 0.0;
-  controller.Handle(gui::ScenarioDraftChanged{invalid});
+  controller.OnEvent(gui::ScenarioDraftChanged{invalid});
   assert(!controller.Apply());
   assert(launchCount == 1);
   assert(controller.GetModel().statusIsError);
@@ -292,13 +292,13 @@ void TestScenarioApplyAndPopupLifecycle() {
 } // namespace
 
 int main() {
-  RequireDefaultScenario(sim::SimulationScenario{});
+  RequireDefaultScenario(sim::SimScenario{});
   TestScenarioValidation();
 
   gui::ScenarioController controller;
   RequireDefaultScenario(controller.GetModel().draft);
 
-  sim::SimulationScenario &edited = controller.EditDraftForCompatibility();
+  sim::SimScenario &edited = controller.EditDraftForCompatibility();
   edited.name = "Edited Scenario";
   edited.initialCondition.altitudeAslM = 1200.0;
   edited.windEnabled = true;

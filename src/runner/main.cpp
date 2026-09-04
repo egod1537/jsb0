@@ -1,6 +1,6 @@
 #include "McapRunObserver.hpp"
 #include "RunnerOptions.hpp"
-#include "SimulationRunner.hpp"
+#include "SimRunner.hpp"
 
 #include <csignal>
 #include <exception>
@@ -11,7 +11,7 @@
 namespace {
 volatile std::sig_atomic_t running = 1;
 
-void HandleSignal(int) { running = 0; }
+void OnSignal(int) { running = 0; }
 } // namespace
 
 int main(int argc, char **argv) {
@@ -33,14 +33,14 @@ int main(int argc, char **argv) {
     return static_cast<int>(runner::RunnerExitCode::InvalidArguments);
   }
 
-  std::signal(SIGINT, HandleSignal);
-  std::signal(SIGTERM, HandleSignal);
+  std::signal(SIGINT, OnSignal);
+  std::signal(SIGTERM, OnSignal);
   runner::McapRunObserver recorder;
-  runner::SimulationRunner simulationRunner;
-  simulationRunner.AddObserver(recorder);
+  runner::SimRunner simRunner;
+  simRunner.AddObserver(recorder);
   try {
     const runner::RunnerResult result =
-        simulationRunner.Run(*parsed.options, &running);
+        simRunner.Run(*parsed.options, &running);
     if (!result.error.empty()) {
       std::cerr << "[runner] error: " << result.error << '\n';
     }

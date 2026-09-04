@@ -9,7 +9,6 @@
 #include <string>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float AutopilotParameterLabelWidth = 112.0F;
@@ -17,7 +16,7 @@ constexpr float AutopilotTargetInputWidth = 140.0F;
 constexpr float AdaptivePropertyInputWidth = 0.0F;
 constexpr float HoldCaptureButtonWidth = 96.0F;
 
-UI::PropertyRowBuilder RenderPx4ParameterRow(
+ui::PropertyRowBuilder RenderPx4ParameterRow(
     const BaselinePx4RollHoldParameterBinding &binding,
     const BaselineAutopilotPanelState &state,
     architecture::EventSink<BaselineRollHoldValueChanged> events) {
@@ -30,7 +29,7 @@ UI::PropertyRowBuilder RenderPx4ParameterRow(
           double value) { events.Emit({field, value}); });
 }
 
-UI::PropertyRowBuilder RenderPx4CourseParameterRow(
+ui::PropertyRowBuilder RenderPx4CourseParameterRow(
     const BaselinePx4CourseHoldParameterBinding &binding,
     const BaselineAutopilotPanelState &state,
     architecture::EventSink<BaselineRollHoldValueChanged> events) {
@@ -43,7 +42,7 @@ UI::PropertyRowBuilder RenderPx4CourseParameterRow(
           double value) { events.Emit({field, value}); });
 }
 
-UI::PropertyRowBuilder RenderPx4PitchParameterRow(
+ui::PropertyRowBuilder RenderPx4PitchParameterRow(
     const BaselinePx4PitchHoldParameterBinding &binding,
     const BaselineAutopilotPanelState &state,
     architecture::EventSink<BaselineRollHoldValueChanged> events) {
@@ -56,7 +55,7 @@ UI::PropertyRowBuilder RenderPx4PitchParameterRow(
           double value) { events.Emit({field, value}); });
 }
 
-UI::PropertyRowBuilder RenderYawParameterRow(
+ui::PropertyRowBuilder RenderYawParameterRow(
     const BaselinePx4YawRateParameterBinding &binding,
     const BaselineAutopilotPanelState &state,
     architecture::EventSink<BaselineRollHoldValueChanged> events) {
@@ -68,11 +67,11 @@ UI::PropertyRowBuilder RenderYawParameterRow(
           double value) { events.Emit({field, value}); });
 }
 
-UI::UIElement MakeBaselineRollHoldTuning(
+ui::UIElement MakeBaselineRollHoldTuning(
     const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
-  UI::PropertyGridBuilder parameters =
-      UI::PropertyGrid("BaselinePx4RollHoldParameters")
+  ui::PropertyGridBuilder parameters =
+      ui::PropertyGrid("BaselinePx4RollHoldParameters")
           .LabelWidth(AutopilotParameterLabelWidth)
           .ColumnSpacing(4.0F)
           .RowPadding(2.0F)
@@ -84,15 +83,15 @@ UI::UIElement MakeBaselineRollHoldTuning(
 
   const auto &maximumRateMetadata = gnc::GetPx4RollHoldParameterMetadata(
       gnc::Px4RollHoldParameter::MaximumRollRate);
-  UI::PropertyGridBuilder directRateInput =
-      UI::PropertyGrid("BaselineDirectRollRateTestParameters")
+  ui::PropertyGridBuilder directRateInput =
+      ui::PropertyGrid("BaselineDirectRollRateTestParameters")
           .LabelWidth(AutopilotParameterLabelWidth)
           .ColumnSpacing(4.0F)
           .RowPadding(2.0F)
           .AlternatingRows();
-  directRateInput.Add(UI::PropertyRow("Roll Rate Command")
+  directRateInput.Add(ui::PropertyRow("Roll Rate Command")
           .Tooltip("Direct body roll-rate command in deg/s. The active "
-                   "FW_R_RMAX limit is still applied.")[UI::ScalarEditor(
+                   "FW_R_RMAX limit is still applied.")[ui::ScalarEditor(
               "DirectRollRateCommand",
               state.directRollRateCommandDegPerSec)
                   .Range(-maximumRateMetadata.maximum,
@@ -109,22 +108,22 @@ UI::UIElement MakeBaselineRollHoldTuning(
                             value});
                   })]);
 
-  return UI::FoldOut("PX4 Roll Hold Tuning")
+  return ui::FoldOut("PX4 Roll Hold Tuning")
       .Open(state.px4RollTuningOpen)
       .Section()
-      .Id("BaselineRollHoldTuning")[UI::VerticalLayout().Spacing(
-          6.0F)[+UI::TextWrapped(
+      .Id("BaselineRollHoldTuning")[ui::VerticalLayout().Spacing(
+          6.0F)[+ui::TextWrapped(
                     "PX4 v1.17 Roll Hold parameters. Time constants are in "
                     "seconds; rates are in deg/s.")
                 + parameters
-                + UI::Button("Reset PX4 Roll Hold Tuning")
+                + ui::Button("Reset PX4 Roll Hold Tuning")
                     .OnAction([events = props.resetEvents] { events.Emit({}); })
-                + UI::Separator()
-                + UI::TextWrapped(
+                + ui::Separator()
+                + ui::TextWrapped(
                     "DEBUG / TUNING ONLY: bypasses the roll-angle outer "
                     "loop while preserving the PX4 rate controller and "
                     "rate limit.")
-                + UI::Toggle("Direct Roll Rate Test",
+                + ui::Toggle("Direct Roll Rate Test",
                     state.directRollRateTestEnabled)
                     .Tooltip("Use the direct roll-rate command instead of "
                              "the roll-angle controller output.")
@@ -136,11 +135,11 @@ UI::UIElement MakeBaselineRollHoldTuning(
                 + directRateInput]];
 }
 
-UI::UIElement MakeBaselineYawControlSection(
+ui::UIElement MakeBaselineYawControlSection(
     const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
-  UI::PropertyGridBuilder yawParameters =
-      UI::PropertyGrid("BaselinePx4YawRateParameters")
+  ui::PropertyGridBuilder yawParameters =
+      ui::PropertyGrid("BaselinePx4YawRateParameters")
           .LabelWidth(AutopilotParameterLabelWidth)
           .ColumnSpacing(4.0F)
           .RowPadding(2.0F)
@@ -150,8 +149,8 @@ UI::UIElement MakeBaselineYawControlSection(
     yawParameters.Add(RenderYawParameterRow(binding, state, props.valueEvents));
   }
 
-  UI::ToggleFoldOutBuilder foldOut =
-      UI::ToggleFoldOut("Yaw Coordination / Damper",
+  ui::ToggleFoldOutBuilder foldOut =
+      ui::ToggleFoldOut("Yaw Coordination / Damper",
           state.yawRateControlEnabled)
           .Id("BaselineYawControlSection")
           .OnChanged([events = props.valueEvents](bool enabled) {
@@ -159,12 +158,12 @@ UI::UIElement MakeBaselineYawControlSection(
                 enabled ? 1.0 : 0.0});
           });
 
-  return foldOut[UI::VerticalLayout().Spacing(
-      6.0F)[+UI::TextWrapped(
+  return foldOut[ui::VerticalLayout().Spacing(
+      6.0F)[+ui::TextWrapped(
                 "EXPERIMENTAL: independent PX4 yaw-rate control with JSB0 "
                 "sideslip feedback. Validated candidate: P=0.8, K_beta=8, "
                 "I/D/FF=0. Disabled by default.")
-            + UI::Toggle("Coordinated Turn Setpoint",
+            + ui::Toggle("Coordinated Turn Setpoint",
                 state.coordinatedTurnEnabled)
                 .Tooltip("ON: add g/V*sin(phi)*cos(theta). OFF: damping test "
                          "with a zero base yaw-rate setpoint.")
@@ -175,14 +174,14 @@ UI::UIElement MakeBaselineYawControlSection(
             + yawParameters]];
 }
 
-UI::UIElement MakeBaselineRollHoldDiagnostics(
+ui::UIElement MakeBaselineRollHoldDiagnostics(
     const BaselineAutopilotPanelProps &props);
 
-UI::UIElement MakeBaselinePitchHoldTuning(
+ui::UIElement MakeBaselinePitchHoldTuning(
     const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
-  UI::PropertyGridBuilder parameters =
-      UI::PropertyGrid("BaselinePx4PitchHoldParameters")
+  ui::PropertyGridBuilder parameters =
+      ui::PropertyGrid("BaselinePx4PitchHoldParameters")
           .LabelWidth(AutopilotParameterLabelWidth)
           .ColumnSpacing(4.0F)
           .RowPadding(2.0F)
@@ -193,31 +192,31 @@ UI::UIElement MakeBaselinePitchHoldTuning(
         RenderPx4PitchParameterRow(binding, state, props.valueEvents));
   }
 
-  return UI::FoldOut("PX4 Pitch Hold Tuning")
+  return ui::FoldOut("PX4 Pitch Hold Tuning")
       .Open(state.px4PitchTuningOpen)
       .Section()
-      .Id("BaselinePitchHoldTuning")[UI::VerticalLayout().Spacing(
-          6.0F)[+UI::TextWrapped(
+      .Id("BaselinePitchHoldTuning")[ui::VerticalLayout().Spacing(
+          6.0F)[+ui::TextWrapped(
                     "PX4 fixed-wing pitch attitude/rate cascade. Positive "
                     "and negative pitch-rate limits are independent.")
                 + parameters
-                + UI::Button("Reset PX4 Pitch Hold Tuning")
+                + ui::Button("Reset PX4 Pitch Hold Tuning")
                     .OnAction([events = props.pitchResetEvents] {
                       events.Emit({});
                     })]];
 }
 
-UI::UIElement MakeBaselinePitchHoldDiagnostics(
+ui::UIElement MakeBaselinePitchHoldDiagnostics(
     const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
-  return UI::FoldOut("Diagnostics")
+  return ui::FoldOut("Diagnostics")
       .Open(state.px4PitchDiagnosticsOpen)
       .Section()
-      .Id("BaselinePitchHoldDiagnostics")[UI::VerticalLayout().Spacing(
-          6.0F)[+UI::TextWrapped(
+      .Id("BaselinePitchHoldDiagnostics")[ui::VerticalLayout().Spacing(
+          6.0F)[+ui::TextWrapped(
                     "PX4 fixed-wing Pitch Hold state for the Baseline "
                     "simulation.")
-                + UI::KeyValueGrid("BaselinePitchHoldDiagnosticValues")
+                + ui::KeyValueGrid("BaselinePitchHoldDiagnosticValues")
                     .ColumnsPerRow(2)
                     .AddDouble("PX4 Elevator",
                         props.px4PitchElevatorCommand,
@@ -233,11 +232,11 @@ UI::UIElement MakeBaselinePitchHoldDiagnostics(
                         "%.3f")]];
 }
 
-UI::UIElement MakeBaselinePitchHoldSection(
+ui::UIElement MakeBaselinePitchHoldSection(
     const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
-  UI::ToggleFoldOutBuilder foldOut =
-      UI::ToggleFoldOut("Pitch Hold", state.pitchHold)
+  ui::ToggleFoldOutBuilder foldOut =
+      ui::ToggleFoldOut("Pitch Hold", state.pitchHold)
           .Id("BaselinePitchHoldSection")
           .OnChanged([events = props.valueEvents](bool enabled) {
             events.Emit(
@@ -246,14 +245,14 @@ UI::UIElement MakeBaselinePitchHoldSection(
 
   // clang-format off
   return foldOut[
-      UI::VerticalLayout()
+      ui::VerticalLayout()
           .Spacing(6.0F)
           [
-            +UI::HorizontalLayout()
+            +ui::HorizontalLayout()
                  .Spacing(8.0F)
                  [
-                   +UI::TextDisabled("Target Pitch (deg)")
-                   + UI::InputDouble("##BaselinePitchHoldTarget",
+                   +ui::TextDisabled("Target Pitch (deg)")
+                   + ui::InputDouble("##BaselinePitchHoldTarget",
                          state.pitchTargetDeg)
                          .Width(AutopilotTargetInputWidth)
                          .Step(0.5)
@@ -263,24 +262,24 @@ UI::UIElement MakeBaselinePitchHoldSection(
                            events.Emit(
                                {BaselineRollHoldField::TargetPitchDeg, value});
                          })
-                   + UI::Text(state.pitchHold ? "Hold" : "Off")
+                   + ui::Text(state.pitchHold ? "Hold" : "Off")
                  ]
-            + UI::HorizontalLayout()
+            + ui::HorizontalLayout()
                  .Spacing(8.0F)
                  [
-                   +UI::ValueLabel("Current Pitch",
+                   +ui::ValueLabel("Current Pitch",
                         props.currentPitchDeg,
                         "%.2f deg")
-                   + UI::ValueLabel("Pitch Rate",
+                   + ui::ValueLabel("Pitch Rate",
                          props.currentPitchRateDegPerSec,
                          "%.2f deg/s")
-                   + UI::ValueLabel("Elevator",
+                   + ui::ValueLabel("Elevator",
                          props.currentElevator,
                          "%.3f")
-                   + UI::StatusBadge(props.pitchHoldActive ? "Active" : "Inactive",
-                         props.pitchHoldActive ? UI::StatusTone::Success
-                                               : UI::StatusTone::Neutral)
-                   + UI::Button("Capture")
+                   + ui::StatusBadge(props.pitchHoldActive ? "Active" : "Inactive",
+                         props.pitchHoldActive ? ui::StatusTone::Success
+                                               : ui::StatusTone::Neutral)
+                   + ui::Button("Capture")
                          .Enabled(props.valueEvents.IsConnected())
                          .OnAction([events = props.valueEvents,
                                       value = props.currentPitchDeg] {
@@ -296,11 +295,11 @@ UI::UIElement MakeBaselinePitchHoldSection(
   // clang-format on
 }
 
-UI::UIElement MakeBaselineCourseHoldSection(
+ui::UIElement MakeBaselineCourseHoldSection(
     const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
-  UI::PropertyGridBuilder parameters =
-      UI::PropertyGrid("BaselinePx4CourseHoldParameters")
+  ui::PropertyGridBuilder parameters =
+      ui::PropertyGrid("BaselinePx4CourseHoldParameters")
           .LabelWidth(AutopilotParameterLabelWidth)
           .ColumnSpacing(4.0F)
           .RowPadding(2.0F)
@@ -311,23 +310,23 @@ UI::UIElement MakeBaselineCourseHoldSection(
         RenderPx4CourseParameterRow(binding, state, props.valueEvents));
   }
 
-  UI::ToggleFoldOutBuilder foldOut =
-      UI::ToggleFoldOut("Course Hold", state.courseHold)
+  ui::ToggleFoldOutBuilder foldOut =
+      ui::ToggleFoldOut("Course Hold", state.courseHold)
           .Id("BaselineCourseHoldSection")
           .OnChanged([events = props.valueEvents](bool enabled) {
             events.Emit({BaselineRollHoldField::CourseHoldEnabled,
                 enabled ? 1.0 : 0.0});
           });
 
-  return foldOut[UI::VerticalLayout().Spacing(
-      6.0F)[+UI::TextWrapped(
+  return foldOut[ui::VerticalLayout().Spacing(
+      6.0F)[+ui::TextWrapped(
                 "PX4 mainline directional-guidance subset. Produces only a "
                 "roll setpoint; Roll Hold and yaw augmentation remain "
                 "separate.")
-            + UI::PropertyGrid("BaselineCourseTarget")
+            + ui::PropertyGrid("BaselineCourseTarget")
                 .LabelWidth(AutopilotParameterLabelWidth)
-                .Add(UI::PropertyRow(
-                    "Target Course")[UI::ScalarEditor("TargetCourseDeg",
+                .Add(ui::PropertyRow(
+                    "Target Course")[ui::ScalarEditor("TargetCourseDeg",
                     state.targetCourseDeg)
                         .Range(-180.0, 180.0)
                         .ShowSlider(false)
@@ -341,7 +340,7 @@ UI::UIElement MakeBaselineCourseHoldSection(
                               {BaselineRollHoldField::TargetCourseDeg, value});
                         })])
             + parameters
-            + UI::KeyValueGrid("BaselineCourseHoldDiagnostics")
+            + ui::KeyValueGrid("BaselineCourseHoldDiagnostics")
                 .ColumnsPerRow(2)
                 .AddDouble("Current Course", props.currentCourseDeg, "%.2f deg")
                 .AddDouble("Course Error", props.courseErrorDeg, "%.2f deg")
@@ -351,16 +350,16 @@ UI::UIElement MakeBaselineCourseHoldSection(
                 .AddDouble("Limited Roll SP",
                     props.courseLimitedRollSetpointDeg,
                     "%.2f deg")
-            + UI::StatusBadge(props.courseHoldActive ? "Active" : "Inactive",
-                props.courseHoldActive ? UI::StatusTone::Success
-                                       : UI::StatusTone::Neutral)]];
+            + ui::StatusBadge(props.courseHoldActive ? "Active" : "Inactive",
+                props.courseHoldActive ? ui::StatusTone::Success
+                                       : ui::StatusTone::Neutral)]];
 }
 
-UI::UIElement MakeBaselineRollHoldSection(
+ui::UIElement MakeBaselineRollHoldSection(
     const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
-  UI::ToggleFoldOutBuilder foldOut =
-      UI::ToggleFoldOut("Roll Hold", state.rollHold)
+  ui::ToggleFoldOutBuilder foldOut =
+      ui::ToggleFoldOut("Roll Hold", state.rollHold)
           .Id("BaselineRollHoldSection")
           .OnChanged([events = props.valueEvents](bool enabled) {
             events.Emit({BaselineRollHoldField::Enabled, enabled ? 1.0 : 0.0});
@@ -369,14 +368,14 @@ UI::UIElement MakeBaselineRollHoldSection(
 
   // clang-format off
   return foldOut[
-      UI::VerticalLayout()
+      ui::VerticalLayout()
           .Spacing(6.0F)
           [
-            +UI::HorizontalLayout()
+            +ui::HorizontalLayout()
                  .Spacing(8.0F)
                  [
-                   +UI::TextDisabled("Target Roll (deg)")
-                   + UI::InputDouble("##BaselineRollHoldTarget",
+                   +ui::TextDisabled("Target Roll (deg)")
+                   + ui::InputDouble("##BaselineRollHoldTarget",
                          state.rollTargetDeg)
                          .Enabled(!state.courseHold)
                          .Width(AutopilotTargetInputWidth)
@@ -387,27 +386,27 @@ UI::UIElement MakeBaselineRollHoldSection(
                            events.Emit(
                                {BaselineRollHoldField::TargetDeg, value});
                          })
-                   + UI::Text(state.rollHold ? "Hold" : "Off")
-                   + UI::TextDisabled(state.courseHold
+                   + ui::Text(state.rollHold ? "Hold" : "Off")
+                   + ui::TextDisabled(state.courseHold
                          ? "Overridden by Course Hold"
                          : "")
                  ]
-            + UI::HorizontalLayout()
+            + ui::HorizontalLayout()
                  .Spacing(8.0F)
                  [
-                   +UI::ValueLabel("Current Roll",
+                   +ui::ValueLabel("Current Roll",
                         props.currentRollDeg,
                         "%.2f deg")
-                   + UI::ValueLabel("Roll Rate",
+                   + ui::ValueLabel("Roll Rate",
                          props.currentRollRateDegPerSec,
                          "%.2f deg/s")
-                   + UI::ValueLabel("Aileron",
+                   + ui::ValueLabel("Aileron",
                          props.currentAileron,
                          "%.3f")
-                   + UI::StatusBadge(props.rollHoldActive ? "Active" : "Inactive",
-                         props.rollHoldActive ? UI::StatusTone::Success
-                                              : UI::StatusTone::Neutral)
-                   + UI::Button("Capture")
+                   + ui::StatusBadge(props.rollHoldActive ? "Active" : "Inactive",
+                         props.rollHoldActive ? ui::StatusTone::Success
+                                              : ui::StatusTone::Neutral)
+                   + ui::Button("Capture")
                          .Enabled(props.valueEvents.IsConnected())
                          .OnAction([events = props.valueEvents,
                                       value = props.currentRollDeg] {
@@ -423,23 +422,23 @@ UI::UIElement MakeBaselineRollHoldSection(
   // clang-format on
 }
 
-UI::UIElement MakeBaselineRollHoldDiagnostics(
+ui::UIElement MakeBaselineRollHoldDiagnostics(
     const BaselineAutopilotPanelProps &props) {
   BaselineAutopilotPanelState &state = props.state;
 
   // clang-format off
-  return UI::FoldOut("Diagnostics")
+  return ui::FoldOut("Diagnostics")
       .Open(state.px4RollDiagnosticsOpen)
       .Section()
       .Id("BaselineRollHoldDiagnostics")
       [
-        UI::VerticalLayout()
+        ui::VerticalLayout()
             .Spacing(6.0F)
             [
-              +UI::TextWrapped(
+              +ui::TextWrapped(
                     "PX4 v1.17 fixed-wing Roll Hold state for the Baseline "
                     "simulation.")
-              + UI::KeyValueGrid("BaselineRollHoldDiagnosticValues")
+              + ui::KeyValueGrid("BaselineRollHoldDiagnosticValues")
                     .ColumnsPerRow(2)
                     .AddDouble("PX4 Aileron",
                          props.px4RollAileronCommand,
@@ -459,22 +458,22 @@ UI::UIElement MakeBaselineRollHoldDiagnostics(
 }
 } // namespace
 
-UI::UIElement Px4AttitudePanel::BuildRoll(
+ui::UIElement Px4AttitudePanel::BuildRoll(
     const BaselineAutopilotPanelProps &props) {
   return MakeBaselineRollHoldSection(props);
 }
 
-UI::UIElement Px4AttitudePanel::BuildPitch(
+ui::UIElement Px4AttitudePanel::BuildPitch(
     const BaselineAutopilotPanelProps &props) {
   return MakeBaselinePitchHoldSection(props);
 }
 
-UI::UIElement Px4AttitudePanel::BuildCourse(
+ui::UIElement Px4AttitudePanel::BuildCourse(
     const BaselineAutopilotPanelProps &props) {
   return MakeBaselineCourseHoldSection(props);
 }
 
-UI::UIElement Px4AttitudePanel::BuildYaw(
+ui::UIElement Px4AttitudePanel::BuildYaw(
     const BaselineAutopilotPanelProps &props) {
   return MakeBaselineYawControlSection(props);
 }

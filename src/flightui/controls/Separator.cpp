@@ -4,8 +4,8 @@
 
 #include <imgui.h>
 
-namespace FlightUI {
+namespace ui {
 UIElement Separator() {
   return CreateElement([] { ImGui::Separator(); });
 }
-} // namespace FlightUI
+} // namespace ui

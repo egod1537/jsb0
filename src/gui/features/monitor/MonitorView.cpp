@@ -17,7 +17,6 @@
 #include <utility>
 
 namespace gui {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float PresetPaneMinWidth = 180.0F;
@@ -38,7 +37,7 @@ T ClampToOrderedRange(T value, T firstBound, T secondBound) {
 
 void DrawVerticalPaneSplitter(const char *id, float height, float &sizeLogical,
     float minLogical, float maxLogical) {
-  const float splitterWidth = UI::Ui(PaneSplitterThickness);
+  const float splitterWidth = ui::Ui(PaneSplitterThickness);
   const ImVec2 splitterMin = ImGui::GetCursorScreenPos();
   ImGui::InvisibleButton(id,
       ImVec2(splitterWidth, std::max(height, 1.0F)),
@@ -49,7 +48,7 @@ void DrawVerticalPaneSplitter(const char *id, float height, float &sizeLogical,
     ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
   }
   if (active) {
-    const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+    const float uiScale = std::max(ui::GetUIScale(), 0.001F);
     sizeLogical =
         ClampToOrderedRange(sizeLogical + ImGui::GetIO().MouseDelta.x / uiScale,
             minLogical,
@@ -63,12 +62,12 @@ void DrawVerticalPaneSplitter(const char *id, float height, float &sizeLogical,
   ImGui::GetWindowDrawList()->AddLine(ImVec2(centerX, splitterMin.y),
       ImVec2(centerX, splitterMin.y + height),
       color,
-      active || hovered ? UI::Ui(2.0F) : UI::Ui(1.0F));
+      active || hovered ? ui::Ui(2.0F) : ui::Ui(1.0F));
 }
 
 void DrawHorizontalPaneSplitter(const char *id, float width,
     float &bottomSizeLogical, float minLogical, float maxLogical) {
-  const float splitterHeight = UI::Ui(PaneSplitterThickness);
+  const float splitterHeight = ui::Ui(PaneSplitterThickness);
   const ImVec2 splitterMin = ImGui::GetCursorScreenPos();
   ImGui::InvisibleButton(id,
       ImVec2(std::max(width, 1.0F), splitterHeight),
@@ -79,7 +78,7 @@ void DrawHorizontalPaneSplitter(const char *id, float width,
     ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
   }
   if (active) {
-    const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+    const float uiScale = std::max(ui::GetUIScale(), 0.001F);
     bottomSizeLogical = ClampToOrderedRange(
         bottomSizeLogical - ImGui::GetIO().MouseDelta.y / uiScale,
         minLogical,
@@ -93,7 +92,7 @@ void DrawHorizontalPaneSplitter(const char *id, float width,
   ImGui::GetWindowDrawList()->AddLine(ImVec2(splitterMin.x, centerY),
       ImVec2(splitterMin.x + width, centerY),
       color,
-      active || hovered ? UI::Ui(2.0F) : UI::Ui(1.0F));
+      active || hovered ? ui::Ui(2.0F) : ui::Ui(1.0F));
 }
 } // namespace
 
@@ -214,7 +213,7 @@ std::optional<std::size_t> MonitorView::FindFirstEmptyPlotSlot() const {
 void MonitorView::DrawWindow(const TelemetrySources &sources,
     std::span<const gnc::DynamicModeSnapshot> dynamicModeHistory) {
   const ImVec2 workspaceSize = ImGui::GetContentRegionAvail();
-  const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+  const float uiScale = std::max(ui::GetUIScale(), 0.001F);
   if (presetPaneOpen_) {
     const float availableWidthLogical = workspaceSize.x / uiScale;
     const float maximumPresetPaneWidth = std::max(PresetPaneMinWidth,
@@ -226,7 +225,7 @@ void MonitorView::DrawWindow(const TelemetrySources &sources,
         maximumPresetPaneWidth);
 
     if (ImGui::BeginChild("MonitorPresetPane",
-            ImVec2(UI::Ui(presetPaneWidth_), 0.0F),
+            ImVec2(ui::Ui(presetPaneWidth_), 0.0F),
             false,
             ImGuiWindowFlags_NoScrollbar
                 | ImGuiWindowFlags_NoScrollWithMouse)) {
@@ -246,7 +245,7 @@ void MonitorView::DrawWindow(const TelemetrySources &sources,
         maximumPresetPaneWidth);
   } else {
     if (ImGui::BeginChild("MonitorPresetPaneCollapsed",
-            ImVec2(UI::Ui(PresetPaneCollapsedWidth), 0.0F),
+            ImVec2(ui::Ui(PresetPaneCollapsedWidth), 0.0F),
             true,
             ImGuiWindowFlags_NoScrollbar
                 | ImGuiWindowFlags_NoScrollWithMouse)) {
@@ -279,18 +278,18 @@ void MonitorView::DrawPlotWorkspace(const TelemetrySources &sources,
   const ImVec2 availableSize = ImGui::GetContentRegionAvail();
   const ImGuiStyle &style = ImGui::GetStyle();
   float plotRegionHeight = availableSize.y;
-  float timelineRegionHeight = UI::Ui(TimelineCollapsedHeight);
+  float timelineRegionHeight = ui::Ui(TimelineCollapsedHeight);
   float maximumTimelineHeight = TimelineMinHeight;
   if (timelinePaneOpen_) {
-    const float uiScale = std::max(UI::GetUIScale(), 0.001F);
+    const float uiScale = std::max(ui::GetUIScale(), 0.001F);
     maximumTimelineHeight = std::max(TimelineMinHeight,
         std::min(TimelineMaxHeight, availableSize.y / uiScale * 0.5F));
     timelinePaneHeight_ = ClampToOrderedRange(timelinePaneHeight_,
         TimelineMinHeight,
         maximumTimelineHeight);
-    timelineRegionHeight = UI::Ui(timelinePaneHeight_);
+    timelineRegionHeight = ui::Ui(timelinePaneHeight_);
     plotRegionHeight = std::max(1.0F,
-        availableSize.y - timelineRegionHeight - UI::Ui(PaneSplitterThickness)
+        availableSize.y - timelineRegionHeight - ui::Ui(PaneSplitterThickness)
             - style.ItemSpacing.y * 2.0F);
   } else {
     plotRegionHeight = std::max(1.0F,

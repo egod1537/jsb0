@@ -46,14 +46,14 @@ if(JSB_BUILD_EDITOR)
     features/monitor/view/MonitorToolbar.cpp
     features/simulation/ScenarioController.cpp
     features/simulation/ScenarioSetupPopup.cpp
-    features/simulation/SimulationController.cpp
+    features/simulation/SimController.cpp
     platform/FileDialogService.cpp
     panels/AutopilotPanel.cpp
     panels/BaselineAutopilotPanel.cpp
     panels/ManualControlPanel.cpp
     panels/TrimPanel.cpp
-    windows/SimulationControlWindow.cpp
-    windows/SimulationWindow.cpp
+    windows/SimControlWindow.cpp
+    windows/SimWindow.cpp
     windows/EditorIconBrowserWindow.cpp
     windows/ScenarioWindow.cpp
     windows/FlightConsoleWindow.cpp

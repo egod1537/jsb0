@@ -51,7 +51,7 @@ RULES: dict[str, tuple[re.Pattern[str], ...]] = {
     "gui": tuple(
         re.compile(pattern)
         for pattern in (
-            r"^sim/runtime/SimulationRuntime(?:\.hpp|\.h)$",
+            r"^sim/runtime/SimRuntime(?:\.hpp|\.h)$",
             r"^sim/Simulation(?:\.hpp|\.h)$",
             r"^sim/(jsbsim|gnc/autopilot)/",
         )

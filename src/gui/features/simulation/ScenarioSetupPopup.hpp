@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sim/runtime/SimulationContracts.hpp"
+#include "sim/runtime/SimContracts.hpp"
 
 namespace gui {
 class ScenarioController;
@@ -13,13 +13,13 @@ public:
   void RequestOpen();
   void Cancel();
   bool IsOpenRequested() const { return openRequested_; }
-  void Draw(const sim::SimulationSnapshot &snapshot);
+  void Draw(const sim::SimSnapshot &snapshot);
 
 private:
   // Rendering
   void DrawSelection();
   void DrawSummary();
-  void DrawActions(const sim::SimulationSnapshot &snapshot);
+  void DrawActions(const sim::SimSnapshot &snapshot);
 
   // Dependencies
   ScenarioController &controller_;

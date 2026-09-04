@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace FlightUI {
+namespace ui {
 namespace {
 enum class ValueType {
   FloatingPoint,
@@ -99,4 +99,4 @@ UIElement ValueLabel(std::string label, int value, std::string format) {
   return MakeValueLabel(std::move(label), value, ValueType::Integer,
                         std::move(format));
 }
-} // namespace FlightUI
+} // namespace ui

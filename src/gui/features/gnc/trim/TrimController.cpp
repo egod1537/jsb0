@@ -1,22 +1,22 @@
 #include "gui/features/gnc/trim/TrimController.hpp"
 
-#include "messaging/SimulationMessageClient.hpp"
+#include "messaging/SimMessageClient.hpp"
 
 #include <algorithm>
 #include <cmath>
 
 namespace gui {
-TrimController::TrimController(application::SimulationMessageClient &client,
+TrimController::TrimController(app::SimMessageClient &client,
     gnc::TrimRequest &request, bool &resultOpen, bool &residualOpen,
     bool &inProgress)
     : client_(client), request_(request), resultOpen_(resultOpen),
       residualOpen_(residualOpen), inProgress_(inProgress) {}
 
-void TrimController::Handle(const TrimRequested &event) {
+void TrimController::OnEvent(const TrimRequested &event) {
   client_.RunTrim(event.request, event.fromCurrentState);
 }
 
-void TrimController::Handle(const TrimRequestValueChanged &event) {
+void TrimController::OnEvent(const TrimRequestValueChanged &event) {
   if (!std::isfinite(event.value)) {
     return;
   }
@@ -37,18 +37,18 @@ void TrimController::Handle(const TrimRequestValueChanged &event) {
   }
 }
 
-void TrimController::Handle(const TrimExecutionRequested &event) {
+void TrimController::OnEvent(const TrimExecutionRequested &event) {
   if (inProgress_) {
     return;
   }
   inProgress_ = true;
-  Handle(TrimRequested{request_, event.fromCurrentState});
+  OnEvent(TrimRequested{request_, event.fromCurrentState});
   resultOpen_ = true;
   residualOpen_ = true;
   inProgress_ = false;
 }
 
-void TrimController::Handle(const TrimViewStateChanged &event) {
+void TrimController::OnEvent(const TrimViewStateChanged &event) {
   resultOpen_ = event.resultOpen;
   residualOpen_ = event.residualOpen;
 }

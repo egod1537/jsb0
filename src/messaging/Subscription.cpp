@@ -1,6 +1,6 @@
 #include "messaging/Subscription.hpp"
 
-namespace application::messaging {
+namespace app::messaging {
 Subscription::~Subscription() { Reset(); }
 
 Subscription::Subscription(Subscription &&other) noexcept
@@ -21,4 +21,4 @@ void Subscription::Reset() {
   auto unsubscribe = std::move(unsubscribe_);
   unsubscribe();
 }
-} // namespace application::messaging
+} // namespace app::messaging

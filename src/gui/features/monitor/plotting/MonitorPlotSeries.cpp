@@ -8,7 +8,6 @@
 #include <optional>
 
 namespace gui::plotting {
-namespace UI = FlightUI;
 
 namespace {
 constexpr float LegendMarkerRadius = 3.5F;
@@ -54,11 +53,11 @@ void DrawTelemetryLegend(MonitorPlotState &plot,
   }
 
   const float availableWidth = std::max(1.0F, ImGui::GetContentRegionAvail().x);
-  const float markerRadius = UI::Ui(LegendMarkerRadius);
+  const float markerRadius = ui::Ui(LegendMarkerRadius);
   const float markerDiameter = markerRadius * 2.0F;
-  const float markerTextSpacing = UI::Ui(LegendMarkerTextSpacing);
-  const float horizontalPadding = UI::Ui(LegendItemHorizontalPadding);
-  const float itemSpacing = UI::Ui(LegendItemSpacing);
+  const float markerTextSpacing = ui::Ui(LegendMarkerTextSpacing);
+  const float horizontalPadding = ui::Ui(LegendItemHorizontalPadding);
+  const float itemSpacing = ui::Ui(LegendItemSpacing);
   const float itemHeight = std::max(ImGui::GetTextLineHeight(), markerDiameter)
                            + ImGui::GetStyle().FramePadding.y * 2.0F;
   float usedWidth = 0.0F;
@@ -125,7 +124,7 @@ void DrawTelemetryLegend(MonitorPlotState &plot,
     usedWidth += itemWidth;
   }
 
-  ImGui::Dummy(ImVec2(0.0F, UI::Ui(LegendPlotSpacing)));
+  ImGui::Dummy(ImVec2(0.0F, ui::Ui(LegendPlotSpacing)));
 }
 
 void DrawTelemetryHoverTooltip(
@@ -150,7 +149,7 @@ void DrawTelemetryHoverTooltip(
     ImGui::ColorButton("##SeriesColor",
         series.color,
         ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
-        ImVec2(UI::Ui(9.0F), UI::Ui(9.0F)));
+        ImVec2(ui::Ui(9.0F), ui::Ui(9.0F)));
     ImGui::SameLine();
     if (valueUnit.empty()) {
       ImGui::Text("%s: %.6g", series.displayLabel.c_str(), sample->value);

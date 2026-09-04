@@ -17,7 +17,7 @@ void ExperimentalController::Synchronize(
   state_.rollRateProportionalGain = config.rollRateProportionalGain;
 }
 
-void ExperimentalController::Handle(const PrimaryRollHoldValueChanged &event) {
+void ExperimentalController::OnEvent(const PrimaryRollHoldValueChanged &event) {
   if (!std::isfinite(event.value)) {
     return;
   }
@@ -37,7 +37,7 @@ void ExperimentalController::Handle(const PrimaryRollHoldValueChanged &event) {
   }
 }
 
-void ExperimentalController::Handle(const ExperimentalViewStateChanged &event) {
+void ExperimentalController::OnEvent(const ExperimentalViewStateChanged &event) {
   state_.rollHoldParametersOpen = event.primaryParametersOpen;
 }
 } // namespace gui
