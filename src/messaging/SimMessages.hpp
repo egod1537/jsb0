@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace app::messaging {
 using RequestId = std::uint64_t;
@@ -84,12 +85,21 @@ struct TelemetryFrameEvent {
   telemetry::TelemetryFrame frame;
 };
 
+struct TelemetryBatch {
+  std::vector<TelemetryFrameEvent> frames;
+};
+
 struct ScenarioStatusEvent {
   std::optional<sim::ScenarioExecutionStatus> status;
 };
 
 struct TelemetryRecordingStatusEvent {
   telemetry::recording::RecordingStatus status;
+};
+
+// Worker lifecycle events
+struct SimWorkerFatalEvent {
+  std::string error;
 };
 
 // Operation result events

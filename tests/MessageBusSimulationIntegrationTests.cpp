@@ -1,5 +1,5 @@
-#include "messaging/MessageBus.hpp"
 #include "messaging/GuiSimBridge.hpp"
+#include "messaging/MessageQueues.hpp"
 #include "messaging/SimMessageClient.hpp"
 #include "sim/Simulation.hpp"
 #include "sim/gnc/autopilot/AutopilotFactory.hpp"
@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -21,21 +22,35 @@ struct Harness {
                     gnc::CreateAutopilot(gnc::AutopilotKind::Primary)),
             std::make_unique<sim::Simulation>(
                 gnc::CreateAutopilot(gnc::AutopilotKind::Baseline))),
-        bridge(bus, runtime), client(bus) {}
+        bridge(commands, events, telemetry, runtime),
+        client(commands, events, telemetry) {}
 
   bool Initialize() {
     const bool initialized = runtime.Initialize();
     bridge.PublishState();
+    events.Drain();
+    telemetry.Drain();
     return initialized;
   }
 
   bool Tick() {
+    commands.Drain();
     const bool succeeded = runtime.Tick();
     bridge.PublishState();
+    events.Drain();
+    telemetry.Drain();
     return succeeded;
   }
 
-  app::messaging::MessageBus bus;
+  void Dispatch() {
+    commands.Drain();
+    events.Drain();
+    telemetry.Drain();
+  }
+
+  app::messaging::GuiToSimQueue commands;
+  app::messaging::SimToGuiQueue events;
+  app::messaging::SimToGuiTelemetryQueue telemetry;
   sim::SimRuntime runtime;
   app::messaging::GuiSimBridge bridge;
   app::SimMessageClient client;
@@ -47,11 +62,11 @@ void TestCommandsSnapshotsAndTelemetry() {
   assert(harness.client.GetSimSnapshot().baseline.has_value());
 
   harness.client.StartSimulation();
-  assert(harness.client.GetSimExecutionState()
-         == sim::SimExecutionState::Running);
+  harness.Dispatch();
+  assert(
+      harness.client.GetSimExecutionState() == sim::SimExecutionState::Running);
   assert(harness.Tick());
-  const sim::SimSnapshot runningSnapshot =
-      harness.client.GetSimSnapshot();
+  const sim::SimSnapshot runningSnapshot = harness.client.GetSimSnapshot();
   const double runningTime = runningSnapshot.primary.aircraft.simulationTimeSec;
   assert(runningTime > 0.0);
   assert(runningSnapshot.baseline.has_value());
@@ -60,29 +75,31 @@ void TestCommandsSnapshotsAndTelemetry() {
          < 1.0e-12);
 
   harness.client.PauseSimulation();
-  assert(harness.client.GetSimExecutionState()
-         == sim::SimExecutionState::Paused);
+  harness.Dispatch();
+  assert(
+      harness.client.GetSimExecutionState() == sim::SimExecutionState::Paused);
   harness.client.RequestSimTick();
+  harness.Dispatch();
   assert(harness.client.GetPendingSimTickCount() == 1);
   assert(harness.Tick());
   assert(harness.client.GetPendingSimTickCount() == 0);
-  assert(
-      harness.client.GetSimSnapshot().primary.aircraft.simulationTimeSec
-      > runningTime);
+  assert(harness.client.GetSimSnapshot().primary.aircraft.simulationTimeSec
+         > runningTime);
 
   control::ControlInput input;
   input.aileron = 0.25;
   input.throttle = 0.7;
   assert(harness.client.SetManualControl(input));
+  harness.Dispatch();
   assert(!harness.client.GetLastCommandError().has_value());
-  assert(std::abs(harness.client.GetSimSnapshot()
-                      .primaryAutopilot.manualControl.aileron
-                  - input.aileron)
-         < 1.0e-12);
+  assert(
+      std::abs(
+          harness.client.GetSimSnapshot().primaryAutopilot.manualControl.aileron
+          - input.aileron)
+      < 1.0e-12);
   harness.client.RequestSimTick();
   assert(harness.Tick());
-  const sim::SimSnapshot synchronizedSnapshot =
-      harness.client.GetSimSnapshot();
+  const sim::SimSnapshot synchronizedSnapshot = harness.client.GetSimSnapshot();
   assert(synchronizedSnapshot.baseline.has_value());
   assert(synchronizedSnapshot.baselineAutopilot.has_value());
   assert(std::abs(synchronizedSnapshot.baseline->aircraft.simulationTimeSec
@@ -93,8 +110,8 @@ void TestCommandsSnapshotsAndTelemetry() {
          < 1.0e-12);
 
   assert(harness.client.ResetSimulation());
-  const sim::SimSnapshot resetSnapshot =
-      harness.client.GetSimSnapshot();
+  harness.Dispatch();
+  const sim::SimSnapshot resetSnapshot = harness.client.GetSimSnapshot();
   assert(resetSnapshot.baseline.has_value());
   assert(std::abs(resetSnapshot.primary.aircraft.simulationTimeSec) < 1.0e-12);
   assert(
@@ -107,28 +124,37 @@ void TestCommandsSnapshotsAndTelemetry() {
   assert(baselineTelemetry != nullptr && baselineTelemetry->available);
 
   harness.client.ResumeSimulation();
-  assert(harness.client.GetSimExecutionState()
-         == sim::SimExecutionState::Running);
+  harness.Dispatch();
+  assert(
+      harness.client.GetSimExecutionState() == sim::SimExecutionState::Running);
   harness.client.StopSimulation();
-  assert(harness.client.GetSimExecutionState()
-         == sim::SimExecutionState::Stopped);
+  harness.Dispatch();
+  assert(
+      harness.client.GetSimExecutionState() == sim::SimExecutionState::Stopped);
 }
 
 void TestFailedRequestPreservesErrorAndSuccessClearsIt() {
-  app::messaging::MessageBus bus;
+  app::messaging::GuiToSimQueue commands;
+  app::messaging::SimToGuiQueue events;
+  app::messaging::SimToGuiTelemetryQueue telemetry;
   sim::SimRuntime runtime(std::make_unique<sim::Simulation>(
       gnc::CreateAutopilot(gnc::AutopilotKind::Primary)));
-  app::messaging::GuiSimBridge bridge(bus, runtime);
-  app::SimMessageClient client(bus);
+  app::messaging::GuiSimBridge bridge(commands, events, telemetry, runtime);
+  app::SimMessageClient client(commands, events, telemetry);
 
-  assert(!client.ResetSimulation());
+  assert(client.ResetSimulation());
+  commands.Drain();
+  events.Drain();
   const std::optional<std::string> failure = client.GetLastCommandError();
   assert(failure.has_value());
   assert(*failure == "Simulation reset failed.");
 
   assert(runtime.Initialize());
   bridge.PublishState();
+  events.Drain();
   assert(client.ResetSimulation());
+  commands.Drain();
+  events.Drain();
   assert(!client.GetLastCommandError().has_value());
 }
 
@@ -158,9 +184,9 @@ void TestBaselineAutopilotConfigurationFlowsThroughGuiBoundary() {
   config.yawRateWashoutTimeConstantSec = 0.0;
   config.rollToYawFeedForwardGain = 0.0;
   assert(harness.client.SetBaselineRollHoldConfig(config));
+  harness.Dispatch();
 
-  const sim::SimSnapshot configured =
-      harness.client.GetSimSnapshot();
+  const sim::SimSnapshot configured = harness.client.GetSimSnapshot();
   assert(configured.baselineAutopilot.has_value());
   const sim::BaselineRollHoldConfig &actual =
       configured.baselineAutopilot->baselineRollHold;
@@ -180,6 +206,7 @@ void TestBaselineAutopilotConfigurationFlowsThroughGuiBoundary() {
   assert(actual.pitchIntegratorLimit == 0.3);
 
   harness.client.StartSimulation();
+  harness.Dispatch();
   assert(harness.Tick());
   const auto telemetry =
       harness.client.GetTelemetrySnapshot(sim::SimSlot::Baseline);
@@ -191,15 +218,38 @@ void TestBaselineAutopilotConfigurationFlowsThroughGuiBoundary() {
   assert(telemetry->Find("autopilot/pitch_hold/elevator_command") != nullptr);
 }
 
-void TestMissingSynchronousResultFailsCleanly() {
-  app::messaging::MessageBus bus;
-  app::SimMessageClient client(bus);
+void TestClosedCommandQueueFailsCleanly() {
+  app::messaging::GuiToSimQueue commands;
+  app::messaging::SimToGuiQueue events;
+  app::messaging::SimToGuiTelemetryQueue telemetry;
+  app::SimMessageClient client(commands, events, telemetry);
+  commands.Close();
 
   assert(!client.SetManualControl(control::ControlInput{}));
   const std::optional<std::string> failure = client.GetLastCommandError();
   assert(failure.has_value());
-  assert(*failure
-         == "Synchronous message request completed without a matching result.");
+  assert(*failure == "Simulation command queue is closed.");
+}
+
+void TestRequestCompletionRunsOnlyDuringGuiEventDrain() {
+  Harness harness;
+  assert(harness.Initialize());
+  const std::thread::id guiThread = std::this_thread::get_id();
+  std::thread::id completionThread;
+  bool completed = false;
+
+  assert(harness.client.ResetSimulation(
+      [&](bool succeeded, const std::string &error) {
+        assert(succeeded);
+        assert(error.empty());
+        completed = true;
+        completionThread = std::this_thread::get_id();
+      }));
+  harness.commands.Drain();
+  assert(!completed);
+  harness.events.Drain();
+  assert(completed);
+  assert(completionThread == guiThread);
 }
 
 void TestTrimAndScenarioRequestResults() {
@@ -207,16 +257,18 @@ void TestTrimAndScenarioRequestResults() {
   assert(harness.Initialize());
 
   assert(harness.client.SetAutomaticLinearizationEnabled(false));
+  harness.Dispatch();
   const sim::SimSnapshot linearizationDisabled =
       harness.client.GetSimSnapshot();
   assert(linearizationDisabled.linearization.available);
   assert(!linearizationDisabled.linearization.automaticUpdatesEnabled);
   assert(harness.client.SetAutomaticLinearizationEnabled(true));
+  harness.Dispatch();
 
   gnc::TrimRequest trimRequest;
   assert(harness.client.RunTrim(trimRequest, false));
-  const sim::SimSnapshot trimmed =
-      harness.client.GetSimSnapshot();
+  harness.Dispatch();
+  const sim::SimSnapshot trimmed = harness.client.GetSimSnapshot();
   assert(trimmed.trim.result.has_value());
   assert(trimmed.trim.result->success);
 
@@ -229,50 +281,51 @@ void TestTrimAndScenarioRequestResults() {
       .scenario = scenario,
       .variant = sim::ExecutionVariant::Primary,
   }));
+  harness.Dispatch();
   assert(harness.client.GetScenarioExecutionStatus().has_value());
   while (harness.client.GetSimExecutionState()
          == sim::SimExecutionState::Running) {
     assert(harness.Tick());
   }
 
-  const sim::SimSnapshot completed =
-      harness.client.GetSimSnapshot();
-  assert(completed.status.executionState
-         == sim::SimExecutionState::Stopped);
+  const sim::SimSnapshot completed = harness.client.GetSimSnapshot();
+  assert(completed.status.executionState == sim::SimExecutionState::Stopped);
   assert(!completed.status.scenario.has_value());
   assert(completed.appliedExecution.has_value());
   assert(completed.appliedExecution->scenario == scenario);
   assert(completed.appliedExecution->variant == sim::ExecutionVariant::Primary);
   assert(completed.primary.available);
   assert(completed.baseline.has_value() && completed.baseline->available);
-  assert(harness.client.GetTelemetrySnapshot(sim::SimSlot::Primary)
-          ->available);
-  assert(harness.client.GetTelemetrySnapshot(sim::SimSlot::Baseline)
-          ->available);
+  assert(harness.client.GetTelemetrySnapshot(sim::SimSlot::Primary)->available);
+  assert(
+      harness.client.GetTelemetrySnapshot(sim::SimSlot::Baseline)->available);
 }
 
 void TestTelemetryCacheRetainsFullSessionRangeEfficiently() {
-  app::messaging::MessageBus bus;
-  app::SimMessageClient client(bus);
+  app::messaging::GuiToSimQueue commands;
+  app::messaging::SimToGuiQueue events;
   constexpr std::size_t SampleCount = 10'000;
+  app::messaging::SimToGuiTelemetryQueue telemetry(SampleCount);
+  app::SimMessageClient client(commands, events, telemetry);
   for (std::size_t index = 0; index < SampleCount; ++index) {
-    bus.Publish(app::messaging::TelemetryFrameEvent{
-        .slot = sim::SimSlot::Primary,
-        .frame =
-            {
-                .available = true,
-                .sequence = index + 1,
-                .timestamp = static_cast<double>(index),
-                .values = {{
-                    .path = "test/long_history",
-                    .value = index % 2 == 0 ? -1000.0 : 1000.0,
-                }},
-            },
-    });
+    telemetry.Enqueue(app::messaging::TelemetryBatch{
+        .frames = {{
+            .slot = sim::SimSlot::Primary,
+            .frame =
+                {
+                    .available = true,
+                    .sequence = index + 1,
+                    .timestamp = static_cast<double>(index),
+                    .values = {{
+                        .path = "test/long_history",
+                        .value = index % 2 == 0 ? -1000.0 : 1000.0,
+                    }},
+                },
+        }}});
   }
+  telemetry.Drain();
 
-  const auto snapshot =
-      client.GetTelemetrySnapshot(sim::SimSlot::Primary);
+  const auto snapshot = client.GetTelemetrySnapshot(sim::SimSlot::Primary);
   assert(snapshot != nullptr && snapshot->publishedTimeRange.has_value());
   assert(snapshot->publishedTimeRange->minSec == 0.0);
   assert(snapshot->publishedTimeRange->maxSec
@@ -305,7 +358,8 @@ int main() {
   TestCommandsSnapshotsAndTelemetry();
   TestBaselineAutopilotConfigurationFlowsThroughGuiBoundary();
   TestFailedRequestPreservesErrorAndSuccessClearsIt();
-  TestMissingSynchronousResultFailsCleanly();
+  TestClosedCommandQueueFailsCleanly();
+  TestRequestCompletionRunsOnlyDuringGuiEventDrain();
   TestTrimAndScenarioRequestResults();
   TestTelemetryCacheRetainsFullSessionRangeEfficiently();
   return 0;

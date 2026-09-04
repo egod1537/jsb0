@@ -1,6 +1,7 @@
 if(JSB_BUILD_EDITOR)
   add_library(jsb_app STATIC
     Application.cpp
+    SimWorker.cpp
     platform/input/Input.cpp
   )
   target_compile_features(jsb_app PUBLIC cxx_std_20)

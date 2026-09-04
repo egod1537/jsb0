@@ -7,50 +7,50 @@
 #include <utility>
 
 namespace app::messaging {
-GuiSimBridge::GuiSimBridge(MessageBus &bus,
-    sim::SimRuntime &runtime)
-    : bus_(bus), runtime_(runtime) {
+GuiSimBridge::GuiSimBridge(GuiToSimQueue &commands, SimToGuiQueue &events,
+    SimToGuiTelemetryQueue &telemetry, sim::SimRuntime &runtime)
+    : events_(events), telemetry_(telemetry), runtime_(runtime) {
   subscriptions_.push_back(
-      bus_.Subscribe<SimStartCommand>([this](const auto &) {
+      commands.Subscribe<SimStartCommand>([this](const auto &) {
         runtime_.Start();
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<SimStopCommand>([this](const auto &) {
+      commands.Subscribe<SimStopCommand>([this](const auto &) {
         runtime_.Stop();
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<SimPauseCommand>([this](const auto &) {
+      commands.Subscribe<SimPauseCommand>([this](const auto &) {
         runtime_.Pause();
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<SimResumeCommand>([this](const auto &) {
+      commands.Subscribe<SimResumeCommand>([this](const auto &) {
         runtime_.Resume();
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<SimStepCommand>([this](const auto &) {
+      commands.Subscribe<SimStepCommand>([this](const auto &) {
         runtime_.RequestTick();
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<SimRateCommand>([this](const auto &command) {
+      commands.Subscribe<SimRateCommand>([this](const auto &command) {
         runtime_.SetAutomaticSimulationHz(command.hz);
         PublishState();
       }));
-  subscriptions_.push_back(bus_.Subscribe<SimMaximumSpeedCommand>(
-      [this](const auto &command) {
+  subscriptions_.push_back(
+      commands.Subscribe<SimMaximumSpeedCommand>([this](const auto &command) {
         runtime_.SetMaximumSimulationSpeedEnabled(command.enabled);
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<SimResetCommand>([this](const auto &command) {
+      commands.Subscribe<SimResetCommand>([this](const auto &command) {
         const bool succeeded = command.initialCondition
                                    ? runtime_.Reset(*command.initialCondition)
                                    : runtime_.Reset();
-        bus_.Publish(SimResetResultEvent{
+        events_.Enqueue(SimResetResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
             .error = succeeded ? std::string{}
@@ -59,9 +59,9 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<ManualControlCommand>([this](const auto &command) {
+      commands.Subscribe<ManualControlCommand>([this](const auto &command) {
         const bool succeeded = runtime_.SetManualControl(command.input);
-        bus_.Publish(OperationResultEvent{
+        events_.Enqueue(OperationResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
             .error = succeeded ? std::string{}
@@ -69,11 +69,11 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
         });
         PublishState();
       }));
-  subscriptions_.push_back(
-      bus_.Subscribe<PrimaryRollHoldConfigCommand>([this](const auto &command) {
+  subscriptions_.push_back(commands.Subscribe<PrimaryRollHoldConfigCommand>(
+      [this](const auto &command) {
         const bool succeeded =
             runtime_.SetPrimaryRollHoldConfig(command.config);
-        bus_.Publish(OperationResultEvent{
+        events_.Enqueue(OperationResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
             .error = succeeded ? std::string{}
@@ -82,11 +82,11 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
         });
         PublishState();
       }));
-  subscriptions_.push_back(bus_.Subscribe<BaselineRollHoldConfigCommand>(
+  subscriptions_.push_back(commands.Subscribe<BaselineRollHoldConfigCommand>(
       [this](const auto &command) {
         const bool succeeded =
             runtime_.SetBaselineRollHoldConfig(command.config);
-        bus_.Publish(OperationResultEvent{
+        events_.Enqueue(OperationResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
             .error = succeeded
@@ -96,11 +96,11 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
         });
         PublishState();
       }));
-  subscriptions_.push_back(
-      bus_.Subscribe<LinearizationConfigCommand>([this](const auto &command) {
+  subscriptions_.push_back(commands.Subscribe<LinearizationConfigCommand>(
+      [this](const auto &command) {
         const bool succeeded = runtime_.SetAutomaticLinearizationEnabled(
             command.automaticUpdatesEnabled);
-        bus_.Publish(OperationResultEvent{
+        events_.Enqueue(OperationResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
             .error = succeeded ? std::string{}
@@ -110,11 +110,11 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<TrimCommand>([this](const auto &command) {
+      commands.Subscribe<TrimCommand>([this](const auto &command) {
         const bool succeeded =
             runtime_.RunTrim(command.request, command.fromCurrentState);
         const sim::SimSnapshot snapshot = runtime_.GetSnapshot();
-        bus_.Publish(TrimResultEvent{
+        events_.Enqueue(TrimResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
             .result = snapshot.trim.result,
@@ -124,13 +124,15 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
         PublishState();
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<ExecutionRunCommand>([this](const auto &command) {
+      commands.Subscribe<ExecutionRunCommand>([this](const auto &command) {
         sim::ResolvedExecutionSpec execution;
         std::string resolutionError;
-        const bool resolved = sim::ExecutionVariantResolver::Resolve(
-            command.request, execution, resolutionError);
+        const bool resolved =
+            sim::ExecutionVariantResolver::Resolve(command.request,
+                execution,
+                resolutionError);
         const bool succeeded = resolved && runtime_.RunExecution(execution);
-        bus_.Publish(ScenarioRunResultEvent{
+        events_.Enqueue(ScenarioRunResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
             .error = succeeded
@@ -140,8 +142,8 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
         });
         PublishState();
       }));
-  subscriptions_.push_back(
-      bus_.Subscribe<TelemetryRecordingCommand>([this](const auto &command) {
+  subscriptions_.push_back(commands.Subscribe<TelemetryRecordingCommand>(
+      [this](const auto &command) {
         bool succeeded = true;
         if (command.enabled) {
           succeeded = runtime_.StartTelemetryRecording();
@@ -150,7 +152,7 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
         }
         const telemetry::recording::RecordingStatus status =
             runtime_.GetTelemetryRecordingStatus();
-        bus_.Publish(TelemetryRecordingResultEvent{
+        events_.Enqueue(TelemetryRecordingResultEvent{
             .requestId = command.requestId,
             .succeeded = succeeded,
             .status = status,
@@ -162,39 +164,46 @@ GuiSimBridge::GuiSimBridge(MessageBus &bus,
 
 void GuiSimBridge::PublishState() {
   const sim::SimSnapshot snapshot = runtime_.GetSnapshot();
-  bus_.Publish(SimStatusEvent{.status = snapshot.status});
-  bus_.Publish(ScenarioStatusEvent{.status = snapshot.status.scenario});
-  bus_.Publish(
+  events_.Enqueue(SimStatusEvent{.status = snapshot.status});
+  events_.Enqueue(ScenarioStatusEvent{.status = snapshot.status.scenario});
+  events_.Enqueue(
       TelemetryRecordingStatusEvent{.status = snapshot.telemetryRecording});
-  bus_.Publish(SimSnapshotEvent{.snapshot = snapshot});
+  events_.Enqueue(SimSnapshotEvent{.snapshot = snapshot});
   PublishTelemetry();
 }
 
 void GuiSimBridge::PublishTelemetry() {
+  TelemetryBatch batch;
+  std::uint64_t nextPrimaryVersion = primaryTelemetryVersion_;
+  std::uint64_t nextBaselineVersion = baselineTelemetryVersion_;
+
   const std::uint64_t primaryVersion =
       runtime_.GetTelemetryVersion(sim::SimSlot::Primary);
   if (primaryVersion != primaryTelemetryVersion_) {
-    bus_.Publish(TelemetryFrameEvent{
+    batch.frames.push_back(TelemetryFrameEvent{
         .slot = sim::SimSlot::Primary,
         .frame = runtime_.GetLatestTelemetryFrame(sim::SimSlot::Primary),
     });
-    primaryTelemetryVersion_ = primaryVersion;
+    nextPrimaryVersion = primaryVersion;
   }
 
   const std::uint64_t baselineVersion =
       runtime_.GetTelemetryVersion(sim::SimSlot::Baseline);
   if (baselineVersion != baselineTelemetryVersion_) {
-    bus_.Publish(TelemetryFrameEvent{
+    batch.frames.push_back(TelemetryFrameEvent{
         .slot = sim::SimSlot::Baseline,
-        .frame =
-            runtime_.GetLatestTelemetryFrame(sim::SimSlot::Baseline),
+        .frame = runtime_.GetLatestTelemetryFrame(sim::SimSlot::Baseline),
     });
-    baselineTelemetryVersion_ = baselineVersion;
+    nextBaselineVersion = baselineVersion;
+  }
+
+  if (!batch.frames.empty() && telemetry_.Enqueue(std::move(batch))) {
+    primaryTelemetryVersion_ = nextPrimaryVersion;
+    baselineTelemetryVersion_ = nextBaselineVersion;
   }
 }
 
-std::string GuiSimBridge::GetRuntimeError(
-    std::string fallback) const {
+std::string GuiSimBridge::GetRuntimeError(std::string fallback) const {
   const std::string error = runtime_.GetStatus().lastError;
   return error.empty() ? std::move(fallback) : error;
 }

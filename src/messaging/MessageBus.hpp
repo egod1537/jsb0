@@ -14,13 +14,12 @@
 #include <vector>
 
 namespace app::messaging {
-// A small synchronous, in-process type-based message dispatcher.
+// A small synchronous, same-thread type-based message dispatcher.
 //
 // Publish invokes callbacks before returning, on the caller thread. The bus
-// owns no worker threads or queues; synchronous request/result flows rely on
-// this behavior. Cross-thread publishing, subscription changes, and subscriber
-// lifetime must be externally serialized. This class is not intended to be a
-// general asynchronous event framework.
+// owns no worker threads or queues. Cross-thread delivery belongs to the typed
+// message queues; their consumers use this class only after draining on the
+// owning thread. This class is not a general asynchronous event framework.
 class MessageBus {
 public:
   MessageBus();

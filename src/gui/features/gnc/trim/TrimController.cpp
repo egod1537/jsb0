@@ -42,10 +42,13 @@ void TrimController::OnEvent(const TrimExecutionRequested &event) {
     return;
   }
   inProgress_ = true;
-  OnEvent(TrimRequested{request_, event.fromCurrentState});
-  resultOpen_ = true;
-  residualOpen_ = true;
-  inProgress_ = false;
+  client_.RunTrim(request_,
+      event.fromCurrentState,
+      [this](bool, const std::string &) {
+        resultOpen_ = true;
+        residualOpen_ = true;
+        inProgress_ = false;
+      });
 }
 
 void TrimController::OnEvent(const TrimViewStateChanged &event) {

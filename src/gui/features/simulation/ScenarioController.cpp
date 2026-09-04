@@ -82,9 +82,7 @@ void ScenarioController::NewScenario() {
   SetStatus("Created a new scenario. Use Save As to persist it.", false);
 }
 
-void ScenarioController::ResetDefaults() {
-  model_.draft = sim::SimScenario{};
-}
+void ScenarioController::ResetDefaults() { model_.draft = sim::SimScenario{}; }
 
 void ScenarioController::RefreshAvailableScenarios() {
   model_.availableScenarioFiles.clear();
@@ -151,9 +149,7 @@ bool ScenarioController::Save() {
 bool ScenarioController::SaveAs(const std::filesystem::path &path) {
   const std::filesystem::path resolvedPath = ResolvePath(path);
   std::string error;
-  if (!sim::SimScenarioSerializer::Save(resolvedPath,
-          model_.draft,
-          error)) {
+  if (!sim::SimScenarioSerializer::Save(resolvedPath, model_.draft, error)) {
     SetStatus(std::move(error), true);
     return false;
   }
@@ -210,11 +206,7 @@ bool ScenarioController::Apply() {
       .variant = model_.executionVariant,
       .source = model_.source,
   }});
-  if (model_.applyPending) {
-    model_.applyPending = false;
-    SetStatus("Scenario runtime did not report an apply result.", true);
-  }
-  return model_.lastApplySucceeded;
+  return model_.applyPending || model_.lastApplySucceeded;
 }
 
 void ScenarioController::OnEvent(const ScenarioApplyCompleted &event) {

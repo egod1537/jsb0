@@ -3,10 +3,10 @@
 #include "common/math/Math.hpp"
 #include "messaging/SimMessageClient.hpp"
 
+#include <utility>
+
 namespace gui {
-SimController::SimController(
-    app::SimMessageClient &client)
-    : client_(client) {}
+SimController::SimController(app::SimMessageClient &client) : client_(client) {}
 
 SimTransportProps SimController::GetTransportProps() const {
   return {
@@ -19,8 +19,7 @@ SimTransportProps SimController::GetTransportProps() const {
   };
 }
 
-void SimController::Synchronize(
-    const sim::SimSnapshot &snapshot) {
+void SimController::Synchronize(const sim::SimSnapshot &snapshot) {
   if (initialCondition_.initialized) {
     return;
   }
@@ -37,8 +36,7 @@ void SimController::OnEvent(const SimStopRequested &) {
 }
 
 void SimController::OnEvent(const SimPlaybackToggled &) {
-  if (client_.GetSimExecutionState()
-      == sim::SimExecutionState::Stopped) {
+  if (client_.GetSimExecutionState() == sim::SimExecutionState::Stopped) {
     client_.StartSimulation();
   } else {
     client_.StopSimulation();
@@ -82,8 +80,9 @@ void SimController::OnEvent(const OpenTelemetryFolderRequested &) {
   client_.OpenTelemetryRecordingsFolder();
 }
 
-bool SimController::OnEvent(const ScenarioLaunchRequested &event) {
-  return client_.RunExecution(event.request);
+bool SimController::OnEvent(const ScenarioLaunchRequested &event,
+    std::function<void(bool, const std::string &)> completion) {
+  return client_.RunExecution(event.request, std::move(completion));
 }
 
 std::optional<std::string> SimController::GetLastCommandError() const {
@@ -118,8 +117,7 @@ void SimController::OnEvent(const InitialConditionFieldChanged &event) {
   *field = event.value;
 }
 
-void SimController::OnEvent(
-    const UseCurrentInitialConditionRequested &event) {
+void SimController::OnEvent(const UseCurrentInitialConditionRequested &event) {
   initialCondition_.pending = event.current;
 }
 
@@ -134,14 +132,18 @@ void SimController::OnEvent(const ResetWithInitialConditionRequested &) {
 
 void SimController::ResetSimulation(
     const sim::InitialCondition *initialCondition) {
-  const bool resumeAfterReset = client_.GetSimExecutionState()
-                                == sim::SimExecutionState::Running;
+  const bool resumeAfterReset =
+      client_.GetSimExecutionState() == sim::SimExecutionState::Running;
   client_.PauseSimulation();
-  const bool reset = initialCondition == nullptr
-                         ? client_.ResetSimulation()
-                         : client_.ResetSimulation(*initialCondition);
-  if (reset && resumeAfterReset) {
-    client_.ResumeSimulation();
+  auto resume = [this, resumeAfterReset](bool succeeded, const std::string &) {
+    if (succeeded && resumeAfterReset) {
+      client_.ResumeSimulation();
+    }
+  };
+  if (initialCondition == nullptr) {
+    client_.ResetSimulation(std::move(resume));
+  } else {
+    client_.ResetSimulation(*initialCondition, std::move(resume));
   }
 }
 } // namespace gui

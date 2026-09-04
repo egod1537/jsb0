@@ -36,23 +36,24 @@ class GUI {
 public:
   // Lifetime and frame loop
   GUI();
-  ~GUI();
+  virtual ~GUI();
 
   GUI(const GUI &other) = delete;
   GUI &operator=(const GUI &other) = delete;
 
-  bool Start();
-  void Tick();
-  void Exit();
+  virtual bool Initialize();
+  virtual void PollPlatformEvents();
+  virtual void Tick();
+  virtual void Shutdown();
 
   // Window state
-  bool ShouldClose() const;
+  virtual bool ShouldClose() const;
   void RequestClose();
 
   void ResetEditorLayoutToDefault();
 
   // Application control
-  void SetSimMessageClient(app::SimMessageClient *client);
+  virtual void SetSimMessageClient(app::SimMessageClient *client);
   // UI registration
   void RegisterComponent(std::unique_ptr<Component> component);
   void RegisterWindow(std::unique_ptr<Window> window);
@@ -132,6 +133,5 @@ private:
   std::unique_ptr<LinearizationController> linearizationController_;
   std::unique_ptr<MonitorController> monitorController_;
   sim::SimSnapshot simSnapshot_;
-
 };
 } // namespace gui

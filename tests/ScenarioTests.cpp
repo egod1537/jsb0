@@ -169,8 +169,7 @@ events:
   assert(error.find("acceptance") != std::string::npos);
   assert(destination == before);
 
-  std::string invalidTypeYaml =
-      sim::SimScenarioSerializer::Serialize(original);
+  std::string invalidTypeYaml = sim::SimScenarioSerializer::Serialize(original);
   const std::size_t airspeedPosition =
       invalidTypeYaml.find("airspeed_kts: 100");
   assert(airspeedPosition != std::string::npos);
@@ -289,6 +288,28 @@ void TestScenarioApplyAndPopupLifecycle() {
   assert(launchCount == 1);
   assert(controller.GetModel().statusIsError);
 }
+
+void TestScenarioApplyRemainsPendingUntilAsyncResult() {
+  int launchCount = 0;
+  gui::ScenarioController controller({},
+      gui::architecture::EventSink<gui::ScenarioLaunchRequested>{
+          [&launchCount](
+              const gui::ScenarioLaunchRequested &) { ++launchCount; }});
+
+  assert(controller.Apply());
+  assert(launchCount == 1);
+  assert(controller.GetModel().applyPending);
+  assert(!controller.GetModel().lastApplySucceeded);
+
+  controller.OnEvent(gui::ScenarioApplyCompleted{
+      .succeeded = false,
+      .error = "Runtime rejected scenario.",
+  });
+  assert(!controller.GetModel().applyPending);
+  assert(!controller.GetModel().lastApplySucceeded);
+  assert(controller.GetModel().statusIsError);
+  assert(controller.GetModel().statusMessage == "Runtime rejected scenario.");
+}
 } // namespace
 
 int main() {
@@ -315,5 +336,6 @@ int main() {
   TestScenarioControllerFileLifecycle();
   TestRepositoryScenarioAsset();
   TestScenarioApplyAndPopupLifecycle();
+  TestScenarioApplyRemainsPendingUntilAsyncResult();
   return 0;
 }

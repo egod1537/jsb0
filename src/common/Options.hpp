@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string_view>
 
 namespace opts {
@@ -14,9 +15,11 @@ namespace gui {
 inline constexpr int WindowWidth = 1280;
 inline constexpr int WindowHeight = 720;
 inline constexpr std::string_view WindowTitle = "JSB Flight Console";
-inline constexpr double RenderHz = 60.0;
-inline constexpr double RenderDtSec = 1.0 / RenderHz;
 } // namespace gui
+
+namespace messaging {
+inline constexpr std::size_t GuiTelemetryBatchCapacity = 64;
+} // namespace messaging
 
 namespace debug {
 inline constexpr bool PrintAircraftState = false;

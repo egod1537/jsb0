@@ -1,15 +1,16 @@
 #pragma once
 
-#include "messaging/MessageBus.hpp"
+#include "messaging/MessageQueues.hpp"
 #include "messaging/SimMessages.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
-#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace app {
@@ -27,10 +28,17 @@ inline const char *ToString(SimExecutionState state) {
 
 class SimMessageClient final {
 public:
-  explicit SimMessageClient(messaging::MessageBus &bus);
+  using CommandCompletion =
+      std::function<void(bool succeeded, const std::string &error)>;
+
+  SimMessageClient(messaging::GuiToSimQueue &commands,
+      messaging::SimToGuiQueue &events,
+      messaging::SimToGuiTelemetryQueue &telemetry);
 
   // Execution and scenarios
-  bool RunExecution(const sim::ExecutionRequest &request);
+  // Request methods return queue acceptance; completion runs on event drain.
+  bool RunExecution(const sim::ExecutionRequest &request,
+      CommandCompletion completion = {});
   std::optional<ScenarioExecutionStatus> GetScenarioExecutionStatus() const;
   SimExecutionState GetSimExecutionState() const;
   void StartSimulation();
@@ -38,8 +46,9 @@ public:
   void PauseSimulation();
   void ResumeSimulation();
   void RequestSimTick();
-  bool ResetSimulation();
-  bool ResetSimulation(const sim::InitialCondition &initialCondition);
+  bool ResetSimulation(CommandCompletion completion = {});
+  bool ResetSimulation(const sim::InitialCondition &initialCondition,
+      CommandCompletion completion = {});
 
   // Scheduling
   double GetAutomaticSimulationHz() const;
@@ -55,7 +64,8 @@ public:
   bool SetManualControl(const control::ControlInput &input);
   bool SetPrimaryRollHoldConfig(const sim::PrimaryRollHoldConfig &config);
   bool SetBaselineRollHoldConfig(const sim::BaselineRollHoldConfig &config);
-  bool RunTrim(const gnc::TrimRequest &request, bool fromCurrentState);
+  bool RunTrim(const gnc::TrimRequest &request, bool fromCurrentState,
+      CommandCompletion completion = {});
   bool SetAutomaticLinearizationEnabled(bool enabled);
   std::optional<std::string> GetLastCommandError() const;
 
@@ -66,23 +76,31 @@ public:
   bool OpenTelemetryRecordingsFolder() const;
 
 private:
-  struct RequestResult {
-    bool succeeded = false;
-    std::string error;
-  };
-
   // Request/result correlation
-  messaging::RequestId NextRequestId();
-  bool TakeRequestResult(messaging::RequestId requestId);
+  messaging::RequestId NextRequestId(CommandCompletion completion = {});
+  template <typename Command> bool EnqueueRequest(Command command) {
+    AssertGuiThread();
+    const messaging::RequestId requestId = command.requestId;
+    if (commands_.Enqueue(std::move(command))) {
+      return true;
+    }
+    CompleteRequest(requestId, false, "Simulation command queue is closed.");
+    return false;
+  }
+  void CompleteRequest(messaging::RequestId requestId, bool succeeded,
+      const std::string &error);
 
   // Event cache updates
-  void ReceiveTelemetry(const messaging::TelemetryFrameEvent &event);
+  void ReceiveTelemetryBatch(const messaging::TelemetryBatch &batch);
+  void ReceiveTelemetryFrame(const messaging::TelemetryFrameEvent &event);
+
+  // Thread ownership
+  void AssertGuiThread() const;
 
   // Dependencies
-  messaging::MessageBus &bus_;
+  messaging::GuiToSimQueue &commands_;
 
   // Cached event data
-  mutable std::mutex cacheMutex_;
   sim::SimSnapshot latestSnapshot_;
   sim::SimStatus latestStatus_;
   telemetry::TelemetrySnapshot primaryTelemetryCache_;
@@ -91,9 +109,11 @@ private:
   mutable std::shared_ptr<const telemetry::TelemetrySnapshot>
       baselineTelemetry_;
   telemetry::recording::RecordingStatus recordingStatus_;
-  std::unordered_set<messaging::RequestId> pendingRequests_;
-  std::unordered_map<messaging::RequestId, RequestResult> requestResults_;
+  std::unordered_map<messaging::RequestId, CommandCompletion> pendingRequests_;
   std::optional<std::string> lastCommandError_;
+
+  // GUI-thread ownership
+  std::thread::id guiThreadId_ = std::this_thread::get_id();
 
   // Declared last so subscriptions are destroyed before callback state.
   std::vector<messaging::Subscription> subscriptions_;

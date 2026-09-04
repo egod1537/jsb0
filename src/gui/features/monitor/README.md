@@ -5,10 +5,13 @@ published snapshots from `SimMessageClient`'s cache and constructs a
 `MonitorInput`. Monitor never queries runtime or simulation objects.
 
 ```text
-SimRuntime -> MessageBus -> SimMessageClient cache
+SimRuntime -> GuiSimBridge -> bounded SimToGuiTelemetryQueue
                                       |
                                       v
-                                GUI root input adapter
+                             SimMessageClient cache
+                                      |
+                                      v
+                            GUI root input adapter
                                       |
                                       v
                                  MonitorInput
@@ -45,6 +48,11 @@ Visualization inputs (category A):
 - an immutable dynamic-mode history view and update-status values supplied in
   `MonitorDynamicModeInput`;
 - telemetry path constants used to select snapshot series.
+
+The GUI drains bounded `TelemetryBatch` transport at frame start. A slow GUI
+may skip old live-Monitor batches, but Primary/Baseline source identity and
+ordering within each retained batch are preserved. MCAP recording is a
+separate lossless simulation-thread consumer and is unaffected by this queue.
 
 Visualization-local state (category B):
 

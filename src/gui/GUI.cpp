@@ -88,9 +88,9 @@ GUI::GUI()
           EditorLayoutManager::GetDefaultEditorConfigDirectory(),
           &editorLayoutBackend_) {}
 
-GUI::~GUI() { Exit(); }
+GUI::~GUI() { Shutdown(); }
 
-bool GUI::Start() {
+bool GUI::Initialize() {
   if (initialized_) {
     return true;
   }
@@ -112,7 +112,7 @@ bool GUI::Start() {
 
   if (window_ == nullptr) {
     std::cerr << "Failed to create GLFW window\n";
-    Exit();
+    Shutdown();
     return false;
   }
 
@@ -155,14 +155,14 @@ bool GUI::Start() {
 
   if (!ImGui_ImplGlfw_InitForOpenGL(window_, true)) {
     std::cerr << "Failed to initialize ImGui GLFW backend\n";
-    Exit();
+    Shutdown();
     return false;
   }
   glfwBackendInitialized_ = true;
 
   if (!ImGui_ImplOpenGL3_Init(GlslVersion)) {
     std::cerr << "Failed to initialize ImGui OpenGL backend\n";
-    Exit();
+    Shutdown();
     return false;
   }
   openGlBackendInitialized_ = true;
@@ -177,6 +177,12 @@ bool GUI::Start() {
   return true;
 }
 
+void GUI::PollPlatformEvents() {
+  if (glfwInitialized_) {
+    glfwPollEvents();
+  }
+}
+
 void GUI::Tick() {
   if (!initialized_) {
     return;
@@ -186,16 +192,15 @@ void GUI::Tick() {
     simSnapshot_ = simMessageClient_->GetSimSnapshot();
     if (monitorController_ != nullptr) {
       monitorController_->SetInput({
-          .primary = simMessageClient_->GetTelemetrySnapshot(
-              sim::SimSlot::Primary),
-          .baseline = simMessageClient_->GetTelemetrySnapshot(
-              sim::SimSlot::Baseline),
+          .primary =
+              simMessageClient_->GetTelemetrySnapshot(sim::SimSlot::Primary),
+          .baseline =
+              simMessageClient_->GetTelemetrySnapshot(sim::SimSlot::Baseline),
           .dynamicModes =
               {
-                  .history = simSnapshot_.linearization
-                      .dynamicModeHistory.GetSnapshots(),
-                  .errorMessage =
-                      simSnapshot_.linearization.errorMessage,
+                  .history = simSnapshot_.linearization.dynamicModeHistory
+                      .GetSnapshots(),
+                  .errorMessage = simSnapshot_.linearization.errorMessage,
                   .available = simSnapshot_.linearization.available,
                   .automaticUpdatesEnabled =
                       simSnapshot_.linearization.automaticUpdatesEnabled,
@@ -210,7 +215,7 @@ void GUI::Tick() {
   EndFrame();
 }
 
-void GUI::Exit() {
+void GUI::Shutdown() {
   editorIcons_.Shutdown();
 
   if (openGlBackendInitialized_) {
@@ -272,8 +277,7 @@ void GUI::RequestClose() {
   }
 }
 
-void GUI::SetSimMessageClient(
-    app::SimMessageClient *client) {
+void GUI::SetSimMessageClient(app::SimMessageClient *client) {
   simMessageClient_ = client;
   RegisterFeatureTree();
 }
@@ -283,19 +287,19 @@ void GUI::RegisterFeatureTree() {
     return;
   }
 
-  simController_ =
-      std::make_unique<SimController>(*simMessageClient_);
-  scenarioController_ = std::make_unique<ScenarioController>(
-      std::filesystem::path{},
-      architecture::EventSink<ScenarioLaunchRequested>{
-          [this](const ScenarioLaunchRequested &event) {
-            const bool succeeded = simController_->OnEvent(event);
-            scenarioController_->OnEvent(ScenarioApplyCompleted{
-                .succeeded = succeeded,
-                .error = simController_->GetLastCommandError().value_or(
-                    std::string{}),
-            });
-          }});
+  simController_ = std::make_unique<SimController>(*simMessageClient_);
+  scenarioController_ =
+      std::make_unique<ScenarioController>(std::filesystem::path{},
+          architecture::EventSink<ScenarioLaunchRequested>{
+              [this](const ScenarioLaunchRequested &event) {
+                simController_->OnEvent(event,
+                    [this](bool succeeded, const std::string &error) {
+                      scenarioController_->OnEvent(ScenarioApplyCompleted{
+                          .succeeded = succeeded,
+                          .error = error,
+                      });
+                    });
+              }});
   gncController_ = std::make_unique<GNCController>(*simMessageClient_);
   linearizationController_ =
       std::make_unique<LinearizationController>(*simMessageClient_);
@@ -316,11 +320,9 @@ void GUI::RegisterFeatureTree() {
   RegisterWindow<LinearizationWindow>(*linearizationController_);
   RegisterWindow<FlightDataMonitorWindow>(*monitorController_, MonitorConfig{});
   primaryFlightVizWindow_ =
-      &RegisterWindow<FlightVizWindow>(sim::SimSlot::Primary,
-          &editorIcons_);
+      &RegisterWindow<FlightVizWindow>(sim::SimSlot::Primary, &editorIcons_);
   baselineFlightVizWindow_ =
-      &RegisterWindow<FlightVizWindow>(sim::SimSlot::Baseline,
-          &editorIcons_);
+      &RegisterWindow<FlightVizWindow>(sim::SimSlot::Baseline, &editorIcons_);
   RegisterWindow<EditorIconBrowserWindow>(editorIcons_);
   RegisterComponent<SimControlWindow>(*simController_,
       *scenarioController_,
@@ -345,7 +347,6 @@ void GUI::BeginFrame() {
     return;
   }
 
-  glfwPollEvents();
   UpdateUIScale();
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
@@ -401,9 +402,8 @@ void GUI::UpdateUIScale(bool force) {
     return;
   }
 
-  const float uiScale =
-      ui::CalculateUIScale(static_cast<float>(windowWidth),
-          static_cast<float>(windowHeight));
+  const float uiScale = ui::CalculateUIScale(static_cast<float>(windowWidth),
+      static_cast<float>(windowHeight));
   if (!force && std::abs(uiScale - appliedUIScale_) < UIScaleChangeThreshold) {
     return;
   }
@@ -568,13 +568,11 @@ void GUI::RenderSimulationMenu() {
     return;
   }
 
-  const SimTransportProps props =
-      simController_->GetTransportProps();
+  const SimTransportProps props = simController_->GetTransportProps();
   const sim::SimExecutionState executionState = props.executionState;
   const bool scenarioInactive = !props.scenarioStatus.has_value();
 
-  ImGui::BeginDisabled(
-      executionState != sim::SimExecutionState::Running);
+  ImGui::BeginDisabled(executionState != sim::SimExecutionState::Running);
   if (ImGui::MenuItem("Pause")) {
     simController_->OnEvent(SimPauseRequested{});
   }
@@ -590,8 +588,7 @@ void GUI::RenderSimulationMenu() {
   ImGui::EndDisabled();
 
   ImGui::BeginDisabled(
-      !scenarioInactive
-      || executionState == sim::SimExecutionState::Stopped);
+      !scenarioInactive || executionState == sim::SimExecutionState::Stopped);
   if (ImGui::MenuItem("Reset")) {
     simController_->OnEvent(SimResetRequested{});
   }

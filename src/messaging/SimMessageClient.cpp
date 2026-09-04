@@ -79,169 +79,169 @@ void CompactTelemetryHistory(telemetry::TelemetrySeries &series) {
 }
 } // namespace
 
-SimMessageClient::SimMessageClient(messaging::MessageBus &bus)
-    : bus_(bus),
+SimMessageClient::SimMessageClient(messaging::GuiToSimQueue &commands,
+    messaging::SimToGuiQueue &events,
+    messaging::SimToGuiTelemetryQueue &telemetry)
+    : commands_(commands),
       primaryTelemetry_(std::make_shared<telemetry::TelemetrySnapshot>()),
       baselineTelemetry_(std::make_shared<telemetry::TelemetrySnapshot>()) {
-  subscriptions_.push_back(bus_.Subscribe<messaging::SimStatusEvent>(
-      [this](const auto &event) {
-        std::scoped_lock lock(cacheMutex_);
+  subscriptions_.push_back(
+      events.Subscribe<messaging::SimStatusEvent>([this](const auto &event) {
+        AssertGuiThread();
         latestStatus_ = event.status;
         latestSnapshot_.status = event.status;
       }));
-  subscriptions_.push_back(bus_.Subscribe<messaging::SimSnapshotEvent>(
-      [this](const auto &event) {
-        std::scoped_lock lock(cacheMutex_);
+  subscriptions_.push_back(
+      events.Subscribe<messaging::SimSnapshotEvent>([this](const auto &event) {
+        AssertGuiThread();
         latestSnapshot_ = event.snapshot;
         latestStatus_ = event.snapshot.status;
         recordingStatus_ = event.snapshot.telemetryRecording;
       }));
-  subscriptions_.push_back(bus_.Subscribe<messaging::TelemetryFrameEvent>(
-      [this](const auto &event) { ReceiveTelemetry(event); }));
+  subscriptions_.push_back(telemetry.Subscribe(
+      [this](const auto &batch) { ReceiveTelemetryBatch(batch); }));
   subscriptions_.push_back(
-      bus_.Subscribe<messaging::TelemetryRecordingStatusEvent>(
+      events.Subscribe<messaging::TelemetryRecordingStatusEvent>(
           [this](const auto &event) {
-            std::scoped_lock lock(cacheMutex_);
+            AssertGuiThread();
             recordingStatus_ = event.status;
           }));
+  subscriptions_.push_back(events.Subscribe<messaging::SimWorkerFatalEvent>(
+      [this](const auto &event) {
+        AssertGuiThread();
+        lastCommandError_ = event.error;
+      }));
 
   const auto receiveOperationResult = [this](messaging::RequestId requestId,
                                           bool succeeded,
                                           const std::string &error) {
-    std::scoped_lock lock(cacheMutex_);
-    if (pendingRequests_.contains(requestId)) {
-      requestResults_[requestId] = {
-          .succeeded = succeeded,
-          .error = error,
-      };
-    }
+    CompleteRequest(requestId, succeeded, error);
   };
-  subscriptions_.push_back(bus_.Subscribe<messaging::OperationResultEvent>(
+  subscriptions_.push_back(events.Subscribe<messaging::OperationResultEvent>(
+      [receiveOperationResult](const auto &event) {
+        receiveOperationResult(event.requestId, event.succeeded, event.error);
+      }));
+  subscriptions_.push_back(events.Subscribe<messaging::SimResetResultEvent>(
+      [receiveOperationResult](const auto &event) {
+        receiveOperationResult(event.requestId, event.succeeded, event.error);
+      }));
+  subscriptions_.push_back(events.Subscribe<messaging::TrimResultEvent>(
+      [receiveOperationResult](const auto &event) {
+        receiveOperationResult(event.requestId, event.succeeded, event.error);
+      }));
+  subscriptions_.push_back(events.Subscribe<messaging::ScenarioRunResultEvent>(
       [receiveOperationResult](const auto &event) {
         receiveOperationResult(event.requestId, event.succeeded, event.error);
       }));
   subscriptions_.push_back(
-      bus_.Subscribe<messaging::SimResetResultEvent>(
-          [receiveOperationResult](const auto &event) {
-            receiveOperationResult(event.requestId,
-                event.succeeded,
-                event.error);
-          }));
-  subscriptions_.push_back(bus_.Subscribe<messaging::TrimResultEvent>(
-      [receiveOperationResult](const auto &event) {
-        receiveOperationResult(event.requestId, event.succeeded, event.error);
-      }));
-  subscriptions_.push_back(bus_.Subscribe<messaging::ScenarioRunResultEvent>(
-      [receiveOperationResult](const auto &event) {
-        receiveOperationResult(event.requestId, event.succeeded, event.error);
-      }));
-  subscriptions_.push_back(
-      bus_.Subscribe<messaging::TelemetryRecordingResultEvent>(
+      events.Subscribe<messaging::TelemetryRecordingResultEvent>(
           [this, receiveOperationResult](const auto &event) {
-            {
-              std::scoped_lock lock(cacheMutex_);
-              recordingStatus_ = event.status;
-            }
+            AssertGuiThread();
+            recordingStatus_ = event.status;
             receiveOperationResult(event.requestId,
                 event.succeeded,
                 event.error);
           }));
 }
 
-bool SimMessageClient::RunExecution(
-    const sim::ExecutionRequest &request) {
-  const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::ExecutionRunCommand{
+bool SimMessageClient::RunExecution(const sim::ExecutionRequest &request,
+    CommandCompletion completion) {
+  const messaging::RequestId requestId = NextRequestId(std::move(completion));
+  return EnqueueRequest(messaging::ExecutionRunCommand{
       .requestId = requestId,
       .request = request,
   });
-  return TakeRequestResult(requestId);
 }
 
 std::optional<ScenarioExecutionStatus>
 SimMessageClient::GetScenarioExecutionStatus() const {
-  std::scoped_lock lock(cacheMutex_);
+  AssertGuiThread();
   return latestStatus_.scenario;
 }
 
-SimExecutionState
-SimMessageClient::GetSimExecutionState() const {
-  std::scoped_lock lock(cacheMutex_);
+SimExecutionState SimMessageClient::GetSimExecutionState() const {
+  AssertGuiThread();
   return latestStatus_.executionState;
 }
 
 void SimMessageClient::StartSimulation() {
-  bus_.Publish(messaging::SimStartCommand{});
+  AssertGuiThread();
+  commands_.Enqueue(messaging::SimStartCommand{});
 }
 
 void SimMessageClient::StopSimulation() {
-  bus_.Publish(messaging::SimStopCommand{});
+  AssertGuiThread();
+  commands_.Enqueue(messaging::SimStopCommand{});
 }
 
 void SimMessageClient::PauseSimulation() {
-  bus_.Publish(messaging::SimPauseCommand{});
+  AssertGuiThread();
+  commands_.Enqueue(messaging::SimPauseCommand{});
 }
 
 void SimMessageClient::ResumeSimulation() {
-  bus_.Publish(messaging::SimResumeCommand{});
+  AssertGuiThread();
+  commands_.Enqueue(messaging::SimResumeCommand{});
 }
 
 void SimMessageClient::RequestSimTick() {
-  bus_.Publish(messaging::SimStepCommand{});
+  AssertGuiThread();
+  commands_.Enqueue(messaging::SimStepCommand{});
 }
 
-bool SimMessageClient::ResetSimulation() {
-  const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::SimResetCommand{.requestId = requestId});
-  return TakeRequestResult(requestId);
+bool SimMessageClient::ResetSimulation(CommandCompletion completion) {
+  const messaging::RequestId requestId = NextRequestId(std::move(completion));
+  return EnqueueRequest(messaging::SimResetCommand{.requestId = requestId});
 }
 
 bool SimMessageClient::ResetSimulation(
-    const sim::InitialCondition &initialCondition) {
-  const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::SimResetCommand{
+    const sim::InitialCondition &initialCondition,
+    CommandCompletion completion) {
+  const messaging::RequestId requestId = NextRequestId(std::move(completion));
+  return EnqueueRequest(messaging::SimResetCommand{
       .requestId = requestId,
       .initialCondition = initialCondition,
   });
-  return TakeRequestResult(requestId);
 }
 
 double SimMessageClient::GetAutomaticSimulationHz() const {
-  std::scoped_lock lock(cacheMutex_);
+  AssertGuiThread();
   return latestStatus_.automaticSimulationHz;
 }
 
 void SimMessageClient::SetAutomaticSimulationHz(double hz) {
-  bus_.Publish(messaging::SimRateCommand{.hz = hz});
+  AssertGuiThread();
+  commands_.Enqueue(messaging::SimRateCommand{.hz = hz});
 }
 
 bool SimMessageClient::IsMaximumSimulationSpeedEnabled() const {
-  std::scoped_lock lock(cacheMutex_);
+  AssertGuiThread();
   return latestStatus_.maximumSimulationSpeedEnabled;
 }
 
 void SimMessageClient::SetMaximumSimulationSpeedEnabled(bool enabled) {
-  bus_.Publish(messaging::SimMaximumSpeedCommand{.enabled = enabled});
+  AssertGuiThread();
+  commands_.Enqueue(messaging::SimMaximumSpeedCommand{.enabled = enabled});
 }
 
 std::uint32_t SimMessageClient::GetPendingSimTickCount() const {
-  std::scoped_lock lock(cacheMutex_);
+  AssertGuiThread();
   return latestStatus_.pendingTickCount;
 }
 
 sim::SimSnapshot SimMessageClient::GetSimSnapshot() const {
-  std::scoped_lock lock(cacheMutex_);
+  AssertGuiThread();
   return latestSnapshot_;
 }
 
 std::shared_ptr<const telemetry::TelemetrySnapshot>
 SimMessageClient::GetTelemetrySnapshot(sim::SimSlot slot) const {
-  std::scoped_lock lock(cacheMutex_);
-  const telemetry::TelemetrySnapshot &cache =
-      slot == sim::SimSlot::Primary ? primaryTelemetryCache_
-                                           : baselineTelemetryCache_;
-  auto &published = slot == sim::SimSlot::Primary ? primaryTelemetry_
-                                                         : baselineTelemetry_;
+  AssertGuiThread();
+  const telemetry::TelemetrySnapshot &cache = slot == sim::SimSlot::Primary
+                                                  ? primaryTelemetryCache_
+                                                  : baselineTelemetryCache_;
+  auto &published =
+      slot == sim::SimSlot::Primary ? primaryTelemetry_ : baselineTelemetry_;
   if (published == nullptr || published->version != cache.version
       || published->available != cache.available) {
     published = std::make_shared<const telemetry::TelemetrySnapshot>(cache);
@@ -249,87 +249,79 @@ SimMessageClient::GetTelemetrySnapshot(sim::SimSlot slot) const {
   return published;
 }
 
-bool SimMessageClient::SetManualControl(
-    const control::ControlInput &input) {
+bool SimMessageClient::SetManualControl(const control::ControlInput &input) {
   const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::ManualControlCommand{
+  return EnqueueRequest(messaging::ManualControlCommand{
       .requestId = requestId,
       .input = input,
   });
-  return TakeRequestResult(requestId);
 }
 
 bool SimMessageClient::SetPrimaryRollHoldConfig(
     const sim::PrimaryRollHoldConfig &config) {
   const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::PrimaryRollHoldConfigCommand{
+  return EnqueueRequest(messaging::PrimaryRollHoldConfigCommand{
       .requestId = requestId,
       .config = config,
   });
-  return TakeRequestResult(requestId);
 }
 
 bool SimMessageClient::SetBaselineRollHoldConfig(
     const sim::BaselineRollHoldConfig &config) {
   const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::BaselineRollHoldConfigCommand{
+  return EnqueueRequest(messaging::BaselineRollHoldConfigCommand{
       .requestId = requestId,
       .config = config,
   });
-  return TakeRequestResult(requestId);
 }
 
 bool SimMessageClient::RunTrim(const gnc::TrimRequest &request,
-    bool fromCurrentState) {
-  const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::TrimCommand{
+    bool fromCurrentState, CommandCompletion completion) {
+  const messaging::RequestId requestId = NextRequestId(std::move(completion));
+  return EnqueueRequest(messaging::TrimCommand{
       .requestId = requestId,
       .request = request,
       .fromCurrentState = fromCurrentState,
   });
-  return TakeRequestResult(requestId);
 }
 
 bool SimMessageClient::SetAutomaticLinearizationEnabled(bool enabled) {
   const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::LinearizationConfigCommand{
+  return EnqueueRequest(messaging::LinearizationConfigCommand{
       .requestId = requestId,
       .automaticUpdatesEnabled = enabled,
   });
-  return TakeRequestResult(requestId);
 }
 
-std::optional<std::string>
-SimMessageClient::GetLastCommandError() const {
-  std::scoped_lock lock(cacheMutex_);
+std::optional<std::string> SimMessageClient::GetLastCommandError() const {
+  AssertGuiThread();
   return lastCommandError_;
 }
 
 bool SimMessageClient::StartTelemetryRecording() {
   const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::TelemetryRecordingCommand{
+  return EnqueueRequest(messaging::TelemetryRecordingCommand{
       .requestId = requestId,
       .enabled = true,
   });
-  return TakeRequestResult(requestId);
 }
 
 void SimMessageClient::StopTelemetryRecording() {
   const messaging::RequestId requestId = NextRequestId();
-  bus_.Publish(messaging::TelemetryRecordingCommand{
+  EnqueueRequest(messaging::TelemetryRecordingCommand{
       .requestId = requestId,
       .enabled = false,
   });
-  TakeRequestResult(requestId);
 }
 
 telemetry::recording::RecordingStatus
 SimMessageClient::GetTelemetryRecordingStatus() const {
-  std::scoped_lock lock(cacheMutex_);
+  AssertGuiThread();
   return recordingStatus_;
 }
 
 bool SimMessageClient::OpenTelemetryRecordingsFolder() const {
+  AssertGuiThread();
   const std::filesystem::path directory = telemetry::recording::
       TelemetryRecordingService::GetDefaultRecordingsDirectory();
   std::error_code error;
@@ -350,51 +342,52 @@ bool SimMessageClient::OpenTelemetryRecordingsFolder() const {
 #endif
 }
 
-messaging::RequestId SimMessageClient::NextRequestId() {
+messaging::RequestId SimMessageClient::NextRequestId(
+    CommandCompletion completion) {
+  AssertGuiThread();
   const messaging::RequestId requestId =
       nextRequestId.fetch_add(1, std::memory_order_relaxed);
-  std::scoped_lock lock(cacheMutex_);
-  pendingRequests_.insert(requestId);
+  pendingRequests_.emplace(requestId, std::move(completion));
   return requestId;
 }
 
-bool SimMessageClient::TakeRequestResult(
-    messaging::RequestId requestId) {
-  std::scoped_lock lock(cacheMutex_);
-  const std::size_t removedPendingRequest = pendingRequests_.erase(requestId);
-  assert(removedPendingRequest == 1
-         && "TakeRequestResult requires a pending request ID.");
-  if (removedPendingRequest != 1) {
-    lastCommandError_ = "Message request correlation state was invalid.";
-    return false;
+void SimMessageClient::CompleteRequest(messaging::RequestId requestId,
+    bool succeeded, const std::string &error) {
+  AssertGuiThread();
+  CommandCompletion completion;
+  std::string completionError;
+  const auto pending = pendingRequests_.find(requestId);
+  if (pending == pendingRequests_.end()) {
+    return;
   }
-
-  // Publish is synchronous, so the adapter's matching result must have been
-  // delivered before the command Publish call returned. Never wait here.
-  const auto result = requestResults_.find(requestId);
-  if (result == requestResults_.end()) {
-    lastCommandError_ =
-        "Synchronous message request completed without a matching result.";
-    return false;
-  }
-  const RequestResult requestResult = std::move(result->second);
-  requestResults_.erase(result);
-  if (requestResult.succeeded) {
+  completion = std::move(pending->second);
+  pendingRequests_.erase(pending);
+  if (succeeded) {
     lastCommandError_.reset();
   } else {
-    lastCommandError_ = requestResult.error.empty()
-                            ? "Simulation command failed without error details."
-                            : requestResult.error;
+    completionError = error.empty()
+                          ? "Simulation command failed without error details."
+                          : error;
+    lastCommandError_ = completionError;
   }
-  return requestResult.succeeded;
+  if (completion) {
+    completion(succeeded, completionError);
+  }
 }
 
-void SimMessageClient::ReceiveTelemetry(
+void SimMessageClient::ReceiveTelemetryBatch(
+    const messaging::TelemetryBatch &batch) {
+  AssertGuiThread();
+  for (const messaging::TelemetryFrameEvent &frame : batch.frames) {
+    ReceiveTelemetryFrame(frame);
+  }
+}
+
+void SimMessageClient::ReceiveTelemetryFrame(
     const messaging::TelemetryFrameEvent &event) {
-  std::scoped_lock lock(cacheMutex_);
-  telemetry::TelemetrySnapshot &updated =
-      event.slot == sim::SimSlot::Primary ? primaryTelemetryCache_
-                                                 : baselineTelemetryCache_;
+  telemetry::TelemetrySnapshot &updated = event.slot == sim::SimSlot::Primary
+                                              ? primaryTelemetryCache_
+                                              : baselineTelemetryCache_;
   if (updated.publishedTimeRange
       && event.frame.timestamp < updated.publishedTimeRange->maxSec) {
     updated.series.clear();
@@ -434,5 +427,10 @@ void SimMessageClient::ReceiveTelemetry(
       CompactTelemetryHistory(*position);
     }
   }
+}
+
+void SimMessageClient::AssertGuiThread() const {
+  assert(std::this_thread::get_id() == guiThreadId_
+         && "SimMessageClient must only be used on its GUI owner thread.");
 }
 } // namespace app

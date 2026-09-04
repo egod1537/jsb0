@@ -1,6 +1,6 @@
 #pragma once
 
-#include "messaging/MessageBus.hpp"
+#include "messaging/MessageQueues.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -12,7 +12,8 @@ class SimRuntime;
 namespace app::messaging {
 class GuiSimBridge final {
 public:
-  GuiSimBridge(MessageBus &bus, sim::SimRuntime &runtime);
+  GuiSimBridge(GuiToSimQueue &commands, SimToGuiQueue &events,
+      SimToGuiTelemetryQueue &telemetry, sim::SimRuntime &runtime);
 
   // Runtime output publication
   void PublishState();
@@ -22,7 +23,8 @@ private:
   std::string GetRuntimeError(std::string fallback) const;
 
   // Dependencies
-  MessageBus &bus_;
+  SimToGuiQueue &events_;
+  SimToGuiTelemetryQueue &telemetry_;
   sim::SimRuntime &runtime_;
 
   // Command subscription lifetime

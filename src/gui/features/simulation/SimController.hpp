@@ -6,6 +6,7 @@
 #include "contract/telemetry/RecordingTypes.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -15,8 +16,7 @@ class SimMessageClient;
 
 namespace gui {
 struct SimTransportProps {
-  sim::SimExecutionState executionState =
-      sim::SimExecutionState::Stopped;
+  sim::SimExecutionState executionState = sim::SimExecutionState::Stopped;
   std::optional<sim::ScenarioExecutionStatus> scenarioStatus;
   telemetry::recording::RecordingStatus recordingStatus;
   double automaticHz = 0.0;
@@ -47,7 +47,8 @@ public:
   void OnEvent(const MaximumSimulationSpeedChanged &event);
   void OnEvent(const TelemetryRecordingToggled &event);
   void OnEvent(const OpenTelemetryFolderRequested &event);
-  bool OnEvent(const ScenarioLaunchRequested &event);
+  bool OnEvent(const ScenarioLaunchRequested &event,
+      std::function<void(bool, const std::string &)> completion = {});
   std::optional<std::string> GetLastCommandError() const;
 
   // Initial-condition child events

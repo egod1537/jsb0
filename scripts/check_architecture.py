@@ -51,12 +51,54 @@ RULES: dict[str, tuple[re.Pattern[str], ...]] = {
     "gui": tuple(
         re.compile(pattern)
         for pattern in (
+            r"^messaging/GuiSimBridge(?:\.hpp|\.h)$",
             r"^sim/runtime/SimRuntime(?:\.hpp|\.h)$",
             r"^sim/Simulation(?:\.hpp|\.h)$",
             r"^sim/(jsbsim|gnc/autopilot)/",
         )
     ),
 }
+
+THREAD_OWNERSHIP_RULES: tuple[
+    tuple[str, re.Pattern[str], tuple[re.Pattern[str], ...]], ...
+] = (
+    (
+        "GUI-side messaging",
+        re.compile(r"^src/messaging/SimMessageClient(?:\.cpp|\.h|\.hpp|\.inl)$"),
+        tuple(
+            re.compile(pattern)
+            for pattern in (
+                r"^messaging/GuiSimBridge(?:\.hpp|\.h)$",
+                r"^sim/runtime/SimRuntime(?:\.hpp|\.h)$",
+                r"^sim/Simulation(?:\.hpp|\.h)$",
+                r"^sim/(jsbsim|gnc/autopilot)/",
+            )
+        ),
+    ),
+    (
+        "simulation-side messaging",
+        re.compile(r"^src/messaging/GuiSimBridge(?:\.cpp|\.h|\.hpp|\.inl)$"),
+        tuple(
+            re.compile(pattern)
+            for pattern in (
+                r"^messaging/SimMessageClient(?:\.hpp|\.h)$",
+                r"^(gui|flightui)/",
+                r"^(imgui|implot|GLFW)(/|\.h)",
+            )
+        ),
+    ),
+)
+
+APPLICATION_MAIN_LOOP_FORBIDDEN: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"RunScheduled(?:Simulation|Gui)Tick",
+        r"nextSimulationTick",
+        r"simulationInterval",
+        r"SimRuntime\s*::\s*Tick",
+        r"simRuntime_?\s*(?:->|\.)\s*Tick\s*\(",
+    )
+)
 
 GNC_RULES: dict[str, tuple[re.Pattern[str], ...]] = {
     "navigation": tuple(
@@ -143,6 +185,38 @@ def check(root: Path) -> list[str]:
                     violations.append(
                         f"{relative}:{line_number}: forbidden GNC layer include {include}"
                     )
+
+    for ownership, source_pattern, forbidden in THREAD_OWNERSHIP_RULES:
+        for path in sorted(source_root.rglob("*")):
+            if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
+                continue
+            relative = path.relative_to(root).as_posix()
+            if not source_pattern.search(relative):
+                continue
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                match = INCLUDE.match(line)
+                if not match:
+                    continue
+                include = match.group(1)
+                if any(pattern.search(include) for pattern in forbidden):
+                    violations.append(
+                        f"{relative}:{line_number}: forbidden {ownership} include {include}"
+                    )
+
+    application_path = source_root / "app" / "Application.cpp"
+    if application_path.is_file():
+        for line_number, line in enumerate(
+            application_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if any(
+                pattern.search(line) for pattern in APPLICATION_MAIN_LOOP_FORBIDDEN
+            ):
+                violations.append(
+                    "src/app/Application.cpp:"
+                    f"{line_number}: simulation/GUI scheduling leaked into Application"
+                )
     return violations
 
 

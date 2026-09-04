@@ -7,8 +7,9 @@ executable layer.
 
 ## Modules
 
-- `src/app` is the desktop composition root. It constructs Runtime, messaging,
-  and GUI and owns startup, scheduling, and shutdown.
+- `src/app` is the desktop composition root. It constructs the simulation
+  worker, messaging, and GUI and owns startup, the platform/GUI event loop,
+  worker stop/join, and shutdown.
 - `src/sim` owns simulation state and execution, JSBSim access, control and
   autopilot behavior, scenarios, linearization, and runtime telemetry
   production. It must not depend on GUI or rendering libraries.
@@ -60,9 +61,59 @@ not include any higher-level subsystem. GUI code must not include concrete
 may consume stable render-state structs but must not know GUI controllers,
 messaging, Runtime, or external contract adapters.
 
-The desktop messaging path is `GUI -> SimMessageClient -> MessageBus ->
-GuiSimBridge -> SimRuntime`. `GuiSimBridge` belongs to the messaging
-boundary and does not depend on the concrete GUI implementation.
+The desktop command path is `GUI -> SimMessageClient -> GuiToSimQueue ->
+consumer MessageBus -> GuiSimBridge -> SimRuntime`. Events return through
+`GuiSimBridge -> SimToGuiQueue -> consumer MessageBus -> SimMessageClient ->
+GUI cache`. Live Monitor telemetry returns separately through the bounded
+`SimToGuiTelemetryQueue` as `TelemetryBatch` values. Each `MessageBus`
+dispatches only on its queue's consumer thread; the queues own the cross-thread
+boundary. `GuiSimBridge` does not depend on the concrete GUI implementation.
+
+## Thread ownership contract
+
+The desktop thread split has one owner per mutable object graph:
+
+- The main / GUI thread owns GLFW, ImGui, ImPlot, OpenGL, `GUI`,
+  `SimMessageClient`, GUI controllers, and GUI-side caches.
+- The simulation worker owns `GuiSimBridge`, `SimRuntime`, `Simulation`, flight
+  controllers, and scenario execution.
+- Only immutable value DTOs/snapshots, thread-safe queues, and stop/join
+  synchronization primitives are shared.
+
+GUI-to-simulation commands and simulation-to-GUI events/snapshots cross through
+queues. Neither side may directly call the other side's objects or callbacks,
+and mutable references or pointers may not cross the boundary. `Application`
+owns the overall lifetime and must stop and join the worker before Runtime or
+queue storage is destroyed.
+
+Runtime state is captured once per logical publication as an owned
+`SimSnapshot`; pending snapshots are latest-only and the GUI renders only its
+thread-local cache. Results and errors remain reliable. Monitor telemetry has
+separate bounded batching with Primary/Baseline identity and ordering intact.
+Recording consumes telemetry losslessly on the simulation thread before the
+bounded GUI transport, so GUI backpressure never drops MCAP data.
+
+`SimWorker` runs the simulation side on a `std::jthread`. It drains commands,
+performs steady-clock scheduling, advances deterministic Runtime steps, and
+publishes events independently of GUI frames. `Application` drains GUI events
+and monitor telemetry at each frame start and must stop/join the worker before
+simulation objects are destroyed.
+See [`docs/THREADING.md`](docs/THREADING.md) for the complete boundary and
+shutdown rules and
+[`docs/CONCURRENCY_VALIDATION.md`](docs/CONCURRENCY_VALIDATION.md) for pending
+command and stress-validation policy.
+
+The desktop main loop has no simulation clock or scheduling state. Each
+iteration polls platform events, drains both Sim-to-GUI queues, checks worker
+failure, and ticks the GUI. Window swap interval is a GUI rendering policy;
+neither GUI cadence nor a slow GUI frame limits simulation scheduling.
+
+Desktop startup binds the GUI-side client, starts and initializes `SimWorker`,
+drains its initial state, and then starts platform/GUI resources. A worker
+failure is published as a reliable `SimWorkerFatalEvent`, mirrored in the
+worker's thread-safe failure state, drained on the GUI thread, and returned by
+`Application::Run()` as failure. Shutdown requests stop, joins the worker,
+performs a final queue drain, and destroys GUI resources exactly once.
 
 ## CMake targets
 
@@ -82,8 +133,9 @@ Other GUI features stay together in `jsb_editor` to avoid target fragmentation.
 ## Boundary enforcement
 
 `scripts/check_architecture.py` scans source includes for prohibited reverse
-dependencies. CTest runs it as `architecture_boundaries`. It is intentionally a
-small guardrail rather than a new dependency-analysis framework.
+dependencies and GUI/simulation ownership leaks. CTest runs it as
+`architecture_boundaries`. It is intentionally a small guardrail rather than a
+new dependency-analysis framework.
 
 Namespaces retain their established names in this filesystem/CMake refactor.
 Future namespace normalization can introduce `jsb::...` incrementally without

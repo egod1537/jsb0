@@ -3,7 +3,7 @@
 #include "gui/features/simulation/ScenarioController.hpp"
 #include "gui/features/simulation/SimController.hpp"
 #include "common/math/Math.hpp"
-#include "messaging/MessageBus.hpp"
+#include "messaging/MessageQueues.hpp"
 #include "messaging/SimMessageClient.hpp"
 #include "messaging/SimMessages.hpp"
 
@@ -16,25 +16,28 @@ namespace {
 namespace messaging = app::messaging;
 
 void TestSimulationEventsPublishCommandsAndUpdateChildModel() {
-  messaging::MessageBus bus;
-  app::SimMessageClient client(bus);
+  messaging::GuiToSimQueue commands;
+  messaging::SimToGuiQueue events;
+  messaging::SimToGuiTelemetryQueue telemetry;
+  app::SimMessageClient client(commands, events, telemetry);
   gui::SimController controller(client);
 
   int startCount = 0;
   double requestedHz = 0.0;
   bool maximumSpeed = false;
-  auto startSubscription = bus.Subscribe<messaging::SimStartCommand>(
+  auto startSubscription = commands.Subscribe<messaging::SimStartCommand>(
       [&startCount](const auto &) { ++startCount; });
-  auto rateSubscription = bus.Subscribe<messaging::SimRateCommand>(
+  auto rateSubscription = commands.Subscribe<messaging::SimRateCommand>(
       [&requestedHz](const auto &command) { requestedHz = command.hz; });
   auto maximumSubscription =
-      bus.Subscribe<messaging::SimMaximumSpeedCommand>(
+      commands.Subscribe<messaging::SimMaximumSpeedCommand>(
           [&maximumSpeed](
               const auto &command) { maximumSpeed = command.enabled; });
 
   controller.OnEvent(gui::SimStartRequested{});
   controller.OnEvent(gui::SimRateChanged{120.0});
   controller.OnEvent(gui::MaximumSimulationSpeedChanged{true});
+  commands.Drain();
   assert(startCount == 1);
   assert(requestedHz == 120.0);
   assert(maximumSpeed);
@@ -50,42 +53,50 @@ void TestSimulationEventsPublishCommandsAndUpdateChildModel() {
          < 1.0e-12);
   controller.OnEvent(
       {gui::InitialConditionField::CalibratedAirspeedMps, 41.16});
-  assert(controller.GetInitialConditionModel()
-             .pending.calibratedAirspeedMps
+  assert(controller.GetInitialConditionModel().pending.calibratedAirspeedMps
          == 41.16);
 }
 
 void TestPlaybackToggleSelectsStartOrStopFromRuntimeState() {
-  messaging::MessageBus bus;
-  app::SimMessageClient client(bus);
+  messaging::GuiToSimQueue commands;
+  messaging::SimToGuiQueue events;
+  messaging::SimToGuiTelemetryQueue telemetry;
+  app::SimMessageClient client(commands, events, telemetry);
   gui::SimController controller(client);
   int startCount = 0;
   int stopCount = 0;
-  auto startSubscription = bus.Subscribe<messaging::SimStartCommand>(
+  auto startSubscription = commands.Subscribe<messaging::SimStartCommand>(
       [&startCount](const auto &) { ++startCount; });
-  auto stopSubscription = bus.Subscribe<messaging::SimStopCommand>(
+  auto stopSubscription = commands.Subscribe<messaging::SimStopCommand>(
       [&stopCount](const auto &) { ++stopCount; });
 
   controller.OnEvent(gui::SimPlaybackToggled{});
+  commands.Drain();
   assert(startCount == 1);
   assert(stopCount == 0);
 
   sim::SimStatus status;
   status.executionState = sim::SimExecutionState::Running;
-  bus.Publish(messaging::SimStatusEvent{.status = status});
+  events.Enqueue(messaging::SimStatusEvent{.status = status});
+  events.Drain();
   controller.OnEvent(gui::SimPlaybackToggled{});
+  commands.Drain();
   assert(startCount == 1);
   assert(stopCount == 1);
 
   status.executionState = sim::SimExecutionState::Paused;
-  bus.Publish(messaging::SimStatusEvent{.status = status});
+  events.Enqueue(messaging::SimStatusEvent{.status = status});
+  events.Drain();
   controller.OnEvent(gui::SimPlaybackToggled{});
+  commands.Drain();
   assert(stopCount == 2);
 }
 
 void TestGNCEventsUpdateModelAndPublishCompleteConfig() {
-  messaging::MessageBus bus;
-  app::SimMessageClient client(bus);
+  messaging::GuiToSimQueue commands;
+  messaging::SimToGuiQueue events;
+  messaging::SimToGuiTelemetryQueue telemetry;
+  app::SimMessageClient client(commands, events, telemetry);
   gui::GNCController controller(client);
   sim::SimSnapshot snapshot;
   snapshot.primary.available = true;
@@ -98,9 +109,11 @@ void TestGNCEventsUpdateModelAndPublishCompleteConfig() {
   assert(controller.GetModel().primaryAutopilot.rollTargetDeg == 12.5);
 
   sim::PrimaryRollHoldConfig published;
-  auto subscription = bus.Subscribe<messaging::PrimaryRollHoldConfigCommand>(
-      [&published](const auto &command) { published = command.config; });
+  auto subscription =
+      commands.Subscribe<messaging::PrimaryRollHoldConfigCommand>(
+          [&published](const auto &command) { published = command.config; });
   controller.PublishConfiguration(snapshot);
+  commands.Drain();
   assert(published.targetRollRad != 0.0);
   assert(published.rollAngleProportionalGain
          == controller.GetModel().primaryAutopilot.rollAngleProportionalGain);
@@ -144,7 +157,8 @@ void TestPx4FeatureControllersOwnStateValidationAndViewState() {
   assert(baseline.rollHold);
 
   experimental.OnEvent(gui::ExperimentalViewStateChanged{false});
-  controller.OnEvent(gui::Px4AttitudeViewStateChanged{true, false, true, false});
+  controller.OnEvent(
+      gui::Px4AttitudeViewStateChanged{true, false, true, false});
   assert(!primary.rollHoldParametersOpen);
   assert(baseline.px4RollTuningOpen);
   assert(!baseline.px4RollDiagnosticsOpen);
@@ -158,15 +172,20 @@ void TestPx4FeatureControllersOwnStateValidationAndViewState() {
 }
 
 void TestTrimRequestStateUsesSi() {
-  messaging::MessageBus bus;
-  app::SimMessageClient client(bus);
+  messaging::GuiToSimQueue commands;
+  messaging::SimToGuiQueue events;
+  messaging::SimToGuiTelemetryQueue telemetry;
+  app::SimMessageClient client(commands, events, telemetry);
   gui::GNCController controller(client);
   gnc::TrimRequest publishedRequest;
   bool publishedFromCurrentState = false;
-  auto subscription = bus.Subscribe<messaging::TrimCommand>(
-      [&publishedRequest, &publishedFromCurrentState](const auto &command) {
+  messaging::RequestId requestId = 0;
+  auto subscription = commands.Subscribe<messaging::TrimCommand>(
+      [&publishedRequest, &publishedFromCurrentState, &requestId](
+          const auto &command) {
         publishedRequest = command.request;
         publishedFromCurrentState = command.fromCurrentState;
+        requestId = command.requestId;
       });
   controller.OnEvent(
       gui::TrimRequestValueChanged{gui::TrimRequestField::CalibratedAirspeedMps,
@@ -187,9 +206,16 @@ void TestTrimRequestStateUsesSi() {
   assert(request.flightPathAngleRad == math::DegToRad(3.0));
 
   controller.OnEvent(gui::TrimExecutionRequested{true});
+  commands.Drain();
   assert(publishedRequest.calibratedAirspeedMps
          == math::KnotsToMetersPerSecond(80.0));
   assert(publishedFromCurrentState);
+  assert(controller.GetModel().trimInProgress);
+  events.Enqueue(messaging::TrimResultEvent{
+      .requestId = requestId,
+      .succeeded = true,
+  });
+  events.Drain();
   assert(!controller.GetModel().trimInProgress);
 }
 
@@ -243,8 +269,10 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
     assert(metadata.increment == expected.increment);
   }
 
-  messaging::MessageBus bus;
-  app::SimMessageClient client(bus);
+  messaging::GuiToSimQueue commands;
+  messaging::SimToGuiQueue events;
+  messaging::SimToGuiTelemetryQueue telemetry;
+  app::SimMessageClient client(commands, events, telemetry);
   gui::GNCController controller(client);
 
   assert(gui::BaselinePx4RollHoldParameterBindings.size() == 7);
@@ -384,12 +412,14 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
   assert(controller.GetModel().baselineAutopilot.sideslipToYawRateGain == 8.0);
 
   sim::BaselineRollHoldConfig published;
-  auto subscription = bus.Subscribe<messaging::BaselineRollHoldConfigCommand>(
-      [&published](const auto &command) { published = command.config; });
+  auto subscription =
+      commands.Subscribe<messaging::BaselineRollHoldConfigCommand>(
+          [&published](const auto &command) { published = command.config; });
   sim::SimSnapshot snapshot;
   snapshot.baseline = sim::SimInstanceSnapshot{.available = true};
   snapshot.baselineAutopilot = sim::AutopilotSnapshot{.available = true};
   controller.PublishConfiguration(snapshot);
+  commands.Drain();
   assert(published.directRollRateTestEnabled);
   assert(published.directRollRateCommandRadPerSec == math::DegToRad(5.0));
   assert(published.yawRateControlEnabled);
@@ -453,16 +483,19 @@ void TestBaselinePx4TuningUsesSharedMetadata() {
 }
 
 void TestLinearizationEventPublishesCommand() {
-  messaging::MessageBus bus;
-  app::SimMessageClient client(bus);
+  messaging::GuiToSimQueue commands;
+  messaging::SimToGuiQueue events;
+  messaging::SimToGuiTelemetryQueue telemetry;
+  app::SimMessageClient client(commands, events, telemetry);
   gui::LinearizationController controller(client);
   bool automatic = false;
-  auto subscription = bus.Subscribe<messaging::LinearizationConfigCommand>(
+  auto subscription = commands.Subscribe<messaging::LinearizationConfigCommand>(
       [&automatic](const auto &command) {
         automatic = command.automaticUpdatesEnabled;
       });
 
   controller.OnEvent(gui::AutomaticLinearizationChanged{true});
+  commands.Drain();
   controller.OnEvent(gui::LinearizationValueTransformChanged{
       gui::LinearizationValueTransform::SignedLog10});
 
@@ -480,7 +513,7 @@ void TestScenarioChildUpdatesDraftAndEmitsLaunchIntent() {
               const gui::ScenarioLaunchRequested &event) {
             launchReceived =
                 event.request.scenario.events.front().command.rollRad
-                    == math::DegToRad(14.0);
+                == math::DegToRad(14.0);
             controllerPtr->OnEvent(gui::ScenarioApplyCompleted{
                 .succeeded = true,
             });

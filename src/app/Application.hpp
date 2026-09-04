@@ -1,10 +1,11 @@
 #pragma once
 
-#include "messaging/MessageBus.hpp"
+#include "messaging/MessageQueues.hpp"
 
 #include <csignal>
 #include <cstdint>
 #include <memory>
+#include <thread>
 
 namespace sim {
 class SimRuntime;
@@ -14,9 +15,7 @@ class GUI;
 }
 namespace app {
 class SimMessageClient;
-namespace messaging {
-class GuiSimBridge;
-}
+class SimWorker;
 } // namespace app
 
 class Application {
@@ -32,16 +31,25 @@ private:
   // Application lifecycle
   bool Initialize();
 
-  bool RunTick(const volatile std::sig_atomic_t &running);
-  bool Tick();
-  void TickGUI();
+  bool RunMainLoop(const volatile std::sig_atomic_t &running);
+  void DrainSimEvents();
 
   void Shutdown();
+  void AssertGuiThread() const;
+
+  // Cross-thread transport
+  app::messaging::GuiToSimQueue guiToSimQueue_;
+  app::messaging::SimToGuiQueue simToGuiQueue_;
+  app::messaging::SimToGuiTelemetryQueue simToGuiTelemetryQueue_;
 
   // Owned services
-  app::messaging::MessageBus messageBus_;
-  std::unique_ptr<sim::SimRuntime> simRuntime_;
-  std::unique_ptr<app::messaging::GuiSimBridge> guiSimBridge_;
+  std::unique_ptr<app::SimWorker> simWorker_;
   std::unique_ptr<app::SimMessageClient> simMessageClient_;
   std::unique_ptr<gui::GUI> gui_;
+
+  // Lifecycle state
+  bool shutdown_ = false;
+
+  // Thread affinity
+  std::thread::id guiThreadId_ = std::this_thread::get_id();
 };

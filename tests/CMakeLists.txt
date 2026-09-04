@@ -203,6 +203,16 @@ if(JSB_BUILD_EDITOR)
     GuiFeatureControllerTests.cpp
     jsb_editor
   )
+
+  add_jsb_test(sim_worker_tests
+    SimWorkerTests.cpp
+    jsb_app
+  )
+
+  add_jsb_test(application_tests
+    ApplicationTests.cpp
+    jsb_app
+  )
 endif()
 
 add_jsb_test(scenario_execution_tests
@@ -218,6 +228,16 @@ add_jsb_test(telemetry_tests
 add_jsb_test(message_bus_tests
   MessageBusTests.cpp
   jsb_message_bus
+)
+
+add_jsb_test(message_queue_tests
+  MessageQueueTests.cpp
+  jsb_messaging
+)
+
+add_jsb_test(snapshot_telemetry_handoff_tests
+  SnapshotTelemetryHandoffTests.cpp
+  jsb_messaging
 )
 
 add_jsb_test(message_bus_simulation_integration_tests

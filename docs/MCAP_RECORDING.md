@@ -1,15 +1,19 @@
 # MCAP Telemetry Recording
 
-The application records the existing simulation telemetry snapshot as a
-persistence consumer. The live Monitor continues to read the same telemetry
-registries and does not own the recorder lifecycle.
+The application records simulation telemetry as a lossless, simulation-thread
+persistence consumer. The live Monitor receives separate bounded batches and
+does not own the recorder lifecycle.
 
 ```text
 Simulation telemetry registry
-  |-- Live Monitor
-  `-- TelemetryRecordingService -> McapTelemetryRecorder -> *.mcap
-                                                        -> McapRecordingReader
+  |-- TelemetryRecordingService -> McapTelemetryRecorder -> *.mcap
+  |                                                   -> McapRecordingReader
+  `-- GuiSimBridge -> bounded GUI TelemetryBatch queue -> Live Monitor cache
 ```
+
+Recording consumption happens before GUI publication. If the GUI is slower
+than simulation, Monitor batches may discard their oldest pending data while
+the recorder path remains lossless and ordered.
 
 Use `Record` in the Simulation Control toolbar to start a recording. The
 button changes to `Stop Recording mm:ss` while active. `Folder` opens the
