@@ -29,8 +29,11 @@ executable layer.
 - `src/common` contains only subsystem-independent math, containers, and small
   utilities.
 
-The repository-root `contract/` contains machine-readable Protobuf, JSON
-Schema, signal catalog, version, and examples. `src/contract/` contains only
+The repository-root `contract/` contains the machine-readable index, execution
+capabilities, generated tunable-parameter catalog and parameter-set schema,
+artifact layout, Protobuf, JSON Schema, signal catalog, version, and examples.
+The parameter export is derived from the Runtime's typed controller metadata
+and aircraft profile and checked byte-for-byte. `src/contract/` contains only
 the C++ adapters that implement that specification.
 
 ## Dependency direction
@@ -83,3 +86,126 @@ small guardrail rather than a new dependency-analysis framework.
 Namespaces retain their established names in this filesystem/CMake refactor.
 Future namespace normalization can introduce `jsb::...` incrementally without
 combining that source-level churn with ownership moves.
+
+## Simulation internals
+
+`src/sim` has two CMake layers with a one-way dependency:
+
+```text
+jsb_sim_runtime
+  SimulationRuntime
+    -> SimulationInstanceSet
+    -> AutopilotConfigurationService
+    -> ScenarioExecutor
+    -> SimulationSnapshotBuilder
+    -> LinearizationService
+    -> TelemetryRecordingService
+          |
+          v
+jsb_sim_core
+  Simulation (one aircraft/model instance)
+    -> Aircraft / JSBSim boundary
+    -> FlightControlManager and tick components
+    -> TrimWorkflow / TrimService
+    -> SimulationTelemetryPublisher -> TelemetryRegistry
+```
+
+`Simulation` owns and advances exactly one aircraft/model instance. It applies
+one instance's controls, runs one component pipeline, advances one JSBSim tick,
+and exposes that instance's state. It does not choose primary versus baseline,
+run a scenario schedule, publish application status, or implement recording
+policy.
+
+`SimulationRuntime` is the application-facing orchestrator. Primary and
+baseline are both ordinary `Simulation` objects; `SimulationInstanceSet`
+applies the same initialize, reset, shutdown, and step path to them and owns
+only pair coordination such as manual-control synchronization. Scenario YAML
+loading remains in `SimulationScenarioSerializer`, while deterministic command
+scheduling and pass/fail state remain in `ScenarioExecutor`.
+
+Telemetry signal mapping is owned by `SimulationTelemetryPublisher`; storage
+and immutable frame/snapshot capture stay in `TelemetryRegistry`; recording is
+implemented by `TelemetryRecordingService` and merely coordinated by Runtime.
+Signal display name/symbol/unit metadata is resolved in the lightweight
+`jsb_telemetry_contracts` layer and is included in immutable snapshots.
+Monitor consumes this metadata rather than duplicating a signal-name/unit
+table.
+`SimulationSnapshotBuilder` translates domain state into stable Runtime
+contracts without putting GUI naming or view state in the core.
+Autopilot-specific settings validation and application are isolated in
+`AutopilotConfigurationService`; Runtime only coordinates the request and any
+recording event it produces.
+
+Trim algorithms remain in `TrimSolver`/`TrimService`, and shared compute/apply/
+control-synchronization sequencing is in `TrimWorkflow`. Linearization access
+is exposed through `LinearizationService`; numeric linearization and mode
+analysis remain under `src/sim/linearization`.
+
+Errors stay at their source: `Simulation::ErrorTracker` reports one-instance
+input/JSBSim/component failures, `ScenarioExecutor` reports scenario failures,
+and `SimulationRuntime::lastError` reports orchestration failures. Messaging and
+GUI boundaries may present those strings but do not create simulation-domain
+errors.
+
+## Monitor internals
+
+Monitor follows a one-way Model/View/Controller boundary. `MonitorController`
+owns persistent `MonitorState`; `MonitorView` only composes the page and emits
+typed events. Preset and signal catalogs are headless data modules. Grid/card,
+toolbar, preset panel, Add/Edit dialog, timeline, dynamic-mode view, plot
+renderer, series legend/tooltip, and generic acceptance-band rendering are
+separate responsibilities under `src/gui/features/monitor`.
+
+Primary/Baseline/Compare remains one `MonitorState::displayMode` value passed
+down to the renderer. Plot components do not cache source mode or telemetry.
+All plots share the same timeline ranges and cursor, and temporary dialog
+buffers remain view-local rather than entering persistent Monitor state.
+
+## GNC internals
+
+GNC data flow is navigation -> guidance -> energy/high-level control ->
+attitude/rate control -> actuator command. The current PX4 coordinator routes
+typed `FixedWingSetpoint` values through course guidance and TECS into the
+existing roll/pitch/yaw controllers. Control equations remain in controller
+classes; aircraft defaults enter through `Px4ControlProfile`, and trim enters
+through one `AircraftTrimReference` boundary.
+
+PX4 and experimental construction are separate composition packages below
+`src/sim/gnc/autopilot`. The root factory selects a package but does not build
+its controller graph. Internal reverse dependencies and PX4/experimental
+cross-includes are checked by `architecture_boundaries`. See
+`docs/GNC_ARCHITECTURE.md` for the controller responsibility map and extension
+points.
+
+PX4 controller tuning uses typed descriptor and pointer-to-member binding
+tables from `src/sim/gnc/parameters`. Controller algorithms continue to consume
+strongly typed settings; the common layer supplies metadata, unit-aware display
+conversion, validation, default reset, and generic UI iteration without a
+string-valued source of truth. C172x values are composed once by
+`GetC172xPx4ControlProfile()`. Runtime-state reset, algorithm-default reset,
+aircraft-profile reset, and trim synchronization remain separate operations.
+See `docs/PARAMETER_SYSTEM.md` for the policy and compatibility boundary.
+
+PX4 attitude, lateral, and yaw controllers live under
+`src/sim/gnc/control`; pre-PX4 experimental controllers and their dynamics
+DTOs are isolated under `control/legacy`. The user-facing hold APIs,
+telemetry paths, scenario keys, and parameter IDs remain unchanged.
+
+GUI GNC composition mirrors these feature boundaries. `GNCController` owns
+snapshot/configuration coordination while PX4 attitude, TECS, and trim each
+own their typed events, editing controller, validation, reset, and view state.
+`BaselineAutopilotPanel` preserves the existing section order as a thin
+composition wrapper over `Px4AttitudePanel` and `TecsPanel`. All PX4 tuning
+rows reuse the descriptor-driven GNC parameter editor. See
+`docs/GUI_GNC_ARCHITECTURE.md` for state and messaging ownership.
+
+## Units and physical quantities
+
+Simulation-domain state, controller/configuration state, and raw telemetry use
+SI units. JSBSim-native and versioned external scenario units are converted
+once at their boundary through the shared math conversion helpers. Altitude
+references (AGL versus ASL/MSL) and airspeed semantics (CAS versus TAS) are
+encoded in field names and metadata rather than inferred. Display layers may
+render angles in degrees and the Trim panel may use aviation units, but their
+models and messages remain SI. See `docs/UNITS.md` for the complete boundary
+and display policy.

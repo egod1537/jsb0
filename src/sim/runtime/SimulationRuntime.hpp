@@ -77,18 +77,11 @@ public:
 
 private:
   // Simulation coordination
-  bool ResetSimulations(const InitialCondition *initialCondition);
-  bool SynchronizeBaselineControlState();
   void FinishScenario();
   void RecordPendingScenarioCommandEvent();
   bool SelectExecutionVariant(ExecutionVariant variant);
   bool ReinitializeForScenario(const SimulationScenario &scenario);
   void RestoreInteractiveSimulationOrder();
-  SimulationInstanceSnapshot CaptureSnapshot(
-      const Simulation &simulation) const;
-  AutopilotSnapshot CaptureAutopilotSnapshot(
-      const Simulation &simulation) const;
-  LinearizationSnapshot CaptureLinearizationSnapshot() const;
   Simulation *GetSimulation(SimulationSlot slot);
   const Simulation *GetSimulation(SimulationSlot slot) const;
 

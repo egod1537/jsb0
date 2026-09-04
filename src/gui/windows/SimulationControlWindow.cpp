@@ -58,6 +58,11 @@ enum class TransportIcon {
   Reset,
 };
 
+std::string DefaultSimulationTickLabel() {
+  return std::to_string(static_cast<int>(sim::DefaultSimulationHz))
+         + " Hz fixed tick";
+}
+
 ImVec2 Offset(ImVec2 point, float x, float y) {
   return {point.x + x, point.y + y};
 }
@@ -218,10 +223,11 @@ bool DrawSpeedButton(const char *label, bool selected, const char *tooltip) {
 }
 
 float GetCenterGroupWidth() {
+  const std::string tickLabel = DefaultSimulationTickLabel();
   return FlightUI::Ui(ToolbarButtonSize * 4.0F + ToolbarButtonSpacing * 5.0F
                       + SpeedButtonWidth * 4.0F + ToolbarSectionSpacing * 3.0F)
          + ImGui::CalcTextSize("Speed").x
-         + ImGui::CalcTextSize("30 Hz fixed tick").x;
+         + ImGui::CalcTextSize(tickLabel.c_str()).x;
 }
 
 float GetToolbarControlsWidth(sim::SimulationExecutionState state) {
@@ -402,7 +408,7 @@ void SimulationControlWindow::OnRender(
 
     ImGui::SameLine(0.0F, sectionSpacing);
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("30 Hz fixed tick");
+    ImGui::TextDisabled("%s", DefaultSimulationTickLabel().c_str());
   });
   const std::string scenarioLabel =
       showScenarioStatus ? MakeScenarioStatusLabel(*scenarioStatus, state)

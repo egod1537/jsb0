@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gui/architecture/EventSink.hpp"
-#include "gui/features/gnc/GNCEvents.hpp"
+#include "gui/features/gnc/trim/TrimEvents.hpp"
 #include "sim/gnc/TrimTypes.hpp"
 
 namespace gui {

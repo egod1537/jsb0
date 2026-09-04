@@ -1,11 +1,35 @@
 #include "flightui/visualization/components/TelemetryOverlay.hpp"
 
+#include "common/math/Math.hpp"
 #include "flightui/visualization/render/LineCanvas.hpp"
 #include "flightui/core/UIScale.hpp"
 
 #include <cstdio>
 
 namespace viz {
+std::string FormatTelemetryFlightState(const sim::AircraftState &state) {
+  char line[160]{};
+  std::snprintf(line,
+      sizeof(line),
+      "Alt AGL %.1f m  Course %.1f deg  CAS %.1f m/s  TAS %.1f m/s",
+      state.altitudeAglM,
+      math::RadToDeg(state.courseRad),
+      state.calibratedAirspeedMps,
+      state.trueAirspeedMps);
+  return line;
+}
+
+std::string FormatTelemetryAttitude(const sim::AircraftState &state) {
+  char line[160]{};
+  std::snprintf(line,
+      sizeof(line),
+      "Roll %.1f deg  Pitch %.1f deg  Heading %.1f deg",
+      math::RadToDeg(state.rollRad),
+      math::RadToDeg(state.pitchRad),
+      math::RadToDeg(state.headingRad));
+  return line;
+}
+
 void TelemetryOverlay::Render(RenderContext &context) const {
   if (!context.snapshot.viewOptions.showTelemetry) {
     return;
@@ -31,28 +55,17 @@ void TelemetryOverlay::Render(RenderContext &context) const {
       IM_COL32(232, 238, 246, 255),
       line);
 
-  std::snprintf(line,
-      sizeof(line),
-      "Alt AGL %.0f ft  Course %.1f deg  CAS %.1f kt  TAS %.1f m/s",
-      aircraftState.altitudeAglFt,
-      aircraftState.courseDeg,
-      aircraftState.calibratedAirspeedKts,
-      aircraftState.trueAirspeedMps);
+  const std::string flightState = FormatTelemetryFlightState(aircraftState);
   drawList.AddText(
       ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(30.0F)),
       IM_COL32(232, 238, 246, 255),
-      line);
+      flightState.c_str());
 
-  std::snprintf(line,
-      sizeof(line),
-      "Roll %.1f  Pitch %.1f  Heading %.1f",
-      aircraftState.rollDeg,
-      aircraftState.pitchDeg,
-      aircraftState.headingDeg);
+  const std::string attitude = FormatTelemetryAttitude(aircraftState);
   drawList.AddText(
       ImVec2(min.x + FlightUI::Ui(10.0F), min.y + FlightUI::Ui(50.0F)),
       IM_COL32(232, 238, 246, 255),
-      line);
+      attitude.c_str());
 
   std::snprintf(line,
       sizeof(line),

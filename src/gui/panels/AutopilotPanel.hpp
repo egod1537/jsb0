@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gui/architecture/EventSink.hpp"
-#include "gui/features/gnc/GNCEvents.hpp"
+#include "gui/features/gnc/experimental/ExperimentalEvents.hpp"
 
 namespace gui {
 struct AutopilotPanelState {

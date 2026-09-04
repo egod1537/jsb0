@@ -6,12 +6,11 @@
 #include "sim/gnc/autopilot/IAutopilotAnalysis.hpp"
 #include "sim/gnc/autopilot/IControllerInspectable.hpp"
 #include "sim/gnc/autopilot/IRollHoldAutopilot.hpp"
-#include "sim/gnc/autopilot/ITrimReferenceConsumer.hpp"
 #include "sim/gnc/Controller.hpp"
-#include "sim/gnc/hold/PitchDynamics.hpp"
-#include "sim/gnc/hold/RollDynamics.hpp"
-#include "sim/gnc/hold/RollHoldController.hpp"
-#include "sim/gnc/hold/YawDynamics.hpp"
+#include "sim/gnc/control/legacy/PitchDynamics.hpp"
+#include "sim/gnc/control/legacy/RollDynamics.hpp"
+#include "sim/gnc/control/legacy/RollHoldController.hpp"
+#include "sim/gnc/control/legacy/YawDynamics.hpp"
 #include "sim/gnc/TrimTypes.hpp"
 #include "sim/linearization/DynamicModeAnalyzer.hpp"
 #include "sim/linearization/DynamicModeHistory.hpp"
@@ -34,8 +33,7 @@ namespace gnc {
 class MyAutopilot final : public IAutopilot,
                           public IAutopilotAnalysis,
                           public IControllerInspectable,
-                          public IRollHoldAutopilot,
-                          public ITrimReferenceConsumer {
+                          public IRollHoldAutopilot {
 public:
   MyAutopilot();
   ~MyAutopilot() override;
@@ -56,8 +54,8 @@ public:
   template <typename T> bool RemoveController();
 
   // Trim reference consumption
-  void SynchronizeTrimReferences(sim::Aircraft &aircraft,
-      const TrimResult &trimResult) override;
+  void SynchronizeTrimReferences(
+      const AircraftTrimReference &trimReference) override;
 
   // Roll Hold state
   bool IsRollHoldEnabled() const override;
@@ -86,7 +84,7 @@ private:
 
   // Controller trim synchronization
   void ResetControllers();
-  void SyncControllerTrimReferences(const TrimResult &result);
+  void SyncControllerTrimReferences(const AircraftTrimReference &trimReference);
 
   // Aircraft dynamics
   void PollLinearization();

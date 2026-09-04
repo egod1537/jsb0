@@ -65,8 +65,8 @@ constexpr bool HasFDMStateFlag(FDMStateFlags flags,
 struct FDMKinematicState {
   double latitudeRad = 0.0;
   double longitudeRad = 0.0;
-  double altitudeAslFt = 0.0;
-  std::array<double, 3> bodyVelocityFps{};
+  double altitudeAslM = 0.0;
+  std::array<double, 3> bodyVelocityMps{};
   std::array<double, 3> attitudeRad{};
   std::array<double, 3> bodyAngularRatesRadPerSec{};
 };
@@ -96,24 +96,24 @@ struct FDMPropulsionState {
 };
 
 struct FDMEnvironmentState {
-  double seaLevelTemperatureRankine = 0.0;
-  double seaLevelPressurePsf = 0.0;
+  double seaLevelTemperatureK = 0.0;
+  double seaLevelPressurePa = 0.0;
 
   bool hasStandardAtmosphere = false;
-  double temperatureBiasRankine = 0.0;
-  double seaLevelGradedTemperatureDeltaRankine = 0.0;
+  double temperatureBiasK = 0.0;
+  double seaLevelGradedTemperatureDeltaK = 0.0;
   double vaporMassFractionPpm = 0.0;
 
-  std::array<double, 3> windNedFps{};
-  std::array<double, 3> gustNedFps{};
-  std::array<double, 3> turbulenceNedFps{};
+  std::array<double, 3> windNedMps{};
+  std::array<double, 3> gustNedMps{};
+  std::array<double, 3> turbulenceNedMps{};
   int turbulenceType = 0;
   double turbulenceGain = 0.0;
   double turbulenceRate = 0.0;
   double turbulenceRhythmicity = 0.0;
-  double windSpeedAt20FtFps = 0.0;
+  double windSpeedAt20FtMps = 0.0;
 
-  double terrainElevationFt = 0.0;
+  double terrainElevationM = 0.0;
   int gravityType = 0;
   double planetRotationRateRadPerSec = 0.0;
 };

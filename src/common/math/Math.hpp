@@ -6,6 +6,57 @@
 #include <stdexcept>
 
 namespace math {
+inline constexpr double MetersPerFoot = 0.3048;
+inline constexpr double MetersPerSecondPerKnot = 0.5144444444444445;
+inline constexpr double KelvinPerRankine = 5.0 / 9.0;
+inline constexpr double PascalsPerPoundPerSquareFoot = 47.88025898033584;
+
+constexpr double FeetToMeters(double feet) { return feet * MetersPerFoot; }
+
+constexpr double MetersToFeet(double meters) { return meters / MetersPerFoot; }
+
+constexpr double FeetPerSecondToMetersPerSecond(double feetPerSecond) {
+  return FeetToMeters(feetPerSecond);
+}
+
+constexpr double MetersPerSecondToFeetPerSecond(double metersPerSecond) {
+  return MetersToFeet(metersPerSecond);
+}
+
+constexpr double FeetPerSecondSquaredToMetersPerSecondSquared(
+    double feetPerSecondSquared) {
+  return FeetToMeters(feetPerSecondSquared);
+}
+
+constexpr double MetersPerSecondSquaredToFeetPerSecondSquared(
+    double metersPerSecondSquared) {
+  return MetersToFeet(metersPerSecondSquared);
+}
+
+constexpr double KnotsToMetersPerSecond(double knots) {
+  return knots * MetersPerSecondPerKnot;
+}
+
+constexpr double MetersPerSecondToKnots(double metersPerSecond) {
+  return metersPerSecond / MetersPerSecondPerKnot;
+}
+
+constexpr double RankineToKelvin(double rankine) {
+  return rankine * KelvinPerRankine;
+}
+
+constexpr double KelvinToRankine(double kelvin) {
+  return kelvin / KelvinPerRankine;
+}
+
+constexpr double PoundsPerSquareFootToPascals(double pressurePsf) {
+  return pressurePsf * PascalsPerPoundPerSquareFoot;
+}
+
+constexpr double PascalsToPoundsPerSquareFoot(double pressurePa) {
+  return pressurePa / PascalsPerPoundPerSquareFoot;
+}
+
 constexpr double DegToRad(double degrees) {
   return degrees * std::numbers::pi_v<double> / 180.0;
 }

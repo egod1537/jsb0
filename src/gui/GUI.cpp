@@ -29,6 +29,31 @@ constexpr const char *GlslVersion = "#version 130";
 constexpr int SwapInterval = 1;
 constexpr float UIScaleChangeThreshold = 0.02F;
 
+void ScaleDockNodeSizeReferences(ImGuiDockNode *node, ImVec2 scale) {
+  if (node == nullptr) {
+    return;
+  }
+
+  node->SizeRef.x *= scale.x;
+  node->SizeRef.y *= scale.y;
+  ScaleDockNodeSizeReferences(node->ChildNodes[0], scale);
+  ScaleDockNodeSizeReferences(node->ChildNodes[1], scale);
+}
+
+void PreserveDockLayoutProportions(ImGuiID dockSpaceId, ImVec2 newSize) {
+  ImGuiDockNode *rootNode = ImGui::DockBuilderGetNode(dockSpaceId);
+  if (rootNode == nullptr || rootNode->Size.x <= 0.0F
+      || rootNode->Size.y <= 0.0F || newSize.x <= 0.0F || newSize.y <= 0.0F) {
+    return;
+  }
+
+  const ImVec2 scale{
+      newSize.x / rootNode->Size.x,
+      newSize.y / rootNode->Size.y,
+  };
+  ScaleDockNodeSizeReferences(rootNode, scale);
+}
+
 ImVec2 Scaled(ImVec2 value, float scale) {
   return {value.x * scale, value.y * scale};
 }
@@ -289,7 +314,7 @@ void GUI::RegisterFeatureTree() {
   RegisterWindow<ScenarioWindow>();
   RegisterWindow<GNCWindow>(*gncController_);
   RegisterWindow<LinearizationWindow>(*linearizationController_);
-  RegisterWindow<FlightDataMonitorWindow>(*monitorController_);
+  RegisterWindow<FlightDataMonitorWindow>(*monitorController_, config_.monitor);
   primaryFlightVizWindow_ =
       &RegisterWindow<FlightVizWindow>(sim::SimulationSlot::Primary,
           &editorIcons_);
@@ -435,6 +460,7 @@ void GUI::RenderDockSpace() {
 
   const ImGuiID dockSpaceId = ImGui::GetID("DockSpace");
   InitializeDefaultDockLayout(dockSpaceId, dockSpaceSize);
+  PreserveDockLayoutProportions(dockSpaceId, dockSpaceSize);
   ImGui::DockSpace(dockSpaceId);
   ImGui::End();
 }

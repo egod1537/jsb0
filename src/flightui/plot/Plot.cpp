@@ -34,6 +34,7 @@ struct PlotSeries {
   DataView YValues;
   bool HasXValues = false;
   int Offset = 0;
+  ImVec4 Color = IMPLOT_AUTO_COL;
 };
 
 struct AxisLimits {
@@ -200,6 +201,7 @@ ImPlotSpec MakeSeriesSpec(const PlotSeries &series) {
   ImPlotSpec spec;
   spec.Offset = series.Offset;
   spec.Stride = static_cast<int>(series.YValues.GetStride());
+  spec.LineColor = series.Color;
   return spec;
 }
 
@@ -573,6 +575,18 @@ PlotBuilder &PlotBuilder::Overlay(std::function<void()> overlay) {
 PlotBuilder &PlotBuilder::AddLine(std::string label, DataView xValues,
     DataView yValues) {
   return AddLine(std::move(label), xValues, yValues, m_Impl->Offset);
+}
+
+PlotBuilder &PlotBuilder::AddLine(std::string label, DataView xValues,
+    DataView yValues, ImVec4 color) {
+  m_Impl->SeriesList.push_back(PlotSeries{SeriesType::Line,
+      std::move(label),
+      xValues,
+      yValues,
+      true,
+      m_Impl->Offset,
+      color});
+  return *this;
 }
 
 PlotBuilder &PlotBuilder::AddLine(std::string label, DataView xValues,

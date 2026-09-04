@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "type": "run_metadata",
+      "path": "run.json",
+      "required": true,
+      "content_type": "application/json"
+    },
+    {
+      "type": "scenario_snapshot",
+      "path": "scenario.yaml",
+      "required": true,
+      "content_type": "application/yaml"
+    },
+    {
+      "type": "telemetry",
+      "path": "telemetry.mcap",
+      "required": true,
+      "content_type": "application/x-mcap"
+    },
+    {
+      "type": "parameter_set_snapshot",
+      "path": "parameters.yaml",
+      "required": false,
+      "content_type": "application/yaml",
+      "condition": "Present when controller parameter overrides were supplied."
+    }
+  ]
+}

@@ -24,10 +24,10 @@ trim:
 
 simulation:
   duration_sec: 0.1
-  dt_sec: 0.01
+  dt_sec: 0.008333333333333333
 
 events:
-  - time_sec: 0.02
+  - time_sec: 0.025
     command:
       type: roll_hold
       roll_deg: 5

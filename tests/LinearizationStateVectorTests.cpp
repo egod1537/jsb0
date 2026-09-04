@@ -24,12 +24,12 @@ void RequireNear(double actual, double expected, const std::string &message) {
 
 sim::FDMState MakePopulatedState() {
   sim::FDMState state{};
-  state.state.bodyVelocityFps = {101.0, 102.0, 103.0};
+  state.state.bodyVelocityMps = {101.0, 102.0, 103.0};
   state.state.bodyAngularRatesRadPerSec = {0.11, 0.12, 0.13};
   state.state.attitudeRad = {0.21, 0.22, 0.23};
   state.state.latitudeRad = 0.31;
   state.state.longitudeRad = 0.32;
-  state.state.altitudeAslFt = 4'500.0;
+  state.state.altitudeAslM = 4'500.0;
   state.controls.aileronCommand = -0.1;
   state.controls.elevatorCommand = 0.2;
   state.controls.rudderCommand = -0.3;
@@ -40,8 +40,8 @@ sim::FDMState MakePopulatedState() {
 void RequireStateFieldsMatch(const sim::FDMState &actual,
     const sim::FDMState &expected) {
   for (std::size_t index = 0; index < 3; ++index) {
-    RequireNear(actual.state.bodyVelocityFps[index],
-        expected.state.bodyVelocityFps[index],
+    RequireNear(actual.state.bodyVelocityMps[index],
+        expected.state.bodyVelocityMps[index],
         "Body velocity mismatch");
     RequireNear(actual.state.bodyAngularRatesRadPerSec[index],
         expected.state.bodyAngularRatesRadPerSec[index],
@@ -56,8 +56,8 @@ void RequireStateFieldsMatch(const sim::FDMState &actual,
   RequireNear(actual.state.longitudeRad,
       expected.state.longitudeRad,
       "Longitude mismatch");
-  RequireNear(actual.state.altitudeAslFt,
-      expected.state.altitudeAslFt,
+  RequireNear(actual.state.altitudeAslM,
+      expected.state.altitudeAslM,
       "Altitude mismatch");
 }
 
@@ -128,9 +128,9 @@ void TestApplyStateVector() {
   sim::FDMState state{};
   sim::ApplyStateVector(state, vector);
 
-  RequireNear(state.state.bodyVelocityFps[0], 10.0, "U application failed");
-  RequireNear(state.state.bodyVelocityFps[1], 11.0, "V application failed");
-  RequireNear(state.state.bodyVelocityFps[2], 12.0, "W application failed");
+  RequireNear(state.state.bodyVelocityMps[0], 10.0, "U application failed");
+  RequireNear(state.state.bodyVelocityMps[1], 11.0, "V application failed");
+  RequireNear(state.state.bodyVelocityMps[2], 12.0, "W application failed");
   RequireNear(state.state.bodyAngularRatesRadPerSec[0],
       13.0,
       "P application failed");
@@ -145,7 +145,7 @@ void TestApplyStateVector() {
   RequireNear(state.state.attitudeRad[2], 18.0, "Heading application failed");
   RequireNear(state.state.latitudeRad, 19.0, "Latitude application failed");
   RequireNear(state.state.longitudeRad, 20.0, "Longitude application failed");
-  RequireNear(state.state.altitudeAslFt, 21.0, "Altitude application failed");
+  RequireNear(state.state.altitudeAslM, 21.0, "Altitude application failed");
 }
 
 void TestExtractInputVector() {
@@ -276,16 +276,16 @@ void TestStateDerivativeVectorOrdering(const sim::Aircraft &aircraft) {
   const sim::StateDerivativeVector derivative =
       sim::ExtractStateDerivativeVector(aircraft);
   const sim::jsbsim::Properties &properties = aircraft.GetProperties();
-  const double radiusFt = properties.RadiusToVehicle().Ft();
+  const double radiusM = properties.RadiusToVehicle().M();
 
   RequireNear(derivative(sim::ToIndex(sim::LinearizationState::U)),
-      properties.U().DotFps2(),
+      properties.U().DotMps2(),
       "UDot ordering failed");
   RequireNear(derivative(sim::ToIndex(sim::LinearizationState::V)),
-      properties.V().DotFps2(),
+      properties.V().DotMps2(),
       "VDot ordering failed");
   RequireNear(derivative(sim::ToIndex(sim::LinearizationState::W)),
-      properties.W().DotFps2(),
+      properties.W().DotMps2(),
       "WDot ordering failed");
   RequireNear(derivative(sim::ToIndex(sim::LinearizationState::P)),
       properties.P().DotRadPerSec2(),
@@ -297,14 +297,14 @@ void TestStateDerivativeVectorOrdering(const sim::Aircraft &aircraft) {
       properties.R().DotRadPerSec2(),
       "RDot ordering failed");
   RequireNear(derivative(sim::ToIndex(sim::LinearizationState::Latitude)),
-      properties.NorthVelocity().Fps() / radiusFt,
+      properties.NorthVelocity().Mps() / radiusM,
       "LatitudeDot ordering failed");
   RequireNear(derivative(sim::ToIndex(sim::LinearizationState::Longitude)),
-      properties.EastVelocity().Fps()
-          / (std::cos(properties.Latitude().Rad()) * radiusFt),
+      properties.EastVelocity().Mps()
+          / (std::cos(properties.Latitude().Rad()) * radiusM),
       "LongitudeDot ordering failed");
   RequireNear(derivative(sim::ToIndex(sim::LinearizationState::Altitude)),
-      properties.VerticalSpeed().Fps(),
+      properties.VerticalSpeed().Mps(),
       "AltitudeDot ordering failed");
 }
 

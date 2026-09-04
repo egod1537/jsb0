@@ -1,47 +1,28 @@
 #include "gui/features/gnc/GNCController.hpp"
 
-#include "messaging/SimulationMessageClient.hpp"
 #include "common/math/Math.hpp"
-
-#include <algorithm>
-#include <cmath>
+#include "messaging/SimulationMessageClient.hpp"
 
 namespace gui {
 GNCController::GNCController(application::SimulationMessageClient &client)
-    : client_(client) {}
+    : client_(client), experimentalController_(model_.primaryAutopilot),
+      px4AttitudeController_(model_.baselineAutopilot),
+      tecsController_(model_.baselineAutopilot),
+      trimController_(client_, model_.trimRequest, model_.trimResultOpen,
+          model_.trimResidualOpen, model_.trimInProgress) {}
 
 void GNCController::Synchronize(const sim::SimulationSnapshot &snapshot) {
   if (model_.autopilotStateLoaded) {
     return;
   }
 
-  const sim::PrimaryRollHoldConfig &primary =
-      snapshot.primaryAutopilot.primaryRollHold;
-  model_.primaryAutopilot.rollHold = primary.enabled;
-  model_.primaryAutopilot.rollTargetDeg = math::RadToDeg(primary.targetRollRad);
-  model_.primaryAutopilot.rollAngleProportionalGain =
-      primary.rollAngleProportionalGain;
-  model_.primaryAutopilot.rollRateProportionalGain =
-      primary.rollRateProportionalGain;
-
+  experimentalController_.Synchronize(
+      snapshot.primaryAutopilot.primaryRollHold);
   if (snapshot.baselineAutopilot) {
     const sim::BaselineRollHoldConfig &baseline =
         snapshot.baselineAutopilot->baselineRollHold;
-    model_.baselineAutopilot.rollHold = baseline.enabled;
-    model_.baselineAutopilot.rollTargetDeg =
-        math::RadToDeg(baseline.targetRollRad);
-    model_.baselineAutopilot.px4RollTimeConstantSec = baseline.timeConstantSec;
-    model_.baselineAutopilot.px4RollMaximumRateDegPerSec =
-        math::RadToDeg(baseline.maximumRollRateRadPerSec);
-    model_.baselineAutopilot.px4RollRateProportionalGain =
-        baseline.rateProportionalGain;
-    model_.baselineAutopilot.px4RollRateIntegralGain =
-        baseline.rateIntegralGain;
-    model_.baselineAutopilot.px4RollRateDerivativeGain =
-        baseline.rateDerivativeGain;
-    model_.baselineAutopilot.px4RollRateFeedForwardGain =
-        baseline.rateFeedForwardGain;
-    model_.baselineAutopilot.px4RollIntegratorLimit = baseline.integratorLimit;
+    px4AttitudeController_.SynchronizeBaseline(baseline);
+    tecsController_.Synchronize(baseline);
   }
   model_.autopilotStateLoaded = true;
 }
@@ -60,28 +41,66 @@ void GNCController::PublishConfiguration(
           model_.primaryAutopilot.rollRateProportionalGain,
   }});
 
-  if (snapshot.baseline.has_value() && snapshot.baselineAutopilot.has_value()
-      && snapshot.baselineAutopilot->available) {
-    Handle(BaselineRollHoldConfigChanged{{
-        .enabled = model_.baselineAutopilot.rollHold,
-        .targetRollRad = math::DegToRad(model_.baselineAutopilot.rollTargetDeg),
-        .timeConstantSec = model_.baselineAutopilot.px4RollTimeConstantSec,
-        .maximumRollRateRadPerSec = math::DegToRad(
-            model_.baselineAutopilot.px4RollMaximumRateDegPerSec),
-        .rateProportionalGain =
-            model_.baselineAutopilot.px4RollRateProportionalGain,
-        .rateIntegralGain = model_.baselineAutopilot.px4RollRateIntegralGain,
-        .rateDerivativeGain =
-            model_.baselineAutopilot.px4RollRateDerivativeGain,
-        .rateFeedForwardGain =
-            model_.baselineAutopilot.px4RollRateFeedForwardGain,
-        .integratorLimit = model_.baselineAutopilot.px4RollIntegratorLimit,
-    }});
+  if (!snapshot.baseline.has_value() || !snapshot.baselineAutopilot.has_value()
+      || !snapshot.baselineAutopilot->available) {
+    return;
   }
+
+  const BaselineAutopilotPanelState &state = model_.baselineAutopilot;
+  Handle(BaselineRollHoldConfigChanged{{
+      .enabled = state.rollHold,
+      .targetRollRad = math::DegToRad(state.rollTargetDeg),
+      .timeConstantSec = state.px4RollTimeConstantSec,
+      .maximumRollRateRadPerSec =
+          math::DegToRad(state.px4RollMaximumRateDegPerSec),
+      .rateProportionalGain = state.px4RollRateProportionalGain,
+      .rateIntegralGain = state.px4RollRateIntegralGain,
+      .rateDerivativeGain = state.px4RollRateDerivativeGain,
+      .rateFeedForwardGain = state.px4RollRateFeedForwardGain,
+      .integratorLimit = state.px4RollIntegratorLimit,
+      .pitchHoldEnabled = state.pitchHold,
+      .targetPitchRad = math::DegToRad(state.pitchTargetDeg),
+      .pitchTimeConstantSec = state.px4PitchTimeConstantSec,
+      .maximumPositivePitchRateRadPerSec =
+          math::DegToRad(state.px4PitchMaximumPositiveRateDegPerSec),
+      .maximumNegativePitchRateRadPerSec =
+          math::DegToRad(state.px4PitchMaximumNegativeRateDegPerSec),
+      .pitchRateProportionalGain = state.px4PitchRateProportionalGain,
+      .pitchRateIntegralGain = state.px4PitchRateIntegralGain,
+      .pitchRateDerivativeGain = state.px4PitchRateDerivativeGain,
+      .pitchRateFeedForwardGain = state.px4PitchRateFeedForwardGain,
+      .pitchIntegratorLimit = state.px4PitchIntegratorLimit,
+      .tecsEnabled = state.tecs,
+      .targetAltitudeM = state.tecsTargetAltitudeM,
+      .targetAirspeedMps = state.tecsTargetAirspeedMps,
+      .tecsSettings = state.tecsSettings,
+      .directRollRateTestEnabled = state.directRollRateTestEnabled,
+      .directRollRateCommandRadPerSec =
+          math::DegToRad(state.directRollRateCommandDegPerSec),
+      .courseHoldEnabled = state.courseHold,
+      .targetCourseRad = math::DegToRad(state.targetCourseDeg),
+      .courseGuidancePeriodSec = state.courseGuidancePeriodSec,
+      .courseGuidanceDampingRatio = state.courseGuidanceDampingRatio,
+      .courseMaxRollRad = math::DegToRad(state.courseMaximumRollDeg),
+      .courseMaxRollSetpointRateRadPerSec =
+          math::DegToRad(state.courseMaximumRollSetpointRateDegPerSec),
+      .yawRateControlEnabled = state.yawRateControlEnabled,
+      .coordinatedTurnEnabled = state.coordinatedTurnEnabled,
+      .maximumYawRateRadPerSec =
+          math::DegToRad(state.px4YawMaximumRateDegPerSec),
+      .yawRateProportionalGain = state.px4YawRateProportionalGain,
+      .yawRateIntegralGain = state.px4YawRateIntegralGain,
+      .yawRateDerivativeGain = state.px4YawRateDerivativeGain,
+      .yawRateFeedForwardGain = state.px4YawRateFeedForwardGain,
+      .yawIntegratorLimit = state.px4YawIntegratorLimit,
+      .sideslipToYawRateGain = state.sideslipToYawRateGain,
+      .yawRateWashoutTimeConstantSec = state.yawRateWashoutTimeConstantSec,
+      .rollToYawFeedForwardGain = state.rollToYawFeedForwardGain,
+  }});
 }
 
 void GNCController::Handle(const TrimRequested &event) {
-  client_.RunTrim(event.request, event.fromCurrentState);
+  trimController_.Handle(event);
 }
 
 void GNCController::Handle(const ManualControlChanged &event) {
@@ -97,86 +116,58 @@ void GNCController::Handle(const BaselineRollHoldConfigChanged &event) {
 }
 
 void GNCController::Handle(const PrimaryRollHoldValueChanged &event) {
-  switch (event.field) {
-  case PrimaryRollHoldField::Enabled:
-    model_.primaryAutopilot.rollHold = event.value != 0.0;
-    break;
-  case PrimaryRollHoldField::TargetDeg:
-    model_.primaryAutopilot.rollTargetDeg = event.value;
-    break;
-  case PrimaryRollHoldField::AngleProportionalGain:
-    model_.primaryAutopilot.rollAngleProportionalGain = event.value;
-    break;
-  case PrimaryRollHoldField::RateProportionalGain:
-    model_.primaryAutopilot.rollRateProportionalGain = event.value;
-    break;
-  }
+  experimentalController_.Handle(event);
 }
 
 void GNCController::Handle(const BaselineRollHoldValueChanged &event) {
-  if (SetBaselinePx4RollHoldParameter(model_.baselineAutopilot,
-          event.field,
-          event.value)) {
-    return;
-  }
-
-  switch (event.field) {
-  case BaselineRollHoldField::Enabled:
-    model_.baselineAutopilot.rollHold = event.value != 0.0;
-    return;
-  case BaselineRollHoldField::TargetDeg:
-    model_.baselineAutopilot.rollTargetDeg = event.value;
-    return;
-  case BaselineRollHoldField::TimeConstantSec:
-  case BaselineRollHoldField::MaximumRateDegPerSec:
-  case BaselineRollHoldField::RateProportionalGain:
-  case BaselineRollHoldField::RateIntegralGain:
-  case BaselineRollHoldField::RateDerivativeGain:
-  case BaselineRollHoldField::RateFeedForwardGain:
-  case BaselineRollHoldField::IntegratorLimit:
-    return;
-  }
+  px4AttitudeController_.Handle(event);
 }
 
-void GNCController::Handle(const BaselineRollHoldTuningResetRequested &) {
-  ResetBaselinePx4RollHoldTuning(model_.baselineAutopilot);
+void GNCController::Handle(const BaselineRollHoldTuningResetRequested &event) {
+  px4AttitudeController_.Handle(event);
+}
+
+void GNCController::Handle(const BaselinePitchHoldTuningResetRequested &event) {
+  px4AttitudeController_.Handle(event);
+}
+
+void GNCController::Handle(const BaselineTecsValueChanged &event) {
+  tecsController_.Handle(event);
+}
+
+void GNCController::Handle(const BaselineTecsParameterChanged &event) {
+  tecsController_.Handle(event);
+}
+
+void GNCController::Handle(const BaselineTecsTuningResetRequested &event) {
+  tecsController_.Handle(event);
+}
+
+void GNCController::Handle(const BaselineTecsAltitudeCaptureRequested &event) {
+  tecsController_.Handle(event);
+}
+
+void GNCController::Handle(const BaselineTecsAirspeedCaptureRequested &event) {
+  tecsController_.Handle(event);
 }
 
 void GNCController::Handle(const TrimRequestValueChanged &event) {
-  switch (event.field) {
-  case TrimRequestField::Mode:
-    model_.trimRequest.mode = static_cast<gnc::TrimMode>(
-        std::clamp(static_cast<int>(event.value), 0, 2));
-    break;
-  case TrimRequestField::AirspeedKts:
-    model_.trimRequest.airspeedKts = event.value;
-    break;
-  case TrimRequestField::AltitudeFt:
-    model_.trimRequest.altitudeFt = event.value;
-    break;
-  case TrimRequestField::FlightPathAngleDeg:
-    model_.trimRequest.flightPathAngleDeg = event.value;
-    break;
-  }
+  trimController_.Handle(event);
 }
 
 void GNCController::Handle(const TrimExecutionRequested &event) {
-  if (model_.trimInProgress) {
-    return;
-  }
-  model_.trimInProgress = true;
-  Handle(TrimRequested{model_.trimRequest, event.fromCurrentState});
-  model_.trimResultOpen = true;
-  model_.trimResidualOpen = true;
-  model_.trimInProgress = false;
+  trimController_.Handle(event);
 }
 
-void GNCController::Handle(const GNCViewStateChanged &event) {
-  model_.primaryAutopilot.rollHoldParametersOpen = event.primaryParametersOpen;
-  model_.baselineAutopilot.px4RollTuningOpen = event.baselineTuningOpen;
-  model_.baselineAutopilot.px4RollDiagnosticsOpen =
-      event.baselineDiagnosticsOpen;
-  model_.trimResultOpen = event.trimResultOpen;
-  model_.trimResidualOpen = event.trimResidualOpen;
+void GNCController::Handle(const ExperimentalViewStateChanged &event) {
+  experimentalController_.Handle(event);
+}
+
+void GNCController::Handle(const Px4AttitudeViewStateChanged &event) {
+  px4AttitudeController_.Handle(event);
+}
+
+void GNCController::Handle(const TrimViewStateChanged &event) {
+  trimController_.Handle(event);
 }
 } // namespace gui

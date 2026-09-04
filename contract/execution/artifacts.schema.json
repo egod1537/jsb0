@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsb0.dev/contract/v2/execution-artifacts.schema.json",
+  "title": "JSB0 Run Artifact Layout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifacts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifacts": {
+      "type": "array",
+      "minItems": 4,
+      "items": {"$ref": "#/$defs/artifact"}
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path", "required", "content_type"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "pattern": "^[^/\\\\]+$"},
+        "required": {"type": "boolean"},
+        "content_type": {"type": "string", "minLength": 1},
+        "condition": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -80,6 +80,8 @@ public:
   // Line series
   PlotBuilder &AddLine(std::string label, DataView xValues, DataView yValues);
   PlotBuilder &AddLine(std::string label, DataView xValues, DataView yValues,
+      ImVec4 color);
+  PlotBuilder &AddLine(std::string label, DataView xValues, DataView yValues,
       int offset);
   PlotBuilder &AddLine(std::string label, DataView yValues);
   PlotBuilder &AddLine(std::string label, DataView yValues, int offset);

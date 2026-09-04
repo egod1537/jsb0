@@ -19,10 +19,28 @@ add_path_if_dir() {
   fi
 }
 
-add_msys2_ucrt_path() {
-  add_path_if_dir "/ucrt64/bin"
-  add_path_if_dir "/c/msys64/ucrt64/bin"
-  add_path_if_dir "/mnt/c/msys64/ucrt64/bin"
+add_msys2_toolchain_path() {
+  local cache_file="$ROOT_DIR/build/CMakeCache.txt"
+  local compiler=""
+  local toolchain=""
+
+  if [[ -f "$cache_file" ]]; then
+    compiler="$(sed -n 's/^CMAKE_CXX_COMPILER:[^=]*=//p' "$cache_file" | head -n 1)"
+  fi
+
+  case "${compiler,,}" in
+    */clangarm64/*) toolchain="clangarm64" ;;
+    */clang64/*) toolchain="clang64" ;;
+    */ucrt64/*) toolchain="ucrt64" ;;
+    */mingw64/*) toolchain="mingw64" ;;
+    */mingw32/*) toolchain="mingw32" ;;
+  esac
+
+  if [[ -n "$toolchain" ]]; then
+    add_path_if_dir "/$toolchain/bin"
+    add_path_if_dir "/c/msys64/$toolchain/bin"
+    add_path_if_dir "/mnt/c/msys64/$toolchain/bin"
+  fi
 }
 
 is_windows_console_binary() {
@@ -45,6 +63,6 @@ fi
 
 cd "$ROOT_DIR"
 if is_windows_console_binary; then
-  add_msys2_ucrt_path
+  add_msys2_toolchain_path
 fi
 exec "$CONSOLE_BINARY"

@@ -1,5 +1,6 @@
 #include "gui/panels/TrimPanel.hpp"
 
+#include "common/math/Math.hpp"
 #include "flightui/FlightUI.hpp"
 
 namespace gui {
@@ -62,28 +63,32 @@ UI::UIElement MakeTrimInputPanel(const gnc::TrimRequest &request,
                       events.Emit(
                           {TrimRequestField::Mode, static_cast<double>(index)});
                     })
-                + UI::InputDouble("Airspeed (kt)", request.airspeedKts)
+                + UI::InputDouble("Airspeed (kt)",
+                    math::MetersPerSecondToKnots(request.calibratedAirspeedMps))
                     .Step(1.0)
                     .FastStep(10.0)
                     .Format("%.2f")
                     .OnChanged([events](double value) {
-                      events.Emit({TrimRequestField::AirspeedKts, value});
+                      events.Emit({TrimRequestField::CalibratedAirspeedMps,
+                          math::KnotsToMetersPerSecond(value)});
                     })
-                + UI::InputDouble("Altitude (ft)", request.altitudeFt)
+                + UI::InputDouble("Altitude (ft)",
+                    math::MetersToFeet(request.altitudeAslM))
                     .Step(100.0)
                     .FastStep(1000.0)
                     .Format("%.2f")
                     .OnChanged([events](double value) {
-                      events.Emit({TrimRequestField::AltitudeFt, value});
+                      events.Emit({TrimRequestField::AltitudeAslM,
+                          math::FeetToMeters(value)});
                     })
                 + UI::InputDouble("Flight Path Angle (deg)",
-                    request.flightPathAngleDeg)
+                    math::RadToDeg(request.flightPathAngleRad))
                     .Step(0.1)
                     .FastStep(1.0)
                     .Format("%.2f")
                     .OnChanged([events](double value) {
-                      events.Emit(
-                          {TrimRequestField::FlightPathAngleDeg, value});
+                      events.Emit({TrimRequestField::FlightPathAngleRad,
+                          math::DegToRad(value)});
                     })]];
 }
 
@@ -91,9 +96,15 @@ UI::UIElement MakeTrimRequestSummary(const gnc::TrimRequest &request) {
   return UI::KeyValueGrid("TrimRequestSummaryTable")
       .ColumnsPerRow(4)
       .Add("Mode", TrimModeLabel(request.mode))
-      .AddDouble("Airspeed", request.airspeedKts, "%.2f kt")
-      .AddDouble("Altitude", request.altitudeFt, "%.2f ft")
-      .AddDouble("Flight Path Angle", request.flightPathAngleDeg, "%.2f deg");
+      .AddDouble("Airspeed",
+          math::MetersPerSecondToKnots(request.calibratedAirspeedMps),
+          "%.2f kt")
+      .AddDouble("Altitude",
+          math::MetersToFeet(request.altitudeAslM),
+          "%.2f ft")
+      .AddDouble("Flight Path Angle",
+          math::RadToDeg(request.flightPathAngleRad),
+          "%.2f deg");
 }
 
 UI::UIElement MakeTrimResultContent(const gnc::TrimResult &result,
@@ -117,18 +128,19 @@ UI::UIElement MakeTrimResultContent(const gnc::TrimResult &result,
                        + UI::TextWrapped(result.message)];
   }
 
-  layout = layout
-           + UI::KeyValueGrid("TrimResultMetrics")
-                 .ColumnsPerRow(2)
-                 .AddDouble("Alpha", result.alphaDeg, "%.2f deg")
-                 .AddDouble("Beta", result.betaDeg, "%.2f deg")
-                 .AddDouble("Roll", result.rollDeg, "%.2f deg")
-                 .AddDouble("Pitch", result.pitchDeg, "%.2f deg")
-                 .AddDouble("Throttle", result.throttle, "%.3f")
-                 .AddDouble("Elevator", result.elevator, "%.3f")
-                 .AddDouble("Pitch Trim", result.pitchTrim, "%.3f")
-                 .AddDouble("Aileron", result.aileron, "%.3f")
-                 .AddDouble("Rudder", result.rudder, "%.3f");
+  layout =
+      layout
+      + UI::KeyValueGrid("TrimResultMetrics")
+            .ColumnsPerRow(2)
+            .AddDouble("Alpha", math::RadToDeg(result.alphaRad), "%.2f deg")
+            .AddDouble("Beta", math::RadToDeg(result.betaRad), "%.2f deg")
+            .AddDouble("Roll", math::RadToDeg(result.rollRad), "%.2f deg")
+            .AddDouble("Pitch", math::RadToDeg(result.pitchRad), "%.2f deg")
+            .AddDouble("Throttle", result.throttle, "%.3f")
+            .AddDouble("Elevator", result.elevator, "%.3f")
+            .AddDouble("Pitch Trim", result.pitchTrim, "%.3f")
+            .AddDouble("Aileron", result.aileron, "%.3f")
+            .AddDouble("Rudder", result.rudder, "%.3f");
 
   return layout;
 }
@@ -136,12 +148,12 @@ UI::UIElement MakeTrimResultContent(const gnc::TrimResult &result,
 UI::UIElement MakeTrimResidualContent(const gnc::TrimResult &result) {
   return UI::KeyValueGrid("TrimResidualMetrics")
       .ColumnsPerRow(2)
-      .AddDouble("uDot", result.uDot, "%.4f m/s^2")
-      .AddDouble("vDot", result.vDot, "%.4f m/s^2")
-      .AddDouble("wDot", result.wDot, "%.4f m/s^2")
-      .AddDouble("pDot", result.pDot, "%.4f deg/s^2")
-      .AddDouble("qDot", result.qDot, "%.4f deg/s^2")
-      .AddDouble("rDot", result.rDot, "%.4f deg/s^2");
+      .AddDouble("uDot", result.uDotMps2, "%.4f m/s^2")
+      .AddDouble("vDot", result.vDotMps2, "%.4f m/s^2")
+      .AddDouble("wDot", result.wDotMps2, "%.4f m/s^2")
+      .AddDouble("pDot", math::RadToDeg(result.pDotRadPerSec2), "%.4f deg/s^2")
+      .AddDouble("qDot", math::RadToDeg(result.qDotRadPerSec2), "%.4f deg/s^2")
+      .AddDouble("rDot", math::RadToDeg(result.rDotRadPerSec2), "%.4f deg/s^2");
 }
 } // namespace
 

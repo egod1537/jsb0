@@ -105,8 +105,8 @@ void AltitudeCueRenderer::Render(RenderContext &context) const {
   char label[96]{};
   std::snprintf(label,
       sizeof(label),
-      "AGL %.0f ft",
-      aircraft.state.altitudeAglFt);
+      "AGL %.1f m",
+      aircraft.state.altitudeAglM);
   context.canvas.GetDrawList().AddText(
       ImVec2(projectedLabel->x + FlightUI::Ui(8.0F),
           projectedLabel->y - FlightUI::Ui(8.0F)),

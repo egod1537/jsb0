@@ -1,0 +1,153 @@
+{
+  "contract_version": "2.0.0",
+  "schema_version": 1,
+  "parameters": [
+    {
+      "id": "FW_R_TC",
+      "display_name": "Roll time constant",
+      "description": "Time constant used to convert roll angle error to a roll-rate setpoint.",
+      "module": "px4.roll",
+      "controller": "Px4RollController",
+      "type": "number",
+      "unit": "s",
+      "minimum": 0.2,
+      "maximum": 1,
+      "algorithm_default": 0.4,
+      "default_value": 0.4,
+      "increment": 0.05,
+      "variants": ["baseline"],
+      "aircraft": ["c172x"],
+      "profiles": {
+        "c172x": {"value": 0.4}
+      },
+      "read_only": false,
+      "experimental": false
+    },
+    {
+      "id": "FW_R_RMAX",
+      "display_name": "Maximum roll rate",
+      "description": "Maximum roll-rate setpoint produced by the attitude loop.",
+      "module": "px4.roll",
+      "controller": "Px4RollController",
+      "type": "number",
+      "unit": "deg/s",
+      "minimum": 0,
+      "maximum": 180,
+      "algorithm_default": 70,
+      "default_value": 70,
+      "increment": 0.5,
+      "variants": ["baseline"],
+      "aircraft": ["c172x"],
+      "profiles": {
+        "c172x": {"value": 70}
+      },
+      "read_only": false,
+      "experimental": false
+    },
+    {
+      "id": "FW_RR_P",
+      "display_name": "Roll rate proportional gain",
+      "description": "Proportional gain applied to roll-rate error.",
+      "module": "px4.roll",
+      "controller": "Px4RollController",
+      "type": "number",
+      "unit": "%/rad/s",
+      "minimum": 0,
+      "maximum": 10,
+      "algorithm_default": 1.9,
+      "default_value": 1.9,
+      "increment": 0.005,
+      "variants": ["baseline"],
+      "aircraft": ["c172x"],
+      "profiles": {
+        "c172x": {"value": 1.9}
+      },
+      "read_only": false,
+      "experimental": false
+    },
+    {
+      "id": "FW_RR_I",
+      "display_name": "Roll rate integrator gain",
+      "description": "Integral gain applied to accumulated roll-rate error.",
+      "module": "px4.roll",
+      "controller": "Px4RollController",
+      "type": "number",
+      "unit": "%/rad",
+      "minimum": 0,
+      "maximum": 10,
+      "algorithm_default": 0.25,
+      "default_value": 0.25,
+      "increment": 0.01,
+      "variants": ["baseline"],
+      "aircraft": ["c172x"],
+      "profiles": {
+        "c172x": {"value": 0.25}
+      },
+      "read_only": false,
+      "experimental": false
+    },
+    {
+      "id": "FW_RR_D",
+      "display_name": "Roll rate derivative gain",
+      "description": "Derivative gain applied by the roll-rate controller.",
+      "module": "px4.roll",
+      "controller": "Px4RollController",
+      "type": "number",
+      "unit": "%/rad/s",
+      "minimum": 0,
+      "maximum": 10,
+      "algorithm_default": 0,
+      "default_value": 0,
+      "increment": 0.005,
+      "variants": ["baseline"],
+      "aircraft": ["c172x"],
+      "profiles": {
+        "c172x": {"value": 0}
+      },
+      "read_only": false,
+      "experimental": false
+    },
+    {
+      "id": "FW_RR_FF",
+      "display_name": "Roll rate feed forward",
+      "description": "Feed-forward gain applied to the roll-rate setpoint.",
+      "module": "px4.roll",
+      "controller": "Px4RollController",
+      "type": "number",
+      "unit": "%/rad/s",
+      "minimum": 0,
+      "maximum": 10,
+      "algorithm_default": 1.2,
+      "default_value": 1.2,
+      "increment": 0.05,
+      "variants": ["baseline"],
+      "aircraft": ["c172x"],
+      "profiles": {
+        "c172x": {"value": 1.2}
+      },
+      "read_only": false,
+      "experimental": false
+    },
+    {
+      "id": "FW_RR_IMAX",
+      "display_name": "Roll integrator limit",
+      "description": "Absolute normalized limit for the roll-rate integrator.",
+      "module": "px4.roll",
+      "controller": "Px4RollController",
+      "type": "number",
+      "unit": "normalized",
+      "minimum": 0,
+      "maximum": 1,
+      "algorithm_default": 0.2,
+      "default_value": 0.2,
+      "increment": 0.05,
+      "variants": ["baseline"],
+      "aircraft": ["c172x"],
+      "profiles": {
+        "c172x": {"value": 0.2}
+      },
+      "read_only": false,
+      "experimental": false
+    }
+  ]
+}

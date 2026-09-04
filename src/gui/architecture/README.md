@@ -106,9 +106,18 @@ GUI root
       file serialization
       semantic launch events to SimulationController
   GNCController
-    manual-control view
-    primary roll-hold view
-    baseline roll-hold view
+    GNCModel and shared snapshot/configuration coordination
+    ExperimentalController
+      current primary/MyAutopilot editing state
+    Px4AttitudeController
+      roll, pitch, course, yaw events and editing state
+    TecsController
+      enable, SI setpoints, capture, tuning reset
+    TrimController
+      request editing, execution, result view state
+    BaselineAutopilotPanel (composition)
+      Px4AttitudePanel
+      TecsPanel
     AutopilotSelectorController
   LinearizationController
   MonitorController

@@ -1,7 +1,11 @@
 #include "gui/panels/AutopilotPanel.hpp"
 #include "gui/panels/BaselineAutopilotPanel.hpp"
+#include "common/math/Math.hpp"
+#include "gui/GUIConfig.hpp"
 #include "gui/features/flightviz/FlightVisualizer.hpp"
 #include "gui/windows/GNCWindow.hpp"
+#include "gui/features/monitor/plots/CourseTrackingAcceptance.hpp"
+#include "gui/features/monitor/plots/PitchTrackingAcceptance.hpp"
 #include "gui/features/monitor/plots/RollTrackingAcceptance.hpp"
 #include "gui/windows/viz/FlightVizWindow.hpp"
 #include "sim/runtime/SimulationContracts.hpp"
@@ -17,6 +21,11 @@ concept HasBaselineRollHoldTuningState = requires(T &state) {
   state.px4RollTimeConstantSec;
   state.px4RollTuningOpen;
   state.px4RollDiagnosticsOpen;
+  state.pitchHold;
+  state.pitchTargetDeg;
+  state.px4PitchTimeConstantSec;
+  state.px4PitchTuningOpen;
+  state.px4PitchDiagnosticsOpen;
 };
 
 template <typename T>
@@ -82,7 +91,7 @@ void TestFlightVizWindowsUseIndependentSlotsAndIds() {
 
 void TestShadowUsesFixedWorldProjection() {
   constexpr double EarthRadiusMeters = 6'371'000.0;
-  constexpr double MetersPerVizUnit = 75.0 * 0.3048;
+  constexpr double MetersPerVizUnit = math::FeetToMeters(75.0);
   constexpr double LatitudeOffsetRad = 0.00001;
   constexpr double LongitudeOffsetRad = 0.00002;
   constexpr double OriginLatitudeRad = 0.65;
@@ -92,7 +101,7 @@ void TestShadowUsesFixedWorldProjection() {
   primary.available = true;
   primary.fdmState.state.latitudeRad = OriginLatitudeRad;
   primary.fdmState.state.longitudeRad = OriginLongitudeRad;
-  primary.fdmState.state.altitudeAslFt = 4000.0;
+  primary.aircraft.altitudeAslM = math::FeetToMeters(4000.0);
 
   sim::SimulationInstanceSnapshot baseline = primary;
   baseline.fdmState.state.latitudeRad += LatitudeOffsetRad;
@@ -132,6 +141,51 @@ void TestShadowUsesFixedWorldProjection() {
   assert(!primaryOnlyVisualizer.GetFrameSnapshot().shadowAircraft.available);
 }
 
+void TestFlightVizPreservesSiAircraftStateAndControls() {
+  sim::SimulationInstanceSnapshot source;
+  source.available = true;
+  source.aircraft.simulationTimeSec = 1.0;
+  source.aircraft.altitudeAglM = 365.76;
+  source.aircraft.altitudeAslM = math::FeetToMeters(4000.0);
+  source.aircraft.calibratedAirspeedMps = 41.16;
+  source.aircraft.trueAirspeedMps = 41.8;
+  source.aircraft.rollRad = math::DegToRad(-0.2);
+  source.aircraft.pitchRad = math::DegToRad(2.2);
+  source.aircraft.headingRad = math::DegToRad(359.0);
+  source.aircraft.courseRad = math::DegToRad(1.5);
+  source.controlInput = {
+      .elevator = 0.02,
+      .aileron = -0.11,
+      .rudder = 0.01,
+      .throttle = 0.64,
+  };
+  source.fdmState.state.latitudeRad = 0.65;
+  source.fdmState.state.longitudeRad = 2.2;
+
+  viz::FlightVisualizer visualizer;
+  assert(visualizer.Tick(&source));
+  const viz::AircraftSnapshot &captured =
+      visualizer.GetFrameSnapshot().aircraft;
+
+  assert(captured.state.altitudeAglM == source.aircraft.altitudeAglM);
+  assert(captured.state.altitudeAslM == source.aircraft.altitudeAslM);
+  assert(captured.state.calibratedAirspeedMps
+         == source.aircraft.calibratedAirspeedMps);
+  assert(captured.state.trueAirspeedMps == source.aircraft.trueAirspeedMps);
+  assert(captured.state.rollRad == source.aircraft.rollRad);
+  assert(captured.state.pitchRad == source.aircraft.pitchRad);
+  assert(captured.state.headingRad == source.aircraft.headingRad);
+  assert(captured.state.courseRad == source.aircraft.courseRad);
+  assert(captured.controlInput.aileron == source.controlInput.aileron);
+  assert(captured.controlInput.elevator == source.controlInput.elevator);
+  assert(captured.controlInput.rudder == source.controlInput.rudder);
+  assert(captured.controlInput.throttle == source.controlInput.throttle);
+
+  const double expectedVisualAltitude =
+      source.aircraft.altitudeAglM / math::FeetToMeters(75.0);
+  assert(std::abs(captured.visualAltitude - expectedVisualAltitude) < 1.0e-5);
+}
+
 void TestComponentSelectionsAreIndependent() {
   gui::GNCWindow gncWindow;
   viz::FlightVisualizer visualizer;
@@ -150,9 +204,16 @@ void TestBaselineRollHoldStateSurvivesSelectionChanges() {
   gui::BaselineAutopilotPanelState baselineState;
   baselineState.rollHold = true;
   baselineState.rollTargetDeg = 8.0;
+  baselineState.courseHold = true;
+  baselineState.targetCourseDeg = -179.0;
   baselineState.px4RollTimeConstantSec = 0.91;
   baselineState.px4RollTuningOpen = true;
   baselineState.px4RollDiagnosticsOpen = false;
+  baselineState.pitchHold = true;
+  baselineState.pitchTargetDeg = 4.0;
+  baselineState.px4PitchTimeConstantSec = 0.73;
+  baselineState.px4PitchTuningOpen = true;
+  baselineState.px4PitchDiagnosticsOpen = false;
 
   assert(autopilotView.Select(gui::AutopilotSelection::Baseline, true));
   assert(autopilotView.Select(gui::AutopilotSelection::Primary, true));
@@ -160,19 +221,56 @@ void TestBaselineRollHoldStateSurvivesSelectionChanges() {
 
   assert(baselineState.rollHold);
   assert(baselineState.rollTargetDeg == 8.0);
+  assert(baselineState.courseHold);
+  assert(baselineState.targetCourseDeg == -179.0);
   assert(baselineState.px4RollTimeConstantSec == 0.91);
   assert(baselineState.px4RollTuningOpen);
   assert(!baselineState.px4RollDiagnosticsOpen);
+  assert(baselineState.pitchHold);
+  assert(baselineState.pitchTargetDeg == 4.0);
+  assert(baselineState.px4PitchTimeConstantSec == 0.73);
+  assert(baselineState.px4PitchTuningOpen);
+  assert(!baselineState.px4PitchDiagnosticsOpen);
 }
 
 void TestRollTrackingAcceptanceIsCommandRelative() {
   constexpr double CommandedRollDeg = -7.25;
+  constexpr gui::MonitorConfig Config;
   constexpr gui::RollTrackingAcceptance acceptance =
-      gui::MakeRollTrackingAcceptance(CommandedRollDeg);
+      gui::MakeRollTrackingAcceptance(CommandedRollDeg,
+          0.5,
+          Config.rollTrackingToleranceDeg);
   static_assert(acceptance.settlingUpperDeg == -6.75);
   static_assert(acceptance.settlingLowerDeg == -7.75);
-  static_assert(acceptance.overshootLimitDeg == -6.25);
-  static_assert(acceptance.undershootLimitDeg == -8.25);
+  static_assert(acceptance.overshootLimitDeg
+                == CommandedRollDeg + Config.rollTrackingToleranceDeg);
+  static_assert(acceptance.undershootLimitDeg
+                == CommandedRollDeg - Config.rollTrackingToleranceDeg);
+}
+
+void TestCourseTrackingToleranceBandIsCommandRelative() {
+  constexpr gui::MonitorConfig Config;
+  constexpr gui::CourseTrackingToleranceBand band =
+      gui::MakeCourseTrackingToleranceBand(5.0,
+          Config.courseTrackingToleranceDeg);
+  static_assert(band.lowerDeg == 4.0);
+  static_assert(band.upperDeg == 6.0);
+}
+
+void TestPitchTrackingToleranceBandIsCommandRelative() {
+  constexpr gui::MonitorConfig Config;
+  constexpr gui::PitchTrackingToleranceBand band =
+      gui::MakePitchTrackingToleranceBand(-3.0,
+          Config.pitchTrackingToleranceDeg);
+  static_assert(band.lowerDeg == -3.1);
+  static_assert(band.upperDeg == -2.9);
+}
+
+void TestTrackingToleranceConfigDefaults() {
+  const gui::GUIConfig config;
+  assert(config.monitor.rollTrackingToleranceDeg == 0.1);
+  assert(config.monitor.pitchTrackingToleranceDeg == 0.1);
+  assert(config.monitor.courseTrackingToleranceDeg == 1.0);
 }
 } // namespace
 
@@ -181,8 +279,12 @@ int main() {
   TestBaselineUnavailableIsSafe();
   TestFlightVizWindowsUseIndependentSlotsAndIds();
   TestShadowUsesFixedWorldProjection();
+  TestFlightVizPreservesSiAircraftStateAndControls();
   TestComponentSelectionsAreIndependent();
   TestBaselineRollHoldStateSurvivesSelectionChanges();
   TestRollTrackingAcceptanceIsCommandRelative();
+  TestCourseTrackingToleranceBandIsCommandRelative();
+  TestPitchTrackingToleranceBandIsCommandRelative();
+  TestTrackingToleranceConfigDefaults();
   return 0;
 }

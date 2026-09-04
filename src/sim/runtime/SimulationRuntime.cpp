@@ -2,15 +2,15 @@
 
 #include "sim/Aircraft.hpp"
 #include "sim/Simulation.hpp"
+#include "sim/analysis/LinearizationService.hpp"
 #include "sim/control/FlightControlManager.hpp"
 #include "sim/execution/ExecutionVariantResolver.hpp"
-#include "sim/gnc/autopilot/IAutopilotAnalysis.hpp"
-#include "sim/gnc/autopilot/MyAutopilot.hpp"
-#include "sim/gnc/autopilot/PX4Autopilot.hpp"
-#include "sim/gnc/hold/Px4RollHoldParameterMetadata.hpp"
+#include "sim/gnc/TrimWorkflow.hpp"
+#include "sim/runtime/AutopilotConfigurationService.hpp"
+#include "sim/runtime/SimulationInstanceSet.hpp"
+#include "sim/runtime/SimulationSnapshotBuilder.hpp"
 #include "sim/scenario/ScenarioExecutor.hpp"
 #include "sim/scenario/SimulationScenario.hpp"
-#include "common/math/Math.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -29,88 +29,6 @@ double ClampAutomaticSimulationHz(double hz) {
       MaximumAutomaticSimulationHz);
 }
 
-std::string GetSimulationError(const Simulation *simulation,
-    std::string fallback) {
-  if (simulation == nullptr) {
-    return fallback;
-  }
-  return simulation->GetErrorTracker().GetLastError().value_or(
-      std::move(fallback));
-}
-
-bool ApplyExecutionParameters(Simulation &simulation,
-    const ResolvedExecutionSpec &execution, std::string &error) {
-  if (execution.parameters.empty()) {
-    return true;
-  }
-  if (execution.variant != ExecutionVariant::Baseline) {
-    error = "controller parameters are not supported by execution variant '"
-            + std::string(ToString(execution.variant)) + "'";
-    return false;
-  }
-  auto *manager = simulation.GetComponent<control::FlightControlManager>();
-  auto *autopilot = manager != nullptr ? dynamic_cast<gnc::PX4Autopilot *>(
-                                             &manager->GetAutopilot())
-                                       : nullptr;
-  if (autopilot == nullptr) {
-    error = "baseline controller parameters require PX4Autopilot";
-    return false;
-  }
-
-  gnc::Px4RollHoldReferenceSettings settings = autopilot->GetRollHoldSettings();
-  for (const auto &[id, value] : execution.parameters) {
-    const auto declared = std::find(
-        execution.scenario.controllerParameters.begin(),
-        execution.scenario.controllerParameters.end(),
-        id);
-    if (declared == execution.scenario.controllerParameters.end()) {
-      error = "controller parameter '" + id
-              + "' is not declared by the Scenario";
-      return false;
-    }
-    const auto metadata = std::find_if(gnc::Px4RollHoldParameters.begin(),
-        gnc::Px4RollHoldParameters.end(),
-        [&](const gnc::Px4RollHoldParameterMetadata &item) {
-          return item.name == id;
-        });
-    if (metadata == gnc::Px4RollHoldParameters.end()) {
-      error = "unsupported baseline controller parameter '" + id + "'";
-      return false;
-    }
-    if (!std::isfinite(value) || value < metadata->minimum
-        || value > metadata->maximum) {
-      error = "controller parameter '" + id + "' is outside ["
-              + std::to_string(metadata->minimum) + ", "
-              + std::to_string(metadata->maximum) + "]";
-      return false;
-    }
-    switch (metadata->parameter) {
-    case gnc::Px4RollHoldParameter::TimeConstant:
-      settings.timeConstantSec = value;
-      break;
-    case gnc::Px4RollHoldParameter::MaximumRollRate:
-      settings.maximumRollRateRadPerSec = math::DegToRad(value);
-      break;
-    case gnc::Px4RollHoldParameter::RateProportionalGain:
-      settings.rateProportionalGain = value;
-      break;
-    case gnc::Px4RollHoldParameter::RateIntegralGain:
-      settings.rateIntegralGain = value;
-      break;
-    case gnc::Px4RollHoldParameter::RateDerivativeGain:
-      settings.rateDerivativeGain = value;
-      break;
-    case gnc::Px4RollHoldParameter::RateFeedForwardGain:
-      settings.rateFeedForwardGain = value;
-      break;
-    case gnc::Px4RollHoldParameter::IntegratorLimit:
-      settings.integratorLimit = value;
-      break;
-    }
-  }
-  autopilot->SetRollHoldSettings(settings);
-  return true;
-}
 } // namespace
 
 SimulationRuntime::SimulationRuntime(
@@ -160,16 +78,8 @@ bool SimulationRuntime::Initialize(const SimulationConfig &config) {
 
   config_ = config;
   automaticSimulationHz_ = ClampAutomaticSimulationHz(config.simulationHz);
-  if (!primarySimulation_->Initialize(config_)) {
-    lastError_ = GetSimulationError(primarySimulation_.get(),
-        "Failed to initialize primary simulation.");
-    return false;
-  }
-  if (baselineSimulation_ != nullptr
-      && !baselineSimulation_->Initialize(config_)) {
-    lastError_ = GetSimulationError(baselineSimulation_.get(),
-        "Failed to initialize baseline simulation.");
-    primarySimulation_->Shutdown();
+  if (!SimulationInstanceSet(*primarySimulation_, baselineSimulation_.get())
+          .Initialize(config_, lastError_)) {
     return false;
   }
 
@@ -192,11 +102,9 @@ void SimulationRuntime::Shutdown() {
   executionState_ = SimulationExecutionState::Stopped;
   pendingTicks_ = 0;
 
-  if (baselineSimulation_ != nullptr) {
-    baselineSimulation_->Shutdown();
-  }
   if (primarySimulation_ != nullptr) {
-    primarySimulation_->Shutdown();
+    SimulationInstanceSet(*primarySimulation_, baselineSimulation_.get())
+        .Shutdown();
   }
   initialized_ = false;
 }
@@ -231,11 +139,19 @@ void SimulationRuntime::Resume() {
 }
 
 bool SimulationRuntime::Reset() {
-  return scenarioExecutor_ == nullptr && ResetSimulations(nullptr);
+  return scenarioExecutor_ == nullptr && initialized_
+         && primarySimulation_ != nullptr
+         && SimulationInstanceSet(*primarySimulation_,
+             baselineSimulation_.get())
+                .Reset(nullptr, lastError_);
 }
 
 bool SimulationRuntime::Reset(const InitialCondition &initialCondition) {
-  return scenarioExecutor_ == nullptr && ResetSimulations(&initialCondition);
+  return scenarioExecutor_ == nullptr && initialized_
+         && primarySimulation_ != nullptr
+         && SimulationInstanceSet(*primarySimulation_,
+             baselineSimulation_.get())
+                .Reset(&initialCondition, lastError_);
 }
 
 void SimulationRuntime::RequestTick() {
@@ -264,18 +180,8 @@ bool SimulationRuntime::Tick() {
     }
     RecordPendingScenarioCommandEvent();
   } else {
-    if (!SynchronizeBaselineControlState()) {
-      return false;
-    }
-    if (!primarySimulation_->Step(sharedDtSec)) {
-      lastError_ = GetSimulationError(primarySimulation_.get(),
-          "Primary simulation step failed.");
-      return false;
-    }
-    if (baselineSimulation_ != nullptr
-        && !baselineSimulation_->Step(sharedDtSec)) {
-      lastError_ = GetSimulationError(baselineSimulation_.get(),
-          "Baseline simulation step failed.");
+    if (!SimulationInstanceSet(*primarySimulation_, baselineSimulation_.get())
+            .Step(sharedDtSec, lastError_)) {
       return false;
     }
   }
@@ -320,7 +226,10 @@ bool SimulationRuntime::RunExecution(const ResolvedExecutionSpec &execution) {
   if (!SelectExecutionVariant(execution.variant)) {
     return false;
   }
-  if (!ApplyExecutionParameters(*primarySimulation_, execution, lastError_)) {
+  if (!AutopilotConfigurationService::ApplyExecutionParameters(
+          *primarySimulation_,
+          execution,
+          lastError_)) {
     RestoreInteractiveSimulationOrder();
     return false;
   }
@@ -405,17 +314,22 @@ SimulationSnapshot SimulationRuntime::GetSnapshot() const {
   if (primarySimulation_ != nullptr && primarySimulation_->IsInitialized()) {
     snapshot.defaultInitialCondition =
         primarySimulation_->GetDefaultInitialCondition();
-    snapshot.primary = CaptureSnapshot(*primarySimulation_);
-    snapshot.primaryAutopilot = CaptureAutopilotSnapshot(*primarySimulation_);
+    snapshot.primary =
+        SimulationSnapshotBuilder::CaptureInstance(*primarySimulation_);
+    snapshot.primaryAutopilot =
+        SimulationSnapshotBuilder::CaptureAutopilot(*primarySimulation_);
     if (const gnc::TrimResult *result =
             primarySimulation_->GetTrimService().GetResult()) {
       snapshot.trim.result = *result;
     }
-    snapshot.linearization = CaptureLinearizationSnapshot();
+    snapshot.linearization =
+        SimulationSnapshotBuilder::CaptureLinearization(*primarySimulation_);
   }
   if (baselineSimulation_ != nullptr && baselineSimulation_->IsInitialized()) {
-    snapshot.baseline = CaptureSnapshot(*baselineSimulation_);
-    snapshot.baselineAutopilot = CaptureAutopilotSnapshot(*baselineSimulation_);
+    snapshot.baseline =
+        SimulationSnapshotBuilder::CaptureInstance(*baselineSimulation_);
+    snapshot.baselineAutopilot =
+        SimulationSnapshotBuilder::CaptureAutopilot(*baselineSimulation_);
   }
   return snapshot;
 }
@@ -480,33 +394,18 @@ bool SimulationRuntime::SetPrimaryRollHoldConfig(
   if (!initialized_ || scenarioExecutor_ != nullptr) {
     return false;
   }
-  auto *manager =
-      primarySimulation_->GetComponent<control::FlightControlManager>();
-  auto *autopilot = manager != nullptr ? dynamic_cast<gnc::MyAutopilot *>(
-                                             &manager->GetAutopilot())
-                                       : nullptr;
-  if (autopilot == nullptr) {
+
+  bool tuningChanged = false;
+  if (!AutopilotConfigurationService::ApplyPrimary(*primarySimulation_,
+          config,
+          tuningChanged)) {
     return false;
   }
-
-  const gnc::RollHoldSettings previous = autopilot->GetRollHoldSettings();
-  gnc::RollHoldSettings settings = previous;
-  settings.targetRollRad = config.targetRollRad;
-  settings.attitudeLoop.proportionalGain = config.rollAngleProportionalGain;
-  settings.rateLoop.proportionalGain = config.rollRateProportionalGain;
-  autopilot->SetRollHoldSettings(settings);
-  autopilot->SetRollHoldEnabled(config.enabled);
-  manager->SetMode(config.enabled ? control::FlightControlMode::Autopilot
-                                  : control::FlightControlMode::Manual);
-
-  if (previous.attitudeLoop.proportionalGain
-          != settings.attitudeLoop.proportionalGain
-      || previous.rateLoop.proportionalGain
-             != settings.rateLoop.proportionalGain) {
+  if (tuningChanged) {
     telemetryRecording_.RecordPrimarySettings({
         .simulationTimeSec = primarySimulation_->GetTime(),
-        .rollAngleProportionalGain = settings.attitudeLoop.proportionalGain,
-        .rollRateProportionalGain = settings.rateLoop.proportionalGain,
+        .rollAngleProportionalGain = config.rollAngleProportionalGain,
+        .rollRateProportionalGain = config.rollRateProportionalGain,
     });
   }
   return true;
@@ -518,47 +417,23 @@ bool SimulationRuntime::SetBaselineRollHoldConfig(
       || baselineSimulation_ == nullptr) {
     return false;
   }
-  auto *manager =
-      baselineSimulation_->GetComponent<control::FlightControlManager>();
-  auto *autopilot = manager != nullptr ? dynamic_cast<gnc::PX4Autopilot *>(
-                                             &manager->GetAutopilot())
-                                       : nullptr;
-  if (autopilot == nullptr) {
+
+  bool tuningChanged = false;
+  if (!AutopilotConfigurationService::ApplyBaseline(*baselineSimulation_,
+          config,
+          tuningChanged)) {
     return false;
   }
-
-  const gnc::Px4RollHoldReferenceSettings previous =
-      autopilot->GetRollHoldSettings();
-  gnc::Px4RollHoldReferenceSettings settings = previous;
-  settings.timeConstantSec = config.timeConstantSec;
-  settings.maximumRollRateRadPerSec = config.maximumRollRateRadPerSec;
-  settings.rateProportionalGain = config.rateProportionalGain;
-  settings.rateIntegralGain = config.rateIntegralGain;
-  settings.rateDerivativeGain = config.rateDerivativeGain;
-  settings.rateFeedForwardGain = config.rateFeedForwardGain;
-  settings.integratorLimit = config.integratorLimit;
-  autopilot->SetRollHoldSettings(settings);
-  autopilot->SetTargetRollRad(config.targetRollRad);
-  autopilot->SetRollHoldEnabled(config.enabled);
-  manager->SetMode(config.enabled ? control::FlightControlMode::Autopilot
-                                  : control::FlightControlMode::Manual);
-
-  if (previous.timeConstantSec != settings.timeConstantSec
-      || previous.maximumRollRateRadPerSec != settings.maximumRollRateRadPerSec
-      || previous.rateProportionalGain != settings.rateProportionalGain
-      || previous.rateIntegralGain != settings.rateIntegralGain
-      || previous.rateDerivativeGain != settings.rateDerivativeGain
-      || previous.rateFeedForwardGain != settings.rateFeedForwardGain
-      || previous.integratorLimit != settings.integratorLimit) {
+  if (tuningChanged) {
     telemetryRecording_.RecordBaselineSettings({
         .simulationTimeSec = baselineSimulation_->GetTime(),
-        .rollTimeConstantSec = settings.timeConstantSec,
-        .maximumRollRateRadPerSec = settings.maximumRollRateRadPerSec,
-        .rateProportionalGain = settings.rateProportionalGain,
-        .rateIntegralGain = settings.rateIntegralGain,
-        .rateDerivativeGain = settings.rateDerivativeGain,
-        .rateFeedForwardGain = settings.rateFeedForwardGain,
-        .integratorLimit = settings.integratorLimit,
+        .rollTimeConstantSec = config.timeConstantSec,
+        .maximumRollRateRadPerSec = config.maximumRollRateRadPerSec,
+        .rateProportionalGain = config.rateProportionalGain,
+        .rateIntegralGain = config.rateIntegralGain,
+        .rateDerivativeGain = config.rateDerivativeGain,
+        .rateFeedForwardGain = config.rateFeedForwardGain,
+        .integratorLimit = config.integratorLimit,
     });
   }
   return true;
@@ -580,15 +455,12 @@ bool SimulationRuntime::RunTrim(const gnc::TrimRequest &request,
   Pause();
   Aircraft &aircraft = primarySimulation_->GetAircraft();
   gnc::TrimService &trimService = primarySimulation_->GetTrimService();
-  const bool computed =
-      fromCurrentState ? trimService.ComputeCurrentState(aircraft, request.mode)
-                       : trimService.Compute(aircraft, request);
-  const bool applied = computed && trimService.ApplyStored(aircraft);
-  if (applied) {
-    if (const gnc::TrimResult *result = trimService.GetResult()) {
-      manager->SynchronizeWithTrimResult(aircraft, *result);
-    }
-  } else {
+  const bool applied = gnc::TrimWorkflow::Execute(trimService,
+      aircraft,
+      *manager,
+      request,
+      {.fromCurrentState = fromCurrentState});
+  if (!applied) {
     lastError_ = "Trim request failed.";
   }
   if (resume) {
@@ -601,16 +473,8 @@ bool SimulationRuntime::SetAutomaticLinearizationEnabled(bool enabled) {
   if (!initialized_ || primarySimulation_ == nullptr) {
     return false;
   }
-  auto *manager =
-      primarySimulation_->GetComponent<control::FlightControlManager>();
-  auto *analysis = manager != nullptr ? dynamic_cast<gnc::IAutopilotAnalysis *>(
-                                            &manager->GetAutopilot())
-                                      : nullptr;
-  if (analysis == nullptr) {
-    return false;
-  }
-  analysis->SetAutomaticLinearizationEnabled(enabled);
-  return true;
+  return LinearizationService{}.SetAutomaticUpdates(*primarySimulation_,
+      enabled);
 }
 
 bool SimulationRuntime::StartTelemetryRecording() {
@@ -644,36 +508,33 @@ bool SimulationRuntime::StartTelemetryRecording() {
     return false;
   }
 
-  if (auto *manager =
-          primarySimulation_->GetComponent<control::FlightControlManager>()) {
-    if (auto *autopilot =
-            dynamic_cast<gnc::MyAutopilot *>(&manager->GetAutopilot())) {
-      const gnc::RollHoldSettings &settings = autopilot->GetRollHoldSettings();
-      telemetryRecording_.RecordPrimarySettings({
-          .simulationTimeSec = primarySimulation_->GetTime(),
-          .rollAngleProportionalGain = settings.attitudeLoop.proportionalGain,
-          .rollRateProportionalGain = settings.rateLoop.proportionalGain,
-      });
-    }
+  const AutopilotSnapshot primaryAutopilot =
+      SimulationSnapshotBuilder::CaptureAutopilot(*primarySimulation_);
+  if (primaryAutopilot.strategyName == "MyAutopilot") {
+    telemetryRecording_.RecordPrimarySettings({
+        .simulationTimeSec = primarySimulation_->GetTime(),
+        .rollAngleProportionalGain =
+            primaryAutopilot.primaryRollHold.rollAngleProportionalGain,
+        .rollRateProportionalGain =
+            primaryAutopilot.primaryRollHold.rollRateProportionalGain,
+    });
   }
   if (baselineSimulation_ != nullptr) {
-    if (auto *manager = baselineSimulation_
-            ->GetComponent<control::FlightControlManager>()) {
-      if (auto *autopilot =
-              dynamic_cast<gnc::PX4Autopilot *>(&manager->GetAutopilot())) {
-        const gnc::Px4RollHoldReferenceSettings &settings =
-            autopilot->GetRollHoldSettings();
-        telemetryRecording_.RecordBaselineSettings({
-            .simulationTimeSec = baselineSimulation_->GetTime(),
-            .rollTimeConstantSec = settings.timeConstantSec,
-            .maximumRollRateRadPerSec = settings.maximumRollRateRadPerSec,
-            .rateProportionalGain = settings.rateProportionalGain,
-            .rateIntegralGain = settings.rateIntegralGain,
-            .rateDerivativeGain = settings.rateDerivativeGain,
-            .rateFeedForwardGain = settings.rateFeedForwardGain,
-            .integratorLimit = settings.integratorLimit,
-        });
-      }
+    const AutopilotSnapshot baselineAutopilot =
+        SimulationSnapshotBuilder::CaptureAutopilot(*baselineSimulation_);
+    if (baselineAutopilot.strategyName == "PX4Autopilot") {
+      const BaselineRollHoldConfig &settings =
+          baselineAutopilot.baselineRollHold;
+      telemetryRecording_.RecordBaselineSettings({
+          .simulationTimeSec = baselineSimulation_->GetTime(),
+          .rollTimeConstantSec = settings.timeConstantSec,
+          .maximumRollRateRadPerSec = settings.maximumRollRateRadPerSec,
+          .rateProportionalGain = settings.rateProportionalGain,
+          .rateIntegralGain = settings.rateIntegralGain,
+          .rateDerivativeGain = settings.rateDerivativeGain,
+          .rateFeedForwardGain = settings.rateFeedForwardGain,
+          .integratorLimit = settings.integratorLimit,
+      });
     }
   }
   return true;
@@ -706,46 +567,6 @@ void SimulationRuntime::StopTelemetryRecording() { telemetryRecording_.Stop(); }
 telemetry::recording::RecordingStatus
 SimulationRuntime::GetTelemetryRecordingStatus() const {
   return telemetryRecording_.GetStatus();
-}
-
-bool SimulationRuntime::ResetSimulations(
-    const InitialCondition *initialCondition) {
-  if (!initialized_ || primarySimulation_ == nullptr) {
-    return false;
-  }
-  const auto reset = [initialCondition](Simulation &simulation) {
-    return initialCondition != nullptr ? simulation.Reset(*initialCondition)
-                                       : simulation.Reset();
-  };
-  if (!reset(*primarySimulation_)) {
-    lastError_ = GetSimulationError(primarySimulation_.get(),
-        "Failed to reset primary simulation.");
-    return false;
-  }
-  if (baselineSimulation_ != nullptr && !reset(*baselineSimulation_)) {
-    lastError_ = GetSimulationError(baselineSimulation_.get(),
-        "Failed to reset baseline simulation.");
-    return false;
-  }
-  lastError_.clear();
-  return true;
-}
-
-bool SimulationRuntime::SynchronizeBaselineControlState() {
-  if (baselineSimulation_ == nullptr) {
-    return true;
-  }
-  auto *primaryManager =
-      primarySimulation_->GetComponent<control::FlightControlManager>();
-  auto *baselineManager =
-      baselineSimulation_->GetComponent<control::FlightControlManager>();
-  if (primaryManager == nullptr || baselineManager == nullptr) {
-    lastError_ = "Failed to synchronize baseline flight controls.";
-    return false;
-  }
-  baselineManager->GetManualController().SetCommandedInput(
-      primaryManager->GetManualController().GetCommandedInput());
-  return true;
 }
 
 void SimulationRuntime::FinishScenario() {
@@ -820,102 +641,6 @@ void SimulationRuntime::RestoreInteractiveSimulationOrder() {
     std::swap(primarySimulation_, baselineSimulation_);
     scenarioSimulationSwapped_ = false;
   }
-}
-
-SimulationInstanceSnapshot SimulationRuntime::CaptureSnapshot(
-    const Simulation &simulation) const {
-  const Aircraft &aircraft = simulation.GetAircraft();
-  return SimulationInstanceSnapshot{
-      .aircraft = aircraft.GetAircraftState(),
-      .aircraftDerivative = aircraft.GetAircraftStateDerivative(),
-      .fdmState = aircraft.ExtractFDMState(FDMStateFlags::All),
-      .controlInput = aircraft.GetControls().GetInput(),
-      .engines = aircraft.GetEngines().GetEngineStates(),
-      .currentCondition = simulation.GetCurrentCondition(),
-      .pitchTrim = aircraft.GetControls().GetPitchTrim(),
-      .available = true,
-  };
-}
-
-AutopilotSnapshot SimulationRuntime::CaptureAutopilotSnapshot(
-    const Simulation &simulation) const {
-  AutopilotSnapshot snapshot;
-  const auto *manager =
-      simulation.GetComponent<control::FlightControlManager>();
-  if (manager == nullptr) {
-    return snapshot;
-  }
-
-  snapshot.available = true;
-  snapshot.mode = manager->GetMode();
-  snapshot.manualControl = manager->GetManualController().GetCommandedInput();
-  const gnc::IAutopilot &strategy = manager->GetAutopilot();
-  if (const auto *autopilot =
-          dynamic_cast<const gnc::MyAutopilot *>(&strategy)) {
-    snapshot.strategyName = "MyAutopilot";
-    const gnc::RollHoldSettings &settings = autopilot->GetRollHoldSettings();
-    snapshot.primaryRollHold = {
-        .enabled = autopilot->IsRollHoldEnabled(),
-        .targetRollRad = settings.targetRollRad,
-        .rollAngleProportionalGain = settings.attitudeLoop.proportionalGain,
-        .rollRateProportionalGain = settings.rateLoop.proportionalGain,
-    };
-  } else if (const auto *autopilot =
-                 dynamic_cast<const gnc::PX4Autopilot *>(&strategy)) {
-    snapshot.strategyName = "PX4Autopilot";
-    const gnc::Px4RollHoldReferenceSettings &settings =
-        autopilot->GetRollHoldSettings();
-    const gnc::Px4RollHoldReferenceDiagnostics &diagnostics =
-        autopilot->GetRollHoldDiagnostics();
-    snapshot.baselineRollHold = {
-        .enabled = autopilot->IsRollHoldEnabled(),
-        .targetRollRad = autopilot->GetTargetRollRad(),
-        .timeConstantSec = settings.timeConstantSec,
-        .maximumRollRateRadPerSec = settings.maximumRollRateRadPerSec,
-        .rateProportionalGain = settings.rateProportionalGain,
-        .rateIntegralGain = settings.rateIntegralGain,
-        .rateDerivativeGain = settings.rateDerivativeGain,
-        .rateFeedForwardGain = settings.rateFeedForwardGain,
-        .integratorLimit = settings.integratorLimit,
-    };
-    snapshot.baselineDiagnostics = {
-        .aileronCommand = diagnostics.aileronCommand,
-        .bodyRateSetpointRadPerSec = diagnostics.bodyRateSetpointRadPerSec,
-        .rollErrorRad = diagnostics.rollErrorRad,
-        .airspeedScaling = diagnostics.airspeedScaling,
-    };
-  } else {
-    snapshot.strategyName = "Autopilot Strategy";
-  }
-  return snapshot;
-}
-
-LinearizationSnapshot SimulationRuntime::CaptureLinearizationSnapshot() const {
-  LinearizationSnapshot snapshot;
-  if (primarySimulation_ == nullptr) {
-    return snapshot;
-  }
-  const auto *manager =
-      primarySimulation_->GetComponent<control::FlightControlManager>();
-  const auto *analysis = manager != nullptr
-                             ? dynamic_cast<const gnc::IAutopilotAnalysis *>(
-                                   &manager->GetAutopilot())
-                             : nullptr;
-  if (analysis == nullptr) {
-    return snapshot;
-  }
-
-  snapshot.available = true;
-  snapshot.automaticUpdatesEnabled =
-      analysis->IsAutomaticLinearizationEnabled();
-  snapshot.updateInProgress = analysis->IsLinearizationInProgress();
-  snapshot.errorMessage = analysis->GetLinearizationErrorMessage();
-  if (const gnc::LinearizationResult *result =
-          analysis->GetLinearizationResult()) {
-    snapshot.result = *result;
-  }
-  snapshot.dynamicModeHistory = analysis->GetDynamicModeHistory();
-  return snapshot;
 }
 
 Simulation *SimulationRuntime::GetSimulation(SimulationSlot slot) {

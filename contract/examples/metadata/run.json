@@ -7,7 +7,7 @@
   },
   "scenario": {
     "name": "Contract Roll Hold 5deg",
-    "file": "contract/examples/scenario/roll_hold.yaml",
+    "file": "scenario.yaml",
     "digest_sha256": "ef8fea4bed2c46e8380bb366de8395d136dc247f5522241a381d02e31299a401",
     "schema_version": 1,
     "scenario_type": "roll_hold"

@@ -31,6 +31,21 @@ add_jsb_test(math_tests
   MathTests.cpp
 )
 
+add_jsb_test(parameter_tests
+  ParameterTests.cpp
+  jsb_sim_core
+)
+
+add_jsb_test(px4_tecs_controller_tests
+  Px4TecsControllerTests.cpp
+  jsb_sim_core
+)
+
+add_jsb_test(px4_tecs_integration_tests
+  Px4TecsIntegrationTests.cpp
+  jsb_sim_core
+)
+
 add_jsb_test(gui_architecture_tests
   GuiArchitectureTests.cpp
   jsb_gui_architecture
@@ -55,6 +70,56 @@ add_test(
     --root "${PROJECT_SOURCE_DIR}"
     --protoc "$<TARGET_FILE:protobuf::protoc>"
     --output "${PROJECT_BINARY_DIR}/test-results/contract-validation"
+)
+
+set(JSB_PARAMETER_CONTRACT_TEST_OUTPUT
+  "${PROJECT_BINARY_DIR}/test-results/generated-execution-contract"
+)
+add_test(
+  NAME contract_parameter_generation
+  COMMAND jsb_contract_parameter_export
+    --output "${JSB_PARAMETER_CONTRACT_TEST_OUTPUT}"
+)
+set_tests_properties(contract_parameter_generation PROPERTIES
+  FIXTURES_SETUP generated_parameter_contract
+)
+add_test(
+  NAME contract_parameter_runtime_consistency
+  COMMAND ${Python3_EXECUTABLE}
+    "${PROJECT_SOURCE_DIR}/scripts/contract_tool.py"
+    verify-parameters
+    --root "${PROJECT_SOURCE_DIR}"
+    --generated "${JSB_PARAMETER_CONTRACT_TEST_OUTPUT}"
+)
+set_tests_properties(contract_parameter_runtime_consistency PROPERTIES
+  FIXTURES_REQUIRED generated_parameter_contract
+)
+
+set(JSB_CONTRACT_EXPORT_TEST_OUTPUT
+  "${PROJECT_BINARY_DIR}/test-results/exported-contract"
+)
+add_test(
+  NAME contract_export_artifact
+  COMMAND ${Python3_EXECUTABLE}
+    "${PROJECT_SOURCE_DIR}/scripts/contract_tool.py"
+    export
+    --root "${PROJECT_SOURCE_DIR}"
+    --protoc "$<TARGET_FILE:protobuf::protoc>"
+    --output "${JSB_CONTRACT_EXPORT_TEST_OUTPUT}"
+)
+set_tests_properties(contract_export_artifact PROPERTIES
+  FIXTURES_SETUP exported_contract
+)
+add_test(
+  NAME contract_export_consumer
+  COMMAND ${Python3_EXECUTABLE}
+    "${PROJECT_SOURCE_DIR}/scripts/contract_tool.py"
+    validate-export
+    --output "${JSB_CONTRACT_EXPORT_TEST_OUTPUT}"
+    --protoc "$<TARGET_FILE:protobuf::protoc>"
+)
+set_tests_properties(contract_export_consumer PROPERTIES
+  FIXTURES_REQUIRED exported_contract
 )
 
 add_test(
@@ -241,6 +306,98 @@ target_include_directories(px4_roll_tuning_probe PRIVATE
 
 target_link_libraries(px4_roll_tuning_probe PRIVATE
   jsb_sim_core
+)
+
+add_test(
+  NAME px4_roll_tuning_probe_help
+  COMMAND px4_roll_tuning_probe --help
+)
+set_tests_properties(px4_roll_tuning_probe_help PROPERTIES
+  PASS_REGULAR_EXPRESSION "Usage:"
+)
+
+add_executable(px4_yaw_tuning_probe
+  Px4YawTuningProbe.cpp
+)
+
+target_compile_features(px4_yaw_tuning_probe PRIVATE
+  cxx_std_20
+)
+
+set_target_properties(px4_yaw_tuning_probe PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+)
+
+target_include_directories(px4_yaw_tuning_probe PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
+)
+
+target_link_libraries(px4_yaw_tuning_probe PRIVATE
+  jsb_sim_core
+)
+
+add_test(
+  NAME px4_yaw_tuning_probe_help
+  COMMAND px4_yaw_tuning_probe --help
+)
+
+add_executable(px4_course_tuning_probe
+  Px4CourseTuningProbe.cpp
+)
+
+target_compile_features(px4_course_tuning_probe PRIVATE
+  cxx_std_20
+)
+
+set_target_properties(px4_course_tuning_probe PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+)
+
+target_include_directories(px4_course_tuning_probe PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
+)
+
+target_link_libraries(px4_course_tuning_probe PRIVATE
+  jsb_sim_core
+)
+
+add_test(
+  NAME px4_course_tuning_probe_help
+  COMMAND px4_course_tuning_probe --help
+)
+set_tests_properties(px4_course_tuning_probe_help PROPERTIES
+  PASS_REGULAR_EXPRESSION "Usage:"
+)
+set_tests_properties(px4_yaw_tuning_probe_help PROPERTIES
+  PASS_REGULAR_EXPRESSION "Usage:"
+)
+
+add_executable(px4_pitch_tuning_probe
+  Px4PitchTuningProbe.cpp
+)
+
+target_compile_features(px4_pitch_tuning_probe PRIVATE
+  cxx_std_20
+)
+
+set_target_properties(px4_pitch_tuning_probe PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+)
+
+target_include_directories(px4_pitch_tuning_probe PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
+)
+
+target_link_libraries(px4_pitch_tuning_probe PRIVATE
+  jsb_sim_core
+)
+
+add_test(
+  NAME px4_pitch_tuning_probe_help
+  COMMAND px4_pitch_tuning_probe --help
+)
+set_tests_properties(px4_pitch_tuning_probe_help PROPERTIES
+  PASS_REGULAR_EXPRESSION "Usage:"
 )
 
 if(TARGET jsb-sim-runner)

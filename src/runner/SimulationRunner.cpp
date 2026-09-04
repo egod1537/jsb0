@@ -80,17 +80,19 @@ bool PrepareOutputDirectory(const std::filesystem::path &directory,
   return true;
 }
 
-bool ReadScenarioBytes(const std::filesystem::path &path, std::string &bytes,
-    std::string &error) {
+bool ReadFileBytes(const std::filesystem::path &path,
+    std::string_view artifactName, std::string &bytes, std::string &error) {
   std::ifstream input(path, std::ios::binary);
   if (!input) {
-    error = "Could not open scenario file: " + path.string();
+    error =
+        "Could not open " + std::string(artifactName) + ": " + path.string();
     return false;
   }
   std::ostringstream buffer;
   buffer << input.rdbuf();
   if (input.bad()) {
-    error = "Could not read scenario file: " + path.string();
+    error =
+        "Could not read " + std::string(artifactName) + ": " + path.string();
     return false;
   }
   bytes = buffer.str();
@@ -133,8 +135,9 @@ bool LoadControllerParameters(const std::filesystem::path &directory,
   try {
     const YAML::Node root = YAML::LoadFile(path.string());
     const YAML::Node values = root["controller_parameters"];
-    if (!root.IsMap() || !values || !values.IsMap()) {
-      error = "parameters.yaml must contain a controller_parameters mapping";
+    if (!root.IsMap() || root.size() != 1 || !values || !values.IsMap()) {
+      error =
+          "parameters.yaml must contain only a controller_parameters mapping";
       return false;
     }
     for (const auto &entry : values) {
@@ -143,8 +146,8 @@ bool LoadControllerParameters(const std::filesystem::path &directory,
               scenario.controllerParameters.end(),
               id)
           == scenario.controllerParameters.end()) {
-        error = "controller parameter '" + id
-                + "' is not declared by the Scenario";
+        error =
+            "controller parameter '" + id + "' is not declared by the Scenario";
         return false;
       }
       const double value = entry.second.as<double>();
@@ -155,8 +158,7 @@ bool LoadControllerParameters(const std::filesystem::path &directory,
       parameters[id] = value;
     }
   } catch (const YAML::Exception &exception) {
-    error =
-        "could not parse parameters.yaml: " + std::string(exception.what());
+    error = "could not parse parameters.yaml: " + std::string(exception.what());
     return false;
   }
   return true;
@@ -213,9 +215,19 @@ bool WriteManifest(const std::filesystem::path &directory,
             "  \"mode\": \"compare\",\n"
             "  \"execution\": {\n"
             "    \"variants\": [\"baseline\", \"primary\"]\n"
-            "  },\n"
-            "  \"started_at\": \""
-         << JsonEscape(info.startedAt)
+            "  },\n";
+  if (!info.parameterFile.empty()) {
+    output << "  \"parameters\": {\n"
+              "    \"file\": \""
+           << JsonEscape(info.parameterFile)
+           << "\",\n"
+              "    \"digest_sha256\": \""
+           << JsonEscape(info.parameterDigest)
+           << "\",\n"
+              "    \"variants\": [\"baseline\"]\n"
+              "  },\n";
+  }
+  output << "  \"started_at\": \"" << JsonEscape(info.startedAt)
          << "\",\n"
             "  \"ended_at\": \""
          << JsonEscape(result.endedAt)
@@ -263,6 +275,51 @@ bool WriteManifest(const std::filesystem::path &directory,
     output << ",\n"
               "  \"error\": \""
            << JsonEscape(result.error) << '"';
+    std::string_view failureCategory = "runtime";
+    std::string_view failureCode = "GENERAL_FAILURE";
+    switch (result.exitCode) {
+    case RunnerExitCode::ScenarioLoadFailure:
+      failureCategory = "scenario";
+      failureCode = "SCENARIO_INVALID";
+      break;
+    case RunnerExitCode::SimulationInitializationFailure:
+      failureCode = "RUNTIME_INITIALIZATION_FAILED";
+      break;
+    case RunnerExitCode::SimulationExecutionFailure:
+      failureCode = "RUNTIME_EXECUTION_FAILED";
+      break;
+    case RunnerExitCode::OutputFailure:
+      failureCategory = "artifact";
+      failureCode = "ARTIFACT_WRITE_FAILED";
+      break;
+    case RunnerExitCode::GeneralFailure:
+      if (result.status == "interrupted") {
+        failureCategory = "interruption";
+        failureCode = "RUN_INTERRUPTED";
+      }
+      break;
+    case RunnerExitCode::InvalidArguments:
+      failureCategory = "invocation";
+      failureCode = "INVALID_ARGUMENTS";
+      break;
+    case RunnerExitCode::Success:
+      break;
+    }
+    output << ",\n"
+              "  \"failure\": {\n"
+              "    \"category\": \""
+           << failureCategory
+           << "\",\n"
+              "    \"code\": \""
+           << failureCode
+           << "\",\n"
+              "    \"message\": \""
+           << JsonEscape(result.error)
+           << "\",\n"
+              "    \"simulation_time_s\": "
+           << result.simulationTimeSec
+           << "\n"
+              "  }";
   }
   output << "\n}\n";
   if (!output) {
@@ -428,19 +485,18 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
     return result;
   }
 
-  std::error_code pathError;
-  const std::filesystem::path absoluteScenarioPath =
-      std::filesystem::absolute(options.scenarioPath, pathError);
   SimulationRunInfo info{
       .scenarioName = options.scenarioPath.stem().string(),
-      .scenarioFile =
-          (pathError ? options.scenarioPath : absoluteScenarioPath).string(),
+      .scenarioFile = "scenario.yaml",
       .startedAt = GetWallClockTimestamp(),
       .outputDirectory = options.outputDirectory,
   };
 
   std::string scenarioBytes;
-  if (!ReadScenarioBytes(options.scenarioPath, scenarioBytes, error)) {
+  if (!ReadFileBytes(options.scenarioPath,
+          "scenario file",
+          scenarioBytes,
+          error)) {
     result.exitCode = RunnerExitCode::ScenarioLoadFailure;
     result.error = std::move(error);
     WriteFinalManifest(info, result);
@@ -500,6 +556,22 @@ RunnerResult SimulationRunner::Run(const RunnerOptions &options,
       .digestSha256 = info.scenarioDigest,
   };
   sim::ExecutionParameterSet baselineParameters;
+  const std::filesystem::path parameterPath =
+      options.outputDirectory / "parameters.yaml";
+  if (std::filesystem::is_regular_file(parameterPath)) {
+    std::string parameterBytes;
+    if (!ReadFileBytes(parameterPath,
+            "parameters.yaml",
+            parameterBytes,
+            error)) {
+      result.exitCode = RunnerExitCode::ScenarioLoadFailure;
+      result.error = std::move(error);
+      WriteFinalManifest(info, result);
+      return result;
+    }
+    info.parameterFile = "parameters.yaml";
+    info.parameterDigest = common::crypto::Sha256Hex(parameterBytes);
+  }
   if (!LoadControllerParameters(options.outputDirectory,
           scenario,
           baselineParameters,

@@ -9,7 +9,7 @@
 
 namespace {
 constexpr double MinimumCosineMagnitude = 1.0e-8;
-constexpr double MinimumRadiusFt = 1.0;
+constexpr double MinimumRadiusM = 1.0;
 
 std::array<double, 3> ComputeEulerAngleRates(double rollRad, double pitchRad,
     double pRadPerSec, double qRadPerSec, double rRadPerSec) {
@@ -34,9 +34,9 @@ std::array<double, 3> ComputeEulerAngleRates(double rollRad, double pitchRad,
 namespace sim {
 StateVector ExtractStateVector(const FDMState &state) {
   StateVector vector;
-  vector(ToIndex(LinearizationState::U)) = state.state.bodyVelocityFps[0];
-  vector(ToIndex(LinearizationState::V)) = state.state.bodyVelocityFps[1];
-  vector(ToIndex(LinearizationState::W)) = state.state.bodyVelocityFps[2];
+  vector(ToIndex(LinearizationState::U)) = state.state.bodyVelocityMps[0];
+  vector(ToIndex(LinearizationState::V)) = state.state.bodyVelocityMps[1];
+  vector(ToIndex(LinearizationState::W)) = state.state.bodyVelocityMps[2];
   vector(ToIndex(LinearizationState::P)) =
       state.state.bodyAngularRatesRadPerSec[0];
   vector(ToIndex(LinearizationState::Q)) =
@@ -48,14 +48,14 @@ StateVector ExtractStateVector(const FDMState &state) {
   vector(ToIndex(LinearizationState::Heading)) = state.state.attitudeRad[2];
   vector(ToIndex(LinearizationState::Latitude)) = state.state.latitudeRad;
   vector(ToIndex(LinearizationState::Longitude)) = state.state.longitudeRad;
-  vector(ToIndex(LinearizationState::Altitude)) = state.state.altitudeAslFt;
+  vector(ToIndex(LinearizationState::Altitude)) = state.state.altitudeAslM;
   return vector;
 }
 
 void ApplyStateVector(FDMState &state, const StateVector &vector) {
-  state.state.bodyVelocityFps[0] = vector(ToIndex(LinearizationState::U));
-  state.state.bodyVelocityFps[1] = vector(ToIndex(LinearizationState::V));
-  state.state.bodyVelocityFps[2] = vector(ToIndex(LinearizationState::W));
+  state.state.bodyVelocityMps[0] = vector(ToIndex(LinearizationState::U));
+  state.state.bodyVelocityMps[1] = vector(ToIndex(LinearizationState::V));
+  state.state.bodyVelocityMps[2] = vector(ToIndex(LinearizationState::W));
   state.state.bodyAngularRatesRadPerSec[0] =
       vector(ToIndex(LinearizationState::P));
   state.state.bodyAngularRatesRadPerSec[1] =
@@ -67,7 +67,7 @@ void ApplyStateVector(FDMState &state, const StateVector &vector) {
   state.state.attitudeRad[2] = vector(ToIndex(LinearizationState::Heading));
   state.state.latitudeRad = vector(ToIndex(LinearizationState::Latitude));
   state.state.longitudeRad = vector(ToIndex(LinearizationState::Longitude));
-  state.state.altitudeAslFt = vector(ToIndex(LinearizationState::Altitude));
+  state.state.altitudeAslM = vector(ToIndex(LinearizationState::Altitude));
 }
 
 InputVector ExtractInputVector(const FDMState &state) {
@@ -106,8 +106,8 @@ StateDerivativeVector ExtractStateDerivativeVector(const Aircraft &aircraft) {
           properties.Q().RadPerSec(),
           properties.R().RadPerSec());
 
-  const double radiusFt = properties.RadiusToVehicle().Ft();
-  if (!std::isfinite(radiusFt) || radiusFt < MinimumRadiusFt) {
+  const double radiusM = properties.RadiusToVehicle().M();
+  if (!std::isfinite(radiusM) || radiusM < MinimumRadiusM) {
     throw std::domain_error(
         "Cannot extract geographic rates with an invalid Earth radius");
   }
@@ -120,9 +120,9 @@ StateDerivativeVector ExtractStateDerivativeVector(const Aircraft &aircraft) {
   }
 
   StateDerivativeVector result;
-  result(ToIndex(LinearizationState::U)) = properties.U().DotFps2();
-  result(ToIndex(LinearizationState::V)) = properties.V().DotFps2();
-  result(ToIndex(LinearizationState::W)) = properties.W().DotFps2();
+  result(ToIndex(LinearizationState::U)) = properties.U().DotMps2();
+  result(ToIndex(LinearizationState::V)) = properties.V().DotMps2();
+  result(ToIndex(LinearizationState::W)) = properties.W().DotMps2();
   result(ToIndex(LinearizationState::P)) = properties.P().DotRadPerSec2();
   result(ToIndex(LinearizationState::Q)) = properties.Q().DotRadPerSec2();
   result(ToIndex(LinearizationState::R)) = properties.R().DotRadPerSec2();
@@ -130,11 +130,11 @@ StateDerivativeVector ExtractStateDerivativeVector(const Aircraft &aircraft) {
   result(ToIndex(LinearizationState::Pitch)) = eulerRates[1];
   result(ToIndex(LinearizationState::Heading)) = eulerRates[2];
   result(ToIndex(LinearizationState::Latitude)) =
-      properties.NorthVelocity().Fps() / radiusFt;
+      properties.NorthVelocity().Mps() / radiusM;
   result(ToIndex(LinearizationState::Longitude)) =
-      properties.EastVelocity().Fps() / (cosLatitude * radiusFt);
+      properties.EastVelocity().Mps() / (cosLatitude * radiusM);
   result(ToIndex(LinearizationState::Altitude)) =
-      properties.VerticalSpeed().Fps();
+      properties.VerticalSpeed().Mps();
   return result;
 }
 } // namespace sim

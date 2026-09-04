@@ -42,6 +42,8 @@ struct SimulationRunInfo {
   std::uint32_t scenarioSchemaVersion = 1;
   std::string scenarioType = "roll_hold";
   std::string aircraft = "c172x";
+  std::string parameterFile;
+  std::string parameterDigest;
   std::string startedAt;
   std::filesystem::path outputDirectory;
   double dtSec = 0.0;

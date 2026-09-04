@@ -83,8 +83,6 @@ private:
   // Tick processing
   bool ProcessStep(double dtSec);
   sim::Tick MakeTick(double dtSec) const;
-  void PublishAutopilotTelemetry(const sim::Tick &tick);
-  void PublishAircraftTelemetry(const sim::Tick &tick);
 
   // Initial condition
   bool ApplyInitialTrim(const InitialCondition &initialCondition,

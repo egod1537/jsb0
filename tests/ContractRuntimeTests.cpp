@@ -74,7 +74,7 @@ void TestAuthoritativeScenarioValidation() {
   invalid.durationSec = 0.0;
   requireInvalid(invalid, "simulation.duration_sec");
   invalid = valid;
-  invalid.initialCondition.airspeedKts =
+  invalid.initialCondition.calibratedAirspeedMps =
       std::numeric_limits<double>::quiet_NaN();
   requireInvalid(invalid, "initial_condition.airspeed_kts");
   invalid = valid;

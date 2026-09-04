@@ -159,23 +159,74 @@ void GNCWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
                         if (selection == AutopilotSelection::Baseline) {
                           const sim::BaselineRollHoldDiagnostics &diagnostics =
                               autopilot->baselineDiagnostics;
-                          const double currentRollDeg = instance->aircraft.rollDeg;
+                          const sim::BaselinePitchHoldDiagnostics
+                              &pitchDiagnostics =
+                                  autopilot->baselinePitchDiagnostics;
+                          const double currentRollDeg =
+                              math::RadToDeg(instance->aircraft.rollRad);
                           BaselineAutopilotPanel::Draw({
                               .state = model.baselineAutopilot,
                               .currentRollDeg = currentRollDeg,
-                              .currentRollRateDegPerSec =
-                                  instance->aircraft.pDegPerSec,
+                              .currentPitchDeg =
+                                  math::RadToDeg(instance->aircraft.pitchRad),
+                              .currentAltitudeAglM =
+                                  instance->aircraft.altitudeAglM,
+                              .currentCalibratedAirspeedMps =
+                                  instance->aircraft.calibratedAirspeedMps,
+                              .currentCourseDeg =
+                                  math::RadToDeg(instance->aircraft.courseRad),
+                              .currentRollRateDegPerSec = math::RadToDeg(
+                                  instance->aircraft.pRadPerSec),
+                              .currentPitchRateDegPerSec = math::RadToDeg(
+                                  instance->aircraft.qRadPerSec),
                               .currentAileron = instance->controlInput.aileron,
+                              .currentElevator = instance->controlInput.elevator,
                               .rollHoldActive =
                                   autopilot->mode
                                       == control::FlightControlMode::Autopilot
                                   && autopilot->baselineRollHold.enabled,
+                              .pitchHoldActive =
+                                  autopilot->mode
+                                      == control::FlightControlMode::Autopilot
+                                  && autopilot->baselineRollHold.pitchHoldEnabled,
+                              .tecsActive =
+                                  autopilot->mode
+                                      == control::FlightControlMode::Autopilot
+                                  && autopilot->baselineRollHold.tecsEnabled,
+                              .courseHoldActive =
+                                  autopilot->mode
+                                      == control::FlightControlMode::Autopilot
+                                  && autopilot->baselineRollHold.courseHoldEnabled,
                               .valueEvents = architecture::EventSink<BaselineRollHoldValueChanged>{
                                   [this](const BaselineRollHoldValueChanged &event) {
                                     controller_->Handle(event);
                                   }},
                               .resetEvents = architecture::EventSink<BaselineRollHoldTuningResetRequested>{
                                   [this](const BaselineRollHoldTuningResetRequested &event) {
+                                    controller_->Handle(event);
+                                  }},
+                              .pitchResetEvents = architecture::EventSink<BaselinePitchHoldTuningResetRequested>{
+                                  [this](const BaselinePitchHoldTuningResetRequested &event) {
+                                    controller_->Handle(event);
+                                  }},
+                              .tecsValueEvents = architecture::EventSink<BaselineTecsValueChanged>{
+                                  [this](const BaselineTecsValueChanged &event) {
+                                    controller_->Handle(event);
+                                  }},
+                              .tecsParameterEvents = architecture::EventSink<BaselineTecsParameterChanged>{
+                                  [this](const BaselineTecsParameterChanged &event) {
+                                    controller_->Handle(event);
+                                  }},
+                              .tecsResetEvents = architecture::EventSink<BaselineTecsTuningResetRequested>{
+                                  [this](const BaselineTecsTuningResetRequested &event) {
+                                    controller_->Handle(event);
+                                  }},
+                              .tecsAltitudeCaptureEvents = architecture::EventSink<BaselineTecsAltitudeCaptureRequested>{
+                                  [this](const BaselineTecsAltitudeCaptureRequested &event) {
+                                    controller_->Handle(event);
+                                  }},
+                              .tecsAirspeedCaptureEvents = architecture::EventSink<BaselineTecsAirspeedCaptureRequested>{
+                                  [this](const BaselineTecsAirspeedCaptureRequested &event) {
                                     controller_->Handle(event);
                                   }},
                               .px4RollAileronCommand =
@@ -185,16 +236,49 @@ void GNCWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
                               .px4RollErrorDeg =
                                   math::RadToDeg(diagnostics.rollErrorRad),
                               .px4AirspeedScaling = diagnostics.airspeedScaling,
+                              .px4PitchElevatorCommand =
+                                  pitchDiagnostics.elevatorCommand,
+                              .px4PitchRateSetpointDegPerSec = math::RadToDeg(
+                                  pitchDiagnostics.bodyRateSetpointRadPerSec),
+                              .px4PitchErrorDeg = math::RadToDeg(
+                                  pitchDiagnostics.pitchErrorRad),
+                              .px4PitchAirspeedScaling =
+                                  pitchDiagnostics.airspeedScaling,
+                              .tecsInternalAltitudeSetpointM =
+                                  autopilot->baselineTecsDiagnostics
+                                      .internalAltitudeSetpointM,
+                              .tecsTargetPitchDeg = math::RadToDeg(
+                                  autopilot->baselineTecsDiagnostics.targetPitchRad),
+                              .tecsTargetThrottle =
+                                  autopilot->baselineTecsDiagnostics.targetThrottle,
+                              .tecsTotalEnergyError =
+                                  autopilot->baselineTecsDiagnostics.totalEnergyError,
+                              .tecsEnergyBalanceError =
+                                  autopilot->baselineTecsDiagnostics.energyBalanceError,
+                              .tecsUnderspeedProtectionActive =
+                                  autopilot->baselineTecsDiagnostics
+                                      .underspeedProtectionActive,
+                              .tecsOverspeedProtectionActive =
+                                  autopilot->baselineTecsDiagnostics
+                                      .overspeedProtectionActive,
+                              .courseErrorDeg = math::RadToDeg(
+                                  autopilot->baselineCourseDiagnostics.courseErrorRad),
+                              .courseRawRollSetpointDeg = math::RadToDeg(
+                                  autopilot->baselineCourseDiagnostics.rawRollSetpointRad),
+                              .courseLimitedRollSetpointDeg = math::RadToDeg(
+                                  autopilot->baselineCourseDiagnostics
+                                      .limitedRollSetpointRad),
                           });
                           return;
                         }
 
-                        const double currentRollDeg = instance->aircraft.rollDeg;
+                        const double currentRollDeg =
+                            math::RadToDeg(instance->aircraft.rollRad);
                         AutopilotPanel::Draw({
                             .state = model.primaryAutopilot,
                             .currentRollDeg = currentRollDeg,
-                            .currentRollRateDegPerSec =
-                                instance->aircraft.pDegPerSec,
+                            .currentRollRateDegPerSec = math::RadToDeg(
+                                instance->aircraft.pRadPerSec),
                             .currentAileron = instance->controlInput.aileron,
                             .events = architecture::EventSink<PrimaryRollHoldValueChanged>{
                                 [this](const PrimaryRollHoldValueChanged &event) {
@@ -222,12 +306,15 @@ void GNCWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
       .Render();
   // clang-format on
 
+  controller_->Handle(ExperimentalViewStateChanged{
+      model.primaryAutopilot.rollHoldParametersOpen});
   controller_->Handle(
-      GNCViewStateChanged{model.primaryAutopilot.rollHoldParametersOpen,
-          model.baselineAutopilot.px4RollTuningOpen,
+      Px4AttitudeViewStateChanged{model.baselineAutopilot.px4RollTuningOpen,
           model.baselineAutopilot.px4RollDiagnosticsOpen,
-          model.trimResultOpen,
-          model.trimResidualOpen});
+          model.baselineAutopilot.px4PitchTuningOpen,
+          model.baselineAutopilot.px4PitchDiagnosticsOpen});
+  controller_->Handle(
+      TrimViewStateChanged{model.trimResultOpen, model.trimResidualOpen});
   controller_->PublishConfiguration(snapshot);
 }
 } // namespace gui

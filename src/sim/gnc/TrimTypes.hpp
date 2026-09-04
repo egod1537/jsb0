@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/math/Math.hpp"
+
 #include <string>
 
 namespace gnc {
@@ -12,19 +14,19 @@ enum class TrimMode {
 struct TrimRequest {
   TrimMode mode = TrimMode::Longitudinal;
 
-  double airspeedKts = 100.0;
-  double altitudeFt = 3000.0;
-  double flightPathAngleDeg = 0.0;
+  double calibratedAirspeedMps = math::KnotsToMetersPerSecond(100.0);
+  double altitudeAslM = math::FeetToMeters(3000.0);
+  double flightPathAngleRad = 0.0;
 };
 
 struct TrimResult {
   bool success = false;
   std::string message;
 
-  double alphaDeg = 0.0;
-  double betaDeg = 0.0;
-  double rollDeg = 0.0;
-  double pitchDeg = 0.0;
+  double alphaRad = 0.0;
+  double betaRad = 0.0;
+  double rollRad = 0.0;
+  double pitchRad = 0.0;
 
   double throttle = 0.0;
   double elevator = 0.0;
@@ -32,12 +34,12 @@ struct TrimResult {
   double aileron = 0.0;
   double rudder = 0.0;
 
-  double uDot = 0.0;
-  double vDot = 0.0;
-  double wDot = 0.0;
+  double uDotMps2 = 0.0;
+  double vDotMps2 = 0.0;
+  double wDotMps2 = 0.0;
 
-  double pDot = 0.0;
-  double qDot = 0.0;
-  double rDot = 0.0;
+  double pDotRadPerSec2 = 0.0;
+  double qDotRadPerSec2 = 0.0;
+  double rDotRadPerSec2 = 0.0;
 };
 } // namespace gnc

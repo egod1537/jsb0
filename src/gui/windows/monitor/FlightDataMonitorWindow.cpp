@@ -4,9 +4,13 @@
 
 #include <imgui.h>
 
+#include <utility>
+
 namespace gui {
-FlightDataMonitorWindow::FlightDataMonitorWindow(MonitorController &controller)
-    : Window("Monitor", EditorIconAliases::Monitor), controller_(controller) {}
+FlightDataMonitorWindow::FlightDataMonitorWindow(MonitorController &controller,
+    MonitorConfig config)
+    : Window("Monitor", EditorIconAliases::Monitor), controller_(controller),
+      view_(std::move(config)) {}
 
 ImGuiWindowFlags FlightDataMonitorWindow::GetWindowFlags() const {
   return ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;

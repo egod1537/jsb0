@@ -30,6 +30,81 @@ void TestAngleConversion() {
       "Radian-to-degree conversion failed");
 }
 
+void TestAviationUnitConversion() {
+  RequireNear(math::FeetToMeters(1000.0),
+      304.8,
+      "Feet-to-meters conversion failed");
+  RequireNear(math::MetersToFeet(304.8),
+      1000.0,
+      "Meters-to-feet conversion failed");
+  RequireNear(math::KnotsToMetersPerSecond(80.0),
+      41.15555555555556,
+      "Knots-to-meters-per-second conversion failed");
+  RequireNear(math::MetersPerSecondToKnots(41.15555555555556),
+      80.0,
+      "Meters-per-second-to-knots conversion failed");
+  RequireNear(math::FeetPerSecondToMetersPerSecond(100.0),
+      30.48,
+      "Feet-per-second-to-meters-per-second conversion failed");
+  RequireNear(math::MetersPerSecondToFeetPerSecond(30.48),
+      100.0,
+      "Meters-per-second-to-feet-per-second conversion failed");
+  RequireNear(math::FeetPerSecondSquaredToMetersPerSecondSquared(32.0),
+      9.7536,
+      "Feet-per-second-squared conversion failed");
+  RequireNear(math::MetersPerSecondSquaredToFeetPerSecondSquared(9.7536),
+      32.0,
+      "Meters-per-second-squared conversion failed");
+  RequireNear(math::RankineToKelvin(540.0),
+      300.0,
+      "Rankine-to-kelvin conversion failed");
+  RequireNear(math::KelvinToRankine(300.0),
+      540.0,
+      "Kelvin-to-rankine conversion failed");
+  RequireNear(math::PoundsPerSquareFootToPascals(1.0),
+      math::PascalsPerPoundPerSquareFoot,
+      "Pounds-per-square-foot-to-pascals conversion failed");
+  RequireNear(math::PascalsToPoundsPerSquareFoot(
+                  math::PascalsPerPoundPerSquareFoot),
+      1.0,
+      "Pascals-to-pounds-per-square-foot conversion failed");
+}
+
+void TestAviationUnitRoundTrips() {
+  for (const double feet : {-1234.5, 0.0, 1000.0, 52'800.0}) {
+    RequireNear(math::MetersToFeet(math::FeetToMeters(feet)),
+        feet,
+        "Feet/meters round trip failed");
+  }
+
+  for (const double knots : {-20.0, 0.0, 80.0, 350.0}) {
+    RequireNear(
+        math::MetersPerSecondToKnots(math::KnotsToMetersPerSecond(knots)),
+        knots,
+        "Knots/meters-per-second round trip failed");
+  }
+
+  for (const double feetPerSecond : {-100.0, 0.0, 250.0}) {
+    RequireNear(math::MetersPerSecondToFeetPerSecond(
+                    math::FeetPerSecondToMetersPerSecond(feetPerSecond)),
+        feetPerSecond,
+        "Feet-per-second/meters-per-second round trip failed");
+  }
+
+  for (const double kelvin : {0.0, 288.15, 373.15}) {
+    RequireNear(math::RankineToKelvin(math::KelvinToRankine(kelvin)),
+        kelvin,
+        "Kelvin/rankine round trip failed");
+  }
+
+  for (const double pressurePa : {0.0, 101325.0, 250000.0}) {
+    RequireNear(math::PoundsPerSquareFootToPascals(
+                    math::PascalsToPoundsPerSquareFoot(pressurePa)),
+        pressurePa,
+        "Pascal/pounds-per-square-foot round trip failed");
+  }
+}
+
 void TestAngleWrapping() {
   const double pi = std::numbers::pi_v<double>;
   const double twoPi = 2.0 * pi;
@@ -146,6 +221,8 @@ void TestApproximately() {
 int main() {
   try {
     TestAngleConversion();
+    TestAviationUnitConversion();
+    TestAviationUnitRoundTrips();
     TestAngleWrapping();
     TestGenericWrap();
     TestInterpolation();

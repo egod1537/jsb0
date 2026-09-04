@@ -3,11 +3,16 @@ target_compile_features(jsb_gui_architecture INTERFACE cxx_std_20)
 target_include_directories(jsb_gui_architecture INTERFACE ${PROJECT_SOURCE_DIR}/src)
 
 add_library(jsb_monitor STATIC
+  features/monitor/catalog/MonitorPlotPresetCatalog.cpp
+  features/monitor/model/MonitorModel.cpp
+  features/monitor/view/MonitorPlotDialogModel.cpp
   features/monitor/MonitorController.cpp
+  features/monitor/MonitorSignalCatalog.cpp
 )
 target_compile_features(jsb_monitor PUBLIC cxx_std_20)
 set_target_properties(jsb_monitor PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 target_include_directories(jsb_monitor PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(jsb_monitor PRIVATE jsb_telemetry_contracts)
 
 if(JSB_BUILD_EDITOR)
   add_library(jsb_editor STATIC
@@ -23,8 +28,22 @@ if(JSB_BUILD_EDITOR)
     features/autopilot_selector/AutopilotSelectorView.cpp
     features/editor/EditorPlatformController.cpp
     features/gnc/GNCController.cpp
+    features/gnc/experimental/ExperimentalController.cpp
+    features/gnc/px4/attitude/Px4AttitudeController.cpp
+    features/gnc/px4/attitude/Px4AttitudePanel.cpp
+    features/gnc/px4/tecs/TecsController.cpp
+    features/gnc/px4/tecs/TecsPanel.cpp
+    features/gnc/trim/TrimController.cpp
     features/linearization/LinearizationController.cpp
     features/monitor/MonitorView.cpp
+    features/monitor/plotting/MonitorPlotSeries.cpp
+    features/monitor/plotting/MonitorPlotRenderer.cpp
+    features/monitor/view/MonitorPlotConfigDialog.cpp
+    features/monitor/view/MonitorGrid.cpp
+    features/monitor/view/MonitorTimeline.cpp
+    features/monitor/view/MonitorDynamicModes.cpp
+    features/monitor/view/MonitorPresetPanel.cpp
+    features/monitor/view/MonitorToolbar.cpp
     features/simulation/ScenarioController.cpp
     features/simulation/ScenarioSetupPopup.cpp
     features/simulation/SimulationController.cpp

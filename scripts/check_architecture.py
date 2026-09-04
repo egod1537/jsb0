@@ -58,10 +58,52 @@ RULES: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
 }
 
+GNC_RULES: dict[str, tuple[re.Pattern[str], ...]] = {
+    "navigation": tuple(
+        re.compile(pattern)
+        for pattern in (
+            r"^sim/gnc/(guidance|energy|control|autopilot)/",
+        )
+    ),
+    "guidance": tuple(
+        re.compile(pattern)
+        for pattern in (
+            r"^sim/gnc/autopilot/",
+        )
+    ),
+    "energy": tuple(
+        re.compile(pattern)
+        for pattern in (
+            r"^sim/gnc/(navigation|guidance|autopilot)/",
+        )
+    ),
+    "tecs": tuple(
+        re.compile(pattern)
+        for pattern in (
+            r"^sim/gnc/(navigation|guidance|autopilot)/",
+        )
+    ),
+    "control": tuple(
+        re.compile(pattern)
+        for pattern in (
+            r"^sim/gnc/(navigation|guidance|energy|autopilot)/",
+        )
+    ),
+    "autopilot/px4": (re.compile(r"^sim/gnc/autopilot/experimental/"),),
+    "autopilot/experimental": (
+        re.compile(r"^sim/gnc/autopilot/px4/"),
+        re.compile(r"^sim/gnc/autopilot/PX4Autopilot(?:\.hpp|\.h)$"),
+    ),
+}
+
 
 def check(root: Path) -> list[str]:
     violations: list[str] = []
     source_root = root / "src"
+    deprecated_hold_root = source_root / "sim" / "gnc" / "hold"
+    if deprecated_hold_root.exists():
+        violations.append("deprecated GNC directory: src/sim/gnc/hold")
+
     for module, forbidden in RULES.items():
         module_root = source_root / module
         if not module_root.is_dir():
@@ -80,6 +122,27 @@ def check(root: Path) -> list[str]:
                 if any(pattern.search(include) for pattern in forbidden):
                     relative = path.relative_to(root).as_posix()
                     violations.append(f"{relative}:{line_number}: forbidden include {include}")
+
+    gnc_root = source_root / "sim" / "gnc"
+    for layer, forbidden in GNC_RULES.items():
+        layer_root = gnc_root / layer
+        if not layer_root.is_dir():
+            continue
+        for path in sorted(layer_root.rglob("*")):
+            if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
+                continue
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                match = INCLUDE.match(line)
+                if not match:
+                    continue
+                include = match.group(1)
+                if any(pattern.search(include) for pattern in forbidden):
+                    relative = path.relative_to(root).as_posix()
+                    violations.append(
+                        f"{relative}:{line_number}: forbidden GNC layer include {include}"
+                    )
     return violations
 
 

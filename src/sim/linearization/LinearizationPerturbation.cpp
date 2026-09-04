@@ -8,13 +8,13 @@ namespace sim {
 void ApplyPerturbation(FDMState &state, const StatePerturbation &perturbation) {
   switch (perturbation.variable) {
   case LinearizationState::U:
-    state.state.bodyVelocityFps[0] += perturbation.amount;
+    state.state.bodyVelocityMps[0] += perturbation.amount;
     return;
   case LinearizationState::V:
-    state.state.bodyVelocityFps[1] += perturbation.amount;
+    state.state.bodyVelocityMps[1] += perturbation.amount;
     return;
   case LinearizationState::W:
-    state.state.bodyVelocityFps[2] += perturbation.amount;
+    state.state.bodyVelocityMps[2] += perturbation.amount;
     return;
   case LinearizationState::P:
     state.state.bodyAngularRatesRadPerSec[0] += perturbation.amount;
@@ -41,7 +41,7 @@ void ApplyPerturbation(FDMState &state, const StatePerturbation &perturbation) {
     state.state.longitudeRad += perturbation.amount;
     return;
   case LinearizationState::Altitude:
-    state.state.altitudeAslFt += perturbation.amount;
+    state.state.altitudeAslM += perturbation.amount;
     return;
   }
 

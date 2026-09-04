@@ -1,5 +1,6 @@
 #include "gui/windows/SimulationWindow.hpp"
 
+#include "common/math/Math.hpp"
 #include "flightui/FlightUI.hpp"
 
 #include <string>
@@ -103,45 +104,54 @@ void SimulationWindow::DrawAircraftTab(
 UI::UIElement SimulationWindow::DrawInitialConditionFields() {
   const sim::InitialCondition &initialCondition =
       controller_.GetInitialConditionModel().pending;
+  const double latitudeDeg = math::RadToDeg(initialCondition.latitudeRad);
+  const double longitudeDeg = math::RadToDeg(initialCondition.longitudeRad);
+  const double rollDeg = math::RadToDeg(initialCondition.rollRad);
+  const double pitchDeg = math::RadToDeg(initialCondition.pitchRad);
+  const double headingDeg = math::RadToDeg(initialCondition.headingRad);
   return UI::VerticalLayout().Spacing(LayoutSpacing)
       [+UI::Heading("Position")
-          + UI::InputDouble("Latitude (deg)", initialCondition.latitudeDeg)
+          + UI::InputDouble("Latitude (deg)", latitudeDeg)
               .Width(InputWidth)
               .OnChanged([this](double value) {
                 controller_.Handle({InitialConditionField::LatitudeDeg, value});
               })
-          + UI::InputDouble("Longitude (deg)", initialCondition.longitudeDeg)
+          + UI::InputDouble("Longitude (deg)", longitudeDeg)
               .Width(InputWidth)
               .OnChanged([this](double value) {
                 controller_.Handle(
                     {InitialConditionField::LongitudeDeg, value});
               })
-          + UI::InputDouble("Altitude (ft)", initialCondition.altitudeFt)
+          + UI::InputDouble("Altitude ASL (m)", initialCondition.altitudeAslM)
               .Width(InputWidth)
               .OnChanged([this](double value) {
-                controller_.Handle({InitialConditionField::AltitudeFt, value});
+                controller_.Handle(
+                    {InitialConditionField::AltitudeAslM, value});
               })
           + UI::Heading("Attitude")
-          + UI::InputDouble("Roll (deg)", initialCondition.rollDeg)
+          + UI::InputDouble("Roll (deg)", rollDeg)
               .Width(InputWidth)
               .OnChanged([this](double value) {
                 controller_.Handle({InitialConditionField::RollDeg, value});
               })
-          + UI::InputDouble("Pitch (deg)", initialCondition.pitchDeg)
+          + UI::InputDouble("Pitch (deg)", pitchDeg)
               .Width(InputWidth)
               .OnChanged([this](double value) {
                 controller_.Handle({InitialConditionField::PitchDeg, value});
               })
-          + UI::InputDouble("Heading (deg)", initialCondition.headingDeg)
+          + UI::InputDouble("Heading (deg)", headingDeg)
               .Width(InputWidth)
               .OnChanged([this](double value) {
                 controller_.Handle({InitialConditionField::HeadingDeg, value});
               })
           + UI::Heading("Velocity")
-          + UI::InputDouble("Airspeed (kt)", initialCondition.airspeedKts)
+          + UI::InputDouble(
+                "Calibrated Airspeed (m/s)",
+                initialCondition.calibratedAirspeedMps)
               .Width(InputWidth)
               .OnChanged([this](double value) {
-                controller_.Handle({InitialConditionField::AirspeedKts, value});
+                controller_.Handle(
+                    {InitialConditionField::CalibratedAirspeedMps, value});
               })];
 }
 

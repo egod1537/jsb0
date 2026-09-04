@@ -17,12 +17,12 @@ void RequireNear(double actual, double expected, const std::string &message) {
 
 void TestStatePerturbations() {
   sim::FDMState state{};
-  state.state.bodyVelocityFps = {10.0, 20.0, 30.0};
+  state.state.bodyVelocityMps = {10.0, 20.0, 30.0};
   state.state.bodyAngularRatesRadPerSec = {0.1, 0.2, 0.3};
   state.state.attitudeRad = {0.4, 0.5, 0.6};
   state.state.latitudeRad = 0.7;
   state.state.longitudeRad = 0.8;
-  state.state.altitudeAslFt = 1'000.0;
+  state.state.altitudeAslM = 1'000.0;
 
   sim::ApplyPerturbation(state, {sim::LinearizationState::U, 1.0});
   sim::ApplyPerturbation(state, {sim::LinearizationState::V, 2.0});
@@ -37,9 +37,9 @@ void TestStatePerturbations() {
   sim::ApplyPerturbation(state, {sim::LinearizationState::Longitude, 0.08});
   sim::ApplyPerturbation(state, {sim::LinearizationState::Altitude, 100.0});
 
-  RequireNear(state.state.bodyVelocityFps[0], 11.0, "U perturbation failed");
-  RequireNear(state.state.bodyVelocityFps[1], 22.0, "V perturbation failed");
-  RequireNear(state.state.bodyVelocityFps[2], 33.0, "W perturbation failed");
+  RequireNear(state.state.bodyVelocityMps[0], 11.0, "U perturbation failed");
+  RequireNear(state.state.bodyVelocityMps[1], 22.0, "V perturbation failed");
+  RequireNear(state.state.bodyVelocityMps[2], 33.0, "W perturbation failed");
   RequireNear(state.state.bodyAngularRatesRadPerSec[0],
       0.11,
       "P perturbation failed");
@@ -54,7 +54,7 @@ void TestStatePerturbations() {
   RequireNear(state.state.attitudeRad[2], 0.66, "Heading perturbation failed");
   RequireNear(state.state.latitudeRad, 0.77, "Latitude perturbation failed");
   RequireNear(state.state.longitudeRad, 0.88, "Longitude perturbation failed");
-  RequireNear(state.state.altitudeAslFt,
+  RequireNear(state.state.altitudeAslM,
       1'100.0,
       "Altitude perturbation failed");
 }

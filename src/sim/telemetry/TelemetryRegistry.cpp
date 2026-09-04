@@ -1,5 +1,7 @@
 #include "sim/telemetry/TelemetryRegistry.hpp"
 
+#include "sim/telemetry/TelemetryMetadata.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -75,11 +77,13 @@ TelemetrySnapshot TelemetryRegistry::CaptureSnapshot() const {
       .publishedTimeRange = publishedTimeRange_,
   };
   snapshot.series.reserve(channels_.size());
+  snapshot.metadata.reserve(channels_.size());
   for (const auto &[path, channel] : channels_) {
     snapshot.series.push_back({
         .path = path,
         .samples = channel.CaptureSamples(),
     });
+    snapshot.metadata.push_back(ResolveTelemetrySignalMetadata(path));
   }
   return snapshot;
 }

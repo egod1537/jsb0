@@ -19,6 +19,14 @@ struct TelemetrySeries {
   std::vector<TelemetrySample> samples;
 };
 
+struct TelemetrySignalMetadata {
+  std::string path;
+  std::string displayName;
+  std::string symbol;
+  std::string unit;
+  std::string description;
+};
+
 struct TelemetryValue {
   std::string path;
   double value = 0.0;
@@ -36,8 +44,10 @@ struct TelemetrySnapshot {
   std::uint64_t version = 0;
   std::optional<TelemetryTimeRange> publishedTimeRange;
   std::vector<TelemetrySeries> series;
+  std::vector<TelemetrySignalMetadata> metadata;
 
   const TelemetrySeries *Find(std::string_view path) const;
+  const TelemetrySignalMetadata *FindMetadata(std::string_view path) const;
   std::vector<std::string_view> GetChannelPaths() const;
 };
 

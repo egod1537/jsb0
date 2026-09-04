@@ -1,5 +1,6 @@
 #include "gui/features/simulation/SimulationController.hpp"
 
+#include "common/math/Math.hpp"
 #include "messaging/SimulationMessageClient.hpp"
 
 namespace gui {
@@ -93,25 +94,25 @@ void SimulationController::Handle(const InitialConditionFieldChanged &event) {
   double *field = nullptr;
   switch (event.field) {
   case InitialConditionField::LatitudeDeg:
-    field = &initialCondition_.pending.latitudeDeg;
-    break;
+    initialCondition_.pending.latitudeRad = math::DegToRad(event.value);
+    return;
   case InitialConditionField::LongitudeDeg:
-    field = &initialCondition_.pending.longitudeDeg;
-    break;
-  case InitialConditionField::AltitudeFt:
-    field = &initialCondition_.pending.altitudeFt;
+    initialCondition_.pending.longitudeRad = math::DegToRad(event.value);
+    return;
+  case InitialConditionField::AltitudeAslM:
+    field = &initialCondition_.pending.altitudeAslM;
     break;
   case InitialConditionField::RollDeg:
-    field = &initialCondition_.pending.rollDeg;
-    break;
+    initialCondition_.pending.rollRad = math::DegToRad(event.value);
+    return;
   case InitialConditionField::PitchDeg:
-    field = &initialCondition_.pending.pitchDeg;
-    break;
+    initialCondition_.pending.pitchRad = math::DegToRad(event.value);
+    return;
   case InitialConditionField::HeadingDeg:
-    field = &initialCondition_.pending.headingDeg;
-    break;
-  case InitialConditionField::AirspeedKts:
-    field = &initialCondition_.pending.airspeedKts;
+    initialCondition_.pending.headingRad = math::DegToRad(event.value);
+    return;
+  case InitialConditionField::CalibratedAirspeedMps:
+    field = &initialCondition_.pending.calibratedAirspeedMps;
     break;
   }
   *field = event.value;

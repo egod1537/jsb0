@@ -153,6 +153,8 @@ void TestRegistryCreatesImmutableTransportContracts() {
   const telemetry::TelemetrySnapshot snapshot = telemetry.CaptureSnapshot();
   Require(snapshot.available && snapshot.series.size() == 2,
       "Telemetry snapshot did not capture all channels");
+  Require(snapshot.metadata.size() == snapshot.series.size(),
+      "Telemetry snapshot did not capture channel metadata");
   const telemetry::TelemetrySeries *rates = snapshot.Find("aircraft/rates/r");
   Require(rates != nullptr && rates->samples.size() == 2,
       "Telemetry snapshot did not capture channel history");
@@ -160,6 +162,32 @@ void TestRegistryCreatesImmutableTransportContracts() {
   telemetry.Clear();
   Require(rates->samples.size() == 2,
       "Captured telemetry contract changed with its source registry");
+}
+
+void TestSnapshotMetadataProvidesSignalMeaningAndUnits() {
+  telemetry::TelemetryRegistry telemetry;
+  telemetry.Publish("aircraft/position/altitude_agl", 1.0, 365.76);
+  telemetry.Publish("aircraft/airdata/calibrated_airspeed", 1.0, 41.16);
+  telemetry.Publish("autopilot/tecs/target_pitch", 1.0, 0.05);
+
+  const telemetry::TelemetrySnapshot snapshot = telemetry.CaptureSnapshot();
+  const telemetry::TelemetrySignalMetadata *altitude =
+      snapshot.FindMetadata("aircraft/position/altitude_agl");
+  Require(altitude != nullptr && altitude->displayName == "Altitude AGL"
+              && altitude->unit == "m",
+      "Altitude telemetry metadata lost its AGL meter contract");
+  const telemetry::TelemetrySignalMetadata *airspeed =
+      snapshot.FindMetadata("aircraft/airdata/calibrated_airspeed");
+  Require(airspeed != nullptr
+              && airspeed->displayName == "Calibrated Airspeed CAS"
+              && airspeed->unit == "m/s",
+      "Airspeed telemetry metadata lost its CAS SI contract");
+  const telemetry::TelemetrySignalMetadata *pitch =
+      snapshot.FindMetadata("autopilot/tecs/target_pitch");
+  Require(pitch != nullptr && pitch->unit == "rad",
+      "TECS pitch telemetry metadata lost its radian unit");
+  Require(snapshot.FindMetadata("missing/channel") == nullptr,
+      "Telemetry snapshot returned metadata for an unknown channel");
 }
 
 void TestTelemetryRangeReadLimitsPlotData() {
@@ -190,6 +218,7 @@ int main() {
     TestClosestSampleSearchIncludesArchivedHistory();
     TestRegistryInspectionAndClear();
     TestRegistryCreatesImmutableTransportContracts();
+    TestSnapshotMetadataProvidesSignalMeaningAndUnits();
     TestTelemetryRangeReadLimitsPlotData();
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

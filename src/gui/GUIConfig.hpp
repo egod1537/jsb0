@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gui/features/monitor/MonitorConfig.hpp"
+
 #include <string>
 
 namespace gui {
@@ -9,6 +11,7 @@ struct GUIConfig {
   std::string windowTitle = "JSB Flight Console";
 
   double renderHz = 60.0;
+  MonitorConfig monitor;
 
   double GetRenderDT() const { return renderHz > 0.0 ? 1.0 / renderHz : 0.0; }
 };

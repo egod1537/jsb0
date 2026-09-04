@@ -1,6 +1,6 @@
 #include "FlightGearSender.hpp"
-#include "sim/runtime/SimulationContracts.hpp"
 #include "NetFdmPacket.hpp"
+#include "sim/runtime/SimulationContracts.hpp"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -25,8 +25,8 @@ flightgear::NetFdmPacket BuildPacket(
   packet.longitude = state.longitudeRad;
   packet.latitude = state.latitudeRad;
 
-  packet.altitude = state.altitudeAslFt * 0.3048;
-  packet.agl = static_cast<float>(snapshot.aircraft.altitudeAglFt * 0.3048);
+  packet.altitude = snapshot.aircraft.altitudeAslM;
+  packet.agl = static_cast<float>(snapshot.aircraft.altitudeAglM);
 
   packet.phi = static_cast<float>(state.attitudeRad[0]);
   packet.theta = static_cast<float>(state.attitudeRad[1]);
@@ -115,18 +115,21 @@ bool FlightGearSender::Send(const sim::SimulationInstanceSnapshot &snapshot) {
   const auto networkPacket = flightgear::ToNetworkOrder(packet);
 
 #ifdef _WIN32
-  const int sentBytes =
-      sendto(m_Impl->SocketFd, reinterpret_cast<const char *>(&networkPacket),
-             static_cast<int>(sizeof(networkPacket)), 0,
-             reinterpret_cast<const sockaddr *>(&m_Impl->Address),
-             sizeof(m_Impl->Address));
+  const int sentBytes = sendto(m_Impl->SocketFd,
+      reinterpret_cast<const char *>(&networkPacket),
+      static_cast<int>(sizeof(networkPacket)),
+      0,
+      reinterpret_cast<const sockaddr *>(&m_Impl->Address),
+      sizeof(m_Impl->Address));
 
   return sentBytes == static_cast<int>(sizeof(networkPacket));
 #else
-  const ssize_t sentBytes =
-      sendto(m_Impl->SocketFd, &networkPacket, sizeof(networkPacket), 0,
-             reinterpret_cast<const sockaddr *>(&m_Impl->Address),
-             sizeof(m_Impl->Address));
+  const ssize_t sentBytes = sendto(m_Impl->SocketFd,
+      &networkPacket,
+      sizeof(networkPacket),
+      0,
+      reinterpret_cast<const sockaddr *>(&m_Impl->Address),
+      sizeof(m_Impl->Address));
 
   return sentBytes == static_cast<ssize_t>(sizeof(networkPacket));
 #endif

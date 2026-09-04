@@ -1,14 +1,16 @@
 #pragma once
 
 #include "gui/architecture/EventSink.hpp"
+#include "gui/features/monitor/MonitorConfig.hpp"
 #include "gui/features/monitor/MonitorEvents.hpp"
 #include "gui/features/monitor/MonitorInput.hpp"
+#include "gui/features/monitor/MonitorSignalCatalog.hpp"
+#include "gui/features/monitor/view/MonitorPlotDialogModel.hpp"
 
-#include <functional>
-#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace telemetry {
 struct TelemetrySnapshot;
@@ -17,7 +19,7 @@ struct TelemetrySnapshot;
 namespace gui {
 class MonitorView {
 public:
-  MonitorView();
+  explicit MonitorView(MonitorConfig config = {});
 
   void Render(const MonitorInput &input, const MonitorState &state,
       architecture::EventSink<MonitorEvent> events);
@@ -29,32 +31,22 @@ private:
   using TimelineDragMode = MonitorTimelineDragMode;
   using TimelineDragTarget = MonitorTimelineDragTarget;
 
-  struct BrowserNode {
-    std::string name;
-    std::string fullPath;
-    std::map<std::string, BrowserNode, std::less<>> children;
-    bool isChannel = false;
-  };
-
   // Workspace setup and plot management
-  void CreateDefaultPreset();
-  MonitorPlot &CreatePlot(std::string title,
-      std::string telemetryGroupPath = {}, std::string yAxisLabel = "Value");
-  MonitorPlot *FindBoundPlot(std::string_view telemetryNodePath);
+  void InitializePresetWorkspace();
+  MonitorPlot *FindPlot(std::uint64_t plotId);
+  void RequestAddPlot(std::optional<std::size_t> slotIndex);
+  void RequestEditPlot(MonitorPlot &plot);
+  void CommitPlotDialog(std::span<const MonitorSignalDescriptor> signalCatalog);
   void DeletePlot(std::uint64_t plotId);
-  void SetChannelEnabled(MonitorPlot &plot, std::string_view channelPath,
-      bool enabled);
+  std::size_t GetAvailablePlotSlotCount() const;
+  std::optional<std::size_t> FindFirstEmptyPlotSlot() const;
 
   // Workspace rendering
   void DrawWindow(const TelemetrySources &sources,
       std::span<const gnc::DynamicModeSnapshot> dynamicModeHistory);
   void DrawDynamicModes(const MonitorDynamicModeInput &dynamicModes);
   void DrawToolbar(const telemetry::TelemetrySnapshot &telemetry);
-  void DrawExplorerHeader();
-  void DrawTelemetryBrowser(const telemetry::TelemetrySnapshot &telemetry);
-  void AddBrowserPath(BrowserNode &root, std::string_view path) const;
-  void DrawBrowserNode(const BrowserNode &node, bool expandAll);
-  void DrawBrowserChannel(std::string_view label, std::string_view channelPath);
+  void DrawPresetPaneHeader();
   void DrawPresetPanel();
   void DrawPlotWorkspace(const TelemetrySources &sources,
       std::span<const gnc::DynamicModeSnapshot> dynamicModeHistory);
@@ -67,18 +59,18 @@ private:
   void DrawLinearizationTrack(
       std::span<const gnc::DynamicModeSnapshot> dynamicModeHistory);
   void DrawPlotLayoutSelector();
+  void DrawDisplayModeSelector();
   void DrawPlotList(const TelemetrySources &sources);
   void DrawPlotGrid(const TelemetrySources &sources, int dimension);
   void DrawPlotTable(const TelemetrySources &sources, int columnCount,
       float plotHeight, const char *tableId);
+  void DrawEmptyPlotSlot(std::size_t slotIndex, float plotHeight);
   float CalculateGridPlotHeight(int rowCount) const;
-  bool DrawPlotCard(MonitorPlot &plot, const TelemetrySources &sources,
+  void DrawPlotCard(MonitorPlot &plot, const TelemetrySources &sources,
       float plotHeight);
-  void DrawTelemetryPlot(const MonitorPlot &plot,
-      const TelemetrySources &sources, float plotHeight);
-  void DrawRollTrackingAcceptanceUnderlay(const MonitorPlot &plot,
-      const telemetry::TelemetrySnapshot &telemetry,
-      std::size_t maximumRenderedSampleCount) const;
+  void DrawPlotConfigurationDialog(const TelemetrySources &sources);
+  std::vector<MonitorSignalDescriptor> BuildSignalCatalog(
+      const TelemetrySources &sources) const;
 
   // Visibility composition
   bool IsPlotVisible(const MonitorPlot &plot) const;
@@ -100,8 +92,10 @@ private:
   void SetLiveView(bool enabled);
   void SelectTimelineTime(double timeSec, bool disableLive);
   void ZoomTimelineView(double wheelDelta, double anchorSec);
-  void DrawPlotOverlay(const MonitorPlot &plot,
-      const telemetry::TelemetrySnapshot &telemetry);
+  std::optional<double> DrawPlotOverlay();
+
+  // Configuration
+  MonitorConfig config_;
 
   // Per-frame render state. The controller remains the authoritative owner.
   MonitorState renderState_;
@@ -120,17 +114,14 @@ private:
 
   std::vector<MonitorPlot> &plots_;
   std::uint64_t &nextPlotId_;
-  std::uint64_t &selectedPlotId_;
   MonitorPlotLayout &plotLayout_;
+  MonitorDisplayMode &displayMode_;
   std::uint32_t &activePresetMask_;
 
-  float &explorerPaneWidth_;
+  float &presetPaneWidth_;
   float &timelinePaneHeight_;
-  bool &explorerPaneOpen_;
+  bool &presetPaneOpen_;
   bool &timelinePaneOpen_;
-
-  std::array<char, 128> &channelSearch_;
-  std::string &selectedChannelPath_;
 
   TimelineDragMode &timelineDragMode_;
   TimelineDragTarget &timelineDragTarget_;
@@ -141,5 +132,10 @@ private:
 
   std::optional<std::size_t> &selectedDynamicModeIndex_;
   std::optional<double> &selectedDynamicModeSnapshotTimeSec_;
+
+  // View-local interaction state
+  MonitorPlotDialogModel plotDialog_;
+  std::optional<std::uint64_t> plotToRemove_;
+  bool noEmptySlotMessage_ = false;
 };
 } // namespace gui

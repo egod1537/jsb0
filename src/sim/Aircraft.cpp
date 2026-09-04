@@ -13,12 +13,12 @@
 #include <initialization/FGTrim.h>
 #include <iostream>
 #include <models/FGOutput.h>
+#include <numbers>
 #include <simgear/misc/sg_path.hxx>
 #include <string>
 #include <utility>
 
 namespace {
-constexpr const char *CurrentAltitudeAslFt = "position/h-sl-ft";
 constexpr const char *CurrentLatitudeRad = "position/lat-gc-rad";
 constexpr const char *CurrentLongitudeRad = "position/long-gc-rad";
 constexpr const char *CurrentRollRad = "attitude/phi-rad";
@@ -29,13 +29,13 @@ constexpr const char *CurrentQRadPerSec = "velocities/q-rad_sec";
 constexpr const char *CurrentRRadPerSec = "velocities/r-rad_sec";
 
 bool IsFiniteInitialCondition(const sim::InitialCondition &initialCondition) {
-  return std::isfinite(initialCondition.latitudeDeg)
-         && std::isfinite(initialCondition.longitudeDeg)
-         && std::isfinite(initialCondition.altitudeFt)
-         && std::isfinite(initialCondition.rollDeg)
-         && std::isfinite(initialCondition.pitchDeg)
-         && std::isfinite(initialCondition.headingDeg)
-         && std::isfinite(initialCondition.airspeedKts)
+  return std::isfinite(initialCondition.latitudeRad)
+         && std::isfinite(initialCondition.longitudeRad)
+         && std::isfinite(initialCondition.altitudeAslM)
+         && std::isfinite(initialCondition.rollRad)
+         && std::isfinite(initialCondition.pitchRad)
+         && std::isfinite(initialCondition.headingRad)
+         && std::isfinite(initialCondition.calibratedAirspeedMps)
          && std::isfinite(initialCondition.pRadPerSec)
          && std::isfinite(initialCondition.qRadPerSec)
          && std::isfinite(initialCondition.rRadPerSec);
@@ -90,11 +90,14 @@ bool Aircraft::Initialize(const SimulationConfig &config,
   controls_.SetInput({});
 
   ConfigurePaths();
+  // JSBSim flight-control components cache their channel dt while the model
+  // is loaded. Set the canonical simulation timestep first so actuator rate
+  // limits and filters use physical-time units at every configured rate.
+  ConfigureSimulation(config);
   if (!LoadAircraft(config)) {
     return false;
   }
 
-  ConfigureSimulation(config);
   SetInitialConditionInputs(initialCondition);
   return InitializeState();
 }
@@ -113,21 +116,26 @@ const SimulationConfig &Aircraft::GetConfig() const { return config_; }
 AircraftState Aircraft::GetAircraftState() const {
   AircraftState state{};
   state.simulationTimeSec = properties_.SimTime().Sec();
-  state.altitudeAglFt = properties_.AltitudeAgl().Ft();
-  state.calibratedAirspeedKts = properties_.CalibratedAirspeed().Kts();
+  state.altitudeAglM = properties_.AltitudeAgl().M();
+  state.altitudeAslM = properties_.AltitudeAsl().M();
+  state.calibratedAirspeedMps = properties_.CalibratedAirspeed().Mps();
   state.trueAirspeedMps = properties_.TrueAirspeed().Mps();
-  state.rollDeg = properties_.Roll().Deg();
-  state.pitchDeg = properties_.Pitch().Deg();
-  state.headingDeg = math::RadToDeg(properties_.Get(CurrentHeadingRad));
-  state.courseDeg = math::Wrap(properties_.Course().Deg(), 0.0, 360.0);
-  state.alphaDeg = properties_.Alpha().Deg();
-  state.betaDeg = properties_.Beta().Deg();
+  state.rollRad = properties_.Roll().Rad();
+  state.pitchRad = properties_.Pitch().Rad();
+  state.headingRad = math::Wrap(properties_.Get(CurrentHeadingRad),
+      0.0,
+      2.0 * std::numbers::pi_v<double>);
+  state.courseRad = math::Wrap(properties_.Course().Rad(),
+      0.0,
+      2.0 * std::numbers::pi_v<double>);
+  state.alphaRad = properties_.Alpha().Rad();
+  state.betaRad = properties_.Beta().Rad();
   state.uMps = properties_.U().Mps();
   state.vMps = properties_.V().Mps();
   state.wMps = properties_.W().Mps();
-  state.pDegPerSec = properties_.P().DegPerSec();
-  state.qDegPerSec = properties_.Q().DegPerSec();
-  state.rDegPerSec = properties_.R().DegPerSec();
+  state.pRadPerSec = properties_.P().RadPerSec();
+  state.qRadPerSec = properties_.Q().RadPerSec();
+  state.rRadPerSec = properties_.R().RadPerSec();
   return state;
 }
 
@@ -136,9 +144,9 @@ AircraftStateDerivative Aircraft::GetAircraftStateDerivative() const {
   derivative.uDotMps2 = properties_.U().DotMps2();
   derivative.vDotMps2 = properties_.V().DotMps2();
   derivative.wDotMps2 = properties_.W().DotMps2();
-  derivative.pDotDegPerSec2 = properties_.P().DotDegPerSec2();
-  derivative.qDotDegPerSec2 = properties_.Q().DotDegPerSec2();
-  derivative.rDotDegPerSec2 = properties_.R().DotDegPerSec2();
+  derivative.pDotRadPerSec2 = properties_.P().DotRadPerSec2();
+  derivative.qDotRadPerSec2 = properties_.Q().DotRadPerSec2();
+  derivative.rDotRadPerSec2 = properties_.R().DotRadPerSec2();
   return derivative;
 }
 
@@ -227,15 +235,16 @@ void Aircraft::SetInitialConditionInputs(
     const InitialCondition &initialCondition) {
   auto ic = fdm_->GetIC();
 
-  ic->SetLatitudeDegIC(initialCondition.latitudeDeg);
-  ic->SetLongitudeDegIC(initialCondition.longitudeDeg);
-  ic->SetAltitudeASLFtIC(initialCondition.altitudeFt);
+  ic->SetLatitudeDegIC(math::RadToDeg(initialCondition.latitudeRad));
+  ic->SetLongitudeDegIC(math::RadToDeg(initialCondition.longitudeRad));
+  ic->SetAltitudeASLFtIC(math::MetersToFeet(initialCondition.altitudeAslM));
 
-  ic->SetPhiDegIC(initialCondition.rollDeg);
-  ic->SetThetaDegIC(initialCondition.pitchDeg);
-  ic->SetPsiDegIC(initialCondition.headingDeg);
+  ic->SetPhiDegIC(math::RadToDeg(initialCondition.rollRad));
+  ic->SetThetaDegIC(math::RadToDeg(initialCondition.pitchRad));
+  ic->SetPsiDegIC(math::RadToDeg(initialCondition.headingRad));
 
-  ic->SetVcalibratedKtsIC(initialCondition.airspeedKts);
+  ic->SetVcalibratedKtsIC(math::MetersPerSecondToKnots(
+      initialCondition.calibratedAirspeedMps));
 
   ic->SetPRadpsIC(initialCondition.pRadPerSec);
   ic->SetQRadpsIC(initialCondition.qRadPerSec);
@@ -244,16 +253,14 @@ void Aircraft::SetInitialConditionInputs(
 
 InitialCondition Aircraft::GetCurrentCondition() const {
   InitialCondition initialCondition{};
-  initialCondition.latitudeDeg =
-      math::RadToDeg(properties_.Get(CurrentLatitudeRad));
-  initialCondition.longitudeDeg =
-      math::RadToDeg(properties_.Get(CurrentLongitudeRad));
-  initialCondition.altitudeFt = properties_.Get(CurrentAltitudeAslFt);
-  initialCondition.rollDeg = math::RadToDeg(properties_.Get(CurrentRollRad));
-  initialCondition.pitchDeg = math::RadToDeg(properties_.Get(CurrentPitchRad));
-  initialCondition.headingDeg =
-      math::RadToDeg(properties_.Get(CurrentHeadingRad));
-  initialCondition.airspeedKts = properties_.CalibratedAirspeed().Kts();
+  initialCondition.latitudeRad = properties_.Get(CurrentLatitudeRad);
+  initialCondition.longitudeRad = properties_.Get(CurrentLongitudeRad);
+  initialCondition.altitudeAslM = properties_.AltitudeAsl().M();
+  initialCondition.rollRad = properties_.Get(CurrentRollRad);
+  initialCondition.pitchRad = properties_.Get(CurrentPitchRad);
+  initialCondition.headingRad = properties_.Get(CurrentHeadingRad);
+  initialCondition.calibratedAirspeedMps =
+      properties_.CalibratedAirspeed().Mps();
   initialCondition.pRadPerSec = properties_.Get(CurrentPRadPerSec);
   initialCondition.qRadPerSec = properties_.Get(CurrentQRadPerSec);
   initialCondition.rRadPerSec = properties_.Get(CurrentRRadPerSec);
@@ -282,9 +289,12 @@ void Aircraft::ResetSimulationTime() { fdm_->Setsim_time(0.0); }
 bool Aircraft::InitializeForTrim(const gnc::TrimRequest &request) {
   if (request.mode != gnc::TrimMode::Ground) {
     auto initialCondition = fdm_->GetIC();
-    initialCondition->SetVcalibratedKtsIC(request.airspeedKts);
-    initialCondition->SetAltitudeASLFtIC(request.altitudeFt);
-    initialCondition->SetFlightPathAngleDegIC(request.flightPathAngleDeg);
+    initialCondition->SetVcalibratedKtsIC(
+        math::MetersPerSecondToKnots(request.calibratedAirspeedMps));
+    initialCondition->SetAltitudeASLFtIC(
+        math::MetersToFeet(request.altitudeAslM));
+    initialCondition->SetFlightPathAngleDegIC(
+        math::RadToDeg(request.flightPathAngleRad));
   }
 
   PrepareExternalOutputForReset();
@@ -393,8 +403,8 @@ bool Aircraft::InitializeState() {
     return false;
   }
 
-  std::cout << "Initial altitude: " << properties_.AltitudeAgl().Ft()
-            << " ft\n";
+  std::cout << "Initial altitude AGL: " << properties_.AltitudeAgl().M()
+            << " m\n";
   return true;
 }
 

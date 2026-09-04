@@ -1,5 +1,6 @@
 #include "flightui/visualization/components/AircraftWireframeRenderer.hpp"
 
+#include "common/math/Math.hpp"
 #include "flightui/visualization/core/Transform.hpp"
 #include "flightui/visualization/render/LineCanvas.hpp"
 
@@ -39,9 +40,9 @@ void AircraftWireframeRenderer::OnTick(const TickContext &context) {
   Transform &transform = GetTransform();
   transform.SetPosition(aircraft.position);
   transform.SetRotationDeg({
-      -static_cast<float>(state.rollDeg),
-      -static_cast<float>(state.pitchDeg),
-      static_cast<float>(state.headingDeg),
+      -static_cast<float>(math::RadToDeg(state.rollRad)),
+      -static_cast<float>(math::RadToDeg(state.pitchRad)),
+      static_cast<float>(math::RadToDeg(state.headingRad)),
   });
 }
 

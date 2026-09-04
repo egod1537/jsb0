@@ -1,5 +1,7 @@
 #include "sim/scenario/SimulationScenario.hpp"
 
+#include "common/math/Math.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <string_view>
@@ -90,24 +92,27 @@ bool ValidateSimulationScenario(const SimulationScenario &scenario,
   }
 
   const InitialCondition &initial = scenario.initialCondition;
-  if (!std::isfinite(initial.latitudeDeg) || initial.latitudeDeg < -90.0
-      || initial.latitudeDeg > 90.0) {
+  if (!std::isfinite(initial.latitudeRad)
+      || initial.latitudeRad < math::DegToRad(-90.0)
+      || initial.latitudeRad > math::DegToRad(90.0)) {
     return ValidationFailed(error,
         "initial_condition.latitude_deg",
         "must be finite and within [-90, 90]");
   }
-  if (!std::isfinite(initial.longitudeDeg) || initial.longitudeDeg < -180.0
-      || initial.longitudeDeg > 180.0) {
+  if (!std::isfinite(initial.longitudeRad)
+      || initial.longitudeRad < math::DegToRad(-180.0)
+      || initial.longitudeRad > math::DegToRad(180.0)) {
     return ValidationFailed(error,
         "initial_condition.longitude_deg",
         "must be finite and within [-180, 180]");
   }
-  if (!std::isfinite(initial.altitudeFt)) {
+  if (!std::isfinite(initial.altitudeAslM)) {
     return ValidationFailed(error,
         "initial_condition.altitude_ft",
         "must be finite");
   }
-  if (!std::isfinite(initial.airspeedKts) || initial.airspeedKts < 0.0) {
+  if (!std::isfinite(initial.calibratedAirspeedMps)
+      || initial.calibratedAirspeedMps < 0.0) {
     return ValidationFailed(error,
         "initial_condition.airspeed_kts",
         "must be finite and non-negative");
@@ -116,9 +121,9 @@ bool ValidateSimulationScenario(const SimulationScenario &scenario,
     double value;
     const char *path;
   } finiteInitialValues[] = {
-      {initial.rollDeg, "initial_condition.roll_deg"},
-      {initial.pitchDeg, "initial_condition.pitch_deg"},
-      {initial.headingDeg, "initial_condition.heading_deg"},
+      {initial.rollRad, "initial_condition.roll_deg"},
+      {initial.pitchRad, "initial_condition.pitch_deg"},
+      {initial.headingRad, "initial_condition.heading_deg"},
       {initial.pRadPerSec, "initial_condition.p_rad_s"},
       {initial.qRadPerSec, "initial_condition.q_rad_s"},
       {initial.rRadPerSec, "initial_condition.r_rad_s"},
@@ -177,7 +182,7 @@ bool ValidateSimulationScenario(const SimulationScenario &scenario,
           path + ".command.type",
           "unsupported command type");
     }
-    if (!std::isfinite(event.command.rollDeg)) {
+    if (!std::isfinite(event.command.rollRad)) {
       return ValidationFailed(error,
           path + ".command.roll_deg",
           "must be finite");
@@ -189,9 +194,9 @@ bool ValidateSimulationScenario(const SimulationScenario &scenario,
     double value;
     const char *path;
   } nonNegativeValues[] = {
-      {scenario.settlingBandDeg, "acceptance.settling_band_deg"},
+      {scenario.settlingBandRad, "acceptance.settling_band_deg"},
       {scenario.settlingTimeLimitSec, "acceptance.settling_time_limit_sec"},
-      {scenario.overshootLimitDeg, "acceptance.overshoot_limit_deg"},
+      {scenario.overshootLimitRad, "acceptance.overshoot_limit_deg"},
       {scenario.maxOscillationCycles, "acceptance.max_oscillation_cycles"},
   };
   for (const auto &field : nonNegativeValues) {

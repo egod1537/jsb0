@@ -31,7 +31,7 @@ trim:
 
 simulation:
   duration_sec: 30
-  dt_sec: 0.03333333333333333
+  dt_sec: 0.008333333333333333
 
 events:
   - time_sec: 5

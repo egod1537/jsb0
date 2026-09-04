@@ -3,6 +3,7 @@
 #include "gui/windows/ScenarioWindow.hpp"
 #include "sim/scenario/SimulationScenario.hpp"
 #include "sim/scenario/SimulationScenarioSerializer.hpp"
+#include "common/math/Math.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -25,20 +26,23 @@ void RequireNear(double actual, double expected) {
 
 void RequireDefaultScenario(const sim::SimulationScenario &scenario) {
   assert(scenario.name == "Roll Hold 5deg 30s");
-  RequireNear(scenario.initialCondition.altitudeFt, 3000.0);
-  RequireNear(scenario.initialCondition.airspeedKts, 100.0);
-  RequireNear(scenario.initialCondition.rollDeg, 0.0);
-  RequireNear(scenario.initialCondition.pitchDeg, 0.0);
-  RequireNear(scenario.initialCondition.headingDeg, 0.0);
+  RequireNear(scenario.initialCondition.altitudeAslM,
+      math::FeetToMeters(3000.0));
+  RequireNear(scenario.initialCondition.calibratedAirspeedMps,
+      math::KnotsToMetersPerSecond(100.0));
+  RequireNear(scenario.initialCondition.rollRad, 0.0);
+  RequireNear(scenario.initialCondition.pitchRad, 0.0);
+  RequireNear(scenario.initialCondition.headingRad, 0.0);
   assert(!scenario.windEnabled);
   assert(scenario.runTrim);
   assert(scenario.trimMode == gnc::TrimMode::Full);
   RequireNear(scenario.durationSec, 30.0);
+  RequireNear(scenario.dtSec, sim::DefaultSimulationDtSec);
   RequireNear(scenario.events.front().timeSec, 5.0);
-  RequireNear(scenario.events.front().command.rollDeg, 5.0);
-  RequireNear(scenario.settlingBandDeg, 0.5);
+  RequireNear(scenario.events.front().command.rollRad, math::DegToRad(5.0));
+  RequireNear(scenario.settlingBandRad, math::DegToRad(0.5));
   RequireNear(scenario.settlingTimeLimitSec, 10.0);
-  RequireNear(scenario.overshootLimitDeg, 1.0);
+  RequireNear(scenario.overshootLimitRad, math::DegToRad(1.0));
   RequireNear(scenario.maxOscillationCycles, 2.0);
 }
 
@@ -55,7 +59,7 @@ void TestScenarioValidation() {
   };
 
   sim::SimulationScenario scenario;
-  scenario.initialCondition.airspeedKts = -1.0;
+  scenario.initialCondition.calibratedAirspeedMps = -1.0;
   requireInvalid(scenario, "initial_condition.airspeed_kts");
 
   scenario = {};
@@ -67,7 +71,7 @@ void TestScenarioValidation() {
   requireInvalid(scenario, "events[0].time_sec");
 
   scenario = {};
-  scenario.overshootLimitDeg = -1.0;
+  scenario.overshootLimitRad = -1.0;
   requireInvalid(scenario, "acceptance.overshoot_limit_deg");
 
   scenario = {};
@@ -93,20 +97,21 @@ void TestYamlRoundTrip() {
   sim::SimulationScenario source;
   source.name = "Edited YAML Scenario";
   source.controllerParameters = {"FW_RR_P", "FW_RR_I"};
-  source.initialCondition.altitudeFt = 4250.5;
-  source.initialCondition.airspeedKts = 87.25;
-  source.initialCondition.rollDeg = -3.5;
-  source.initialCondition.pitchDeg = 2.25;
-  source.initialCondition.headingDeg = 271.0;
+  source.initialCondition.altitudeAslM = math::FeetToMeters(4250.5);
+  source.initialCondition.calibratedAirspeedMps =
+      math::KnotsToMetersPerSecond(87.25);
+  source.initialCondition.rollRad = math::DegToRad(-3.5);
+  source.initialCondition.pitchRad = math::DegToRad(2.25);
+  source.initialCondition.headingRad = math::DegToRad(271.0);
   source.windEnabled = false;
   source.runTrim = false;
   source.trimMode = gnc::TrimMode::Ground;
   source.durationSec = 45.0;
   source.events.front().timeSec = 7.5;
-  source.events.front().command.rollDeg = -12.0;
-  source.settlingBandDeg = 0.25;
+  source.events.front().command.rollRad = math::DegToRad(-12.0);
+  source.settlingBandRad = math::DegToRad(0.25);
   source.settlingTimeLimitSec = 8.0;
-  source.overshootLimitDeg = 0.75;
+  source.overshootLimitRad = math::DegToRad(0.75);
   source.maxOscillationCycles = 3.0;
 
   const std::string yaml = sim::SimulationScenarioSerializer::Serialize(source);
@@ -206,7 +211,8 @@ void TestScenarioControllerFileLifecycle() {
   assert(std::filesystem::is_regular_file(validFile));
   assert(!controller.IsDirty());
 
-  controller.EditDraftForCompatibility().events.front().command.rollDeg = 9.0;
+  controller.EditDraftForCompatibility().events.front().command.rollRad =
+      math::DegToRad(9.0);
   assert(controller.IsDirty());
   assert(controller.Save());
   assert(!controller.IsDirty());
@@ -229,7 +235,8 @@ void TestScenarioControllerFileLifecycle() {
 
   assert(controller.Load(validFile));
   assert(controller.GetModel().draft.name == "Saved Scenario");
-  RequireNear(controller.GetModel().draft.events.front().command.rollDeg, 9.0);
+  RequireNear(controller.GetModel().draft.events.front().command.rollRad,
+      math::DegToRad(9.0));
   assert(!controller.IsDirty());
 
   assert(std::filesystem::remove(invalidFile));
@@ -242,12 +249,12 @@ void TestRepositoryScenarioAsset() {
   assert(controller.Load("roll_hold_5deg_30s.yaml"));
   RequireDefaultScenario(controller.GetModel().draft);
   assert(controller.GetModel().draft.controllerParameters
-      == std::vector<std::string>({"FW_R_TC",
-          "FW_RR_P",
-          "FW_RR_I",
-          "FW_RR_D",
-          "FW_RR_FF",
-          "FW_RR_IMAX"}));
+         == std::vector<std::string>({"FW_R_TC",
+             "FW_RR_P",
+             "FW_RR_I",
+             "FW_RR_D",
+             "FW_RR_FF",
+             "FW_RR_IMAX"}));
   assert(!controller.IsDirty());
 }
 
@@ -293,11 +300,11 @@ int main() {
 
   sim::SimulationScenario &edited = controller.EditDraftForCompatibility();
   edited.name = "Edited Scenario";
-  edited.initialCondition.altitudeFt = 1200.0;
+  edited.initialCondition.altitudeAslM = 1200.0;
   edited.windEnabled = true;
   edited.runTrim = false;
   edited.trimMode = gnc::TrimMode::Ground;
-  edited.events.front().command.rollDeg = -12.0;
+  edited.events.front().command.rollRad = math::DegToRad(-12.0);
   edited.maxOscillationCycles = 8.0;
 
   controller.ResetDefaults();

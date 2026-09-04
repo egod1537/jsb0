@@ -1,5 +1,6 @@
 #include "gui/windows/ScenarioWindow.hpp"
 
+#include "common/math/Math.hpp"
 #include "flightui/FlightUI.hpp"
 #include "sim/execution/ExecutionVariant.hpp"
 #include "sim/runtime/SimulationContracts.hpp"
@@ -68,17 +69,29 @@ void DrawInitialCondition(const sim::InitialCondition &condition) {
   UI::PropertyGridBuilder fields = MakeScenarioPropertyGrid("CurrentInitial");
   fields
       .Add("Latitude",
-          UI::ValueLabel("##Latitude", condition.latitudeDeg, "%.3f deg"))
+          UI::ValueLabel("##Latitude",
+              math::RadToDeg(condition.latitudeRad),
+              "%.3f deg"))
       .Add("Longitude",
-          UI::ValueLabel("##Longitude", condition.longitudeDeg, "%.3f deg"))
-      .Add("Altitude",
-          UI::ValueLabel("##Altitude", condition.altitudeFt, "%.3f ft"))
-      .Add("Airspeed",
-          UI::ValueLabel("##Airspeed", condition.airspeedKts, "%.3f kt"))
-      .Add("Roll", UI::ValueLabel("##Roll", condition.rollDeg, "%.3f deg"))
-      .Add("Pitch", UI::ValueLabel("##Pitch", condition.pitchDeg, "%.3f deg"))
+          UI::ValueLabel("##Longitude",
+              math::RadToDeg(condition.longitudeRad),
+              "%.3f deg"))
+      .Add("Altitude ASL",
+          UI::ValueLabel("##Altitude", condition.altitudeAslM, "%.3f m"))
+      .Add("CAS",
+          UI::ValueLabel("##Airspeed",
+              condition.calibratedAirspeedMps,
+              "%.3f m/s"))
+      .Add("Roll",
+          UI::ValueLabel(
+              "##Roll", math::RadToDeg(condition.rollRad), "%.3f deg"))
+      .Add("Pitch",
+          UI::ValueLabel(
+              "##Pitch", math::RadToDeg(condition.pitchRad), "%.3f deg"))
       .Add("Heading",
-          UI::ValueLabel("##Heading", condition.headingDeg, "%.3f deg"));
+          UI::ValueLabel("##Heading",
+              math::RadToDeg(condition.headingRad),
+              "%.3f deg"));
   static_cast<UI::UIElement>(fields).Render();
 }
 
@@ -106,7 +119,7 @@ void DrawEvents(const sim::SimulationScenario &scenario) {
         "%.3f s   %s = %.3f deg",
         event.timeSec,
         CommandTypeLabel(event.command.type),
-        event.command.rollDeg);
+        math::RadToDeg(event.command.rollRad));
     UI::Text(summary).Render();
   }
 }
@@ -118,14 +131,16 @@ void DrawAcceptance(const sim::SimulationScenario &scenario) {
   fields
       .Add("Settling Band",
           UI::ValueLabel("##SettlingBand",
-              scenario.settlingBandDeg,
+              math::RadToDeg(scenario.settlingBandRad),
               "%.3f deg"))
       .Add("Settling Limit",
           UI::ValueLabel("##SettlingLimit",
               scenario.settlingTimeLimitSec,
               "%.3f s"))
       .Add("Overshoot Limit",
-          UI::ValueLabel("##Overshoot", scenario.overshootLimitDeg, "%.3f deg"))
+          UI::ValueLabel("##Overshoot",
+              math::RadToDeg(scenario.overshootLimitRad),
+              "%.3f deg"))
       .Add("Oscillation Cycles",
           UI::ValueLabel("##Oscillation",
               scenario.maxOscillationCycles,

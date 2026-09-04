@@ -1,5 +1,6 @@
 #include "sim/StateLogger.hpp"
 
+#include "common/math/Math.hpp"
 #include "sim/Aircraft.hpp"
 #include "sim/AircraftState.hpp"
 
@@ -35,8 +36,8 @@ void StateLogger::ResetLogTimer() { nextLogTime_ = 0.0; }
 void StateLogger::PrintState() const {
   const AircraftState state = GetAircraft().GetAircraftState();
   std::cout << "t=" << state.simulationTimeSec
-            << " s, altitude=" << state.altitudeAglFt
-            << " ft, airspeed=" << state.calibratedAirspeedKts
-            << " kt, pitch=" << state.pitchDeg << " deg\n";
+            << " s, altitude=" << state.altitudeAglM
+            << " m AGL, airspeed=" << state.calibratedAirspeedMps
+            << " m/s CAS, pitch=" << math::RadToDeg(state.pitchRad) << " deg\n";
 }
 } // namespace sim

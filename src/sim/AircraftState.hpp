@@ -4,24 +4,25 @@ namespace sim {
 struct AircraftState {
   double simulationTimeSec = 0.0;
 
-  double altitudeAglFt = 0.0;
-  double calibratedAirspeedKts = 0.0;
+  double altitudeAglM = 0.0;
+  double altitudeAslM = 0.0;
+  double calibratedAirspeedMps = 0.0;
   double trueAirspeedMps = 0.0;
 
-  double rollDeg = 0.0;
-  double pitchDeg = 0.0;
-  double headingDeg = 0.0;
-  double courseDeg = 0.0;
-  double alphaDeg = 0.0;
-  double betaDeg = 0.0;
+  double rollRad = 0.0;
+  double pitchRad = 0.0;
+  double headingRad = 0.0;
+  double courseRad = 0.0;
+  double alphaRad = 0.0;
+  double betaRad = 0.0;
 
   double uMps = 0.0;
   double vMps = 0.0;
   double wMps = 0.0;
 
-  double pDegPerSec = 0.0;
-  double qDegPerSec = 0.0;
-  double rDegPerSec = 0.0;
+  double pRadPerSec = 0.0;
+  double qRadPerSec = 0.0;
+  double rRadPerSec = 0.0;
 };
 
 struct AircraftStateDerivative {
@@ -29,8 +30,8 @@ struct AircraftStateDerivative {
   double vDotMps2 = 0.0;
   double wDotMps2 = 0.0;
 
-  double pDotDegPerSec2 = 0.0;
-  double qDotDegPerSec2 = 0.0;
-  double rDotDegPerSec2 = 0.0;
+  double pDotRadPerSec2 = 0.0;
+  double qDotRadPerSec2 = 0.0;
+  double rDotRadPerSec2 = 0.0;
 };
 } // namespace sim

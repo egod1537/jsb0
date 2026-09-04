@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsb0.dev/contract/v2/index.schema.json",
+  "title": "JSB0 Contract Index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "scenario_schema", "parameters", "parameter_schema",
+    "parameter_set_schema", "capabilities", "variants", "artifacts",
+    "run_schema", "signals", "telemetry_descriptor"
+  ],
+  "properties": {
+    "version": {"const": "VERSION"},
+    "scenario_schema": {"const": "scenario/scenario.schema.json"},
+    "parameters": {"const": "execution/parameters.json"},
+    "parameter_schema": {"const": "execution/parameters.schema.json"},
+    "parameter_set_schema": {"const": "execution/parameter-set.schema.json"},
+    "capabilities": {"const": "execution/capabilities.json"},
+    "variants": {"const": "execution/variants.json"},
+    "artifacts": {"const": "execution/artifacts.json"},
+    "run_schema": {"const": "metadata/run.schema.json"},
+    "signals": {"const": "catalog/signals.yaml"},
+    "telemetry_descriptor": {"const": "jsb_telemetry_v1.pb"}
+  }
+}

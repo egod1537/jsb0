@@ -30,11 +30,11 @@ struct ScenarioLaunchRequested {
 enum class InitialConditionField {
   LatitudeDeg,
   LongitudeDeg,
-  AltitudeFt,
+  AltitudeAslM,
   RollDeg,
   PitchDeg,
   HeadingDeg,
-  AirspeedKts,
+  CalibratedAirspeedMps,
 };
 
 struct InitialConditionFieldChanged {

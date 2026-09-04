@@ -344,6 +344,9 @@ int main() {
   double linkedXAxisMax = 2.0;
   int clicks = 0;
   std::vector<int> plotCallbackOrder;
+  const ImVec4 explicitLineColor(0.15F, 0.35F, 0.75F, 1.0F);
+  bool explicitLineColorApplied = false;
+  bool plotLegendDisabled = false;
 
   ImGui::NewFrame();
 
@@ -435,9 +438,24 @@ int main() {
   UI::UIElement callbackPlot =
       UI::Plot("Callback Order")
           .Height(120.0F)
+          .LegendVisible(false)
           .Underlay([&plotCallbackOrder] { plotCallbackOrder.push_back(1); })
           .AddLine("Callback Line", xValues, yValues)
-          .Overlay([&plotCallbackOrder] { plotCallbackOrder.push_back(2); });
+          .AddLine("Explicit Color Line",
+              xView,
+              UI::DataView::From(yValues),
+              explicitLineColor)
+          .Overlay([&] {
+            plotCallbackOrder.push_back(2);
+            const ImPlotItem *item = ImPlot::GetItem("Explicit Color Line");
+            explicitLineColorApplied =
+                item != nullptr
+                && item->Color
+                       == ImGui::ColorConvertFloat4ToU32(explicitLineColor);
+            const ImPlotPlot *plot = ImPlot::GetCurrentPlot();
+            plotLegendDisabled =
+                plot != nullptr && (plot->Flags & ImPlotFlags_NoLegend) != 0;
+          });
   callbackPlot.Render();
   ImGui::End();
 
@@ -448,6 +466,8 @@ int main() {
   assert(isFoldOutOpen);
   assert(clicks == 0);
   assert(plotCallbackOrder == std::vector<int>({1, 2}));
+  assert(explicitLineColorApplied);
+  assert(plotLegendDisabled);
   assert(std::abs(linkedXAxisMin) < RangeTolerance);
   assert(std::abs(linkedXAxisMax - 2.0) < RangeTolerance);
 

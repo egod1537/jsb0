@@ -1,0 +1,13 @@
+{
+  "version": "VERSION",
+  "scenario_schema": "scenario/scenario.schema.json",
+  "parameters": "execution/parameters.json",
+  "parameter_schema": "execution/parameters.schema.json",
+  "parameter_set_schema": "execution/parameter-set.schema.json",
+  "capabilities": "execution/capabilities.json",
+  "variants": "execution/variants.json",
+  "artifacts": "execution/artifacts.json",
+  "run_schema": "metadata/run.schema.json",
+  "signals": "catalog/signals.yaml",
+  "telemetry_descriptor": "jsb_telemetry_v1.pb"
+}

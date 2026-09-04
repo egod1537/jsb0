@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsb0.dev/contract/v2/execution-parameters.schema.json",
+  "title": "JSB0 Tunable Runtime Parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "schema_version", "parameters"],
+  "properties": {
+    "contract_version": {"const": "2.0.0"},
+    "schema_version": {"const": 1},
+    "parameters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/parameter"}
+    }
+  },
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "display_name", "description", "module", "controller",
+        "type", "unit", "minimum", "maximum", "algorithm_default",
+        "default_value", "increment", "variants", "aircraft", "profiles",
+        "read_only", "experimental"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "display_name": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "module": {"type": "string", "minLength": 1},
+        "controller": {"type": "string", "minLength": 1},
+        "type": {"const": "number"},
+        "unit": {"type": "string"},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "algorithm_default": {"type": "number"},
+        "default_value": {"type": "number"},
+        "increment": {"type": "number", "exclusiveMinimum": 0},
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["baseline", "primary"]}
+        },
+        "aircraft": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"const": "c172x"}
+        },
+        "profiles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["c172x"],
+          "properties": {
+            "c172x": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value"],
+              "properties": {"value": {"type": "number"}}
+            }
+          }
+        },
+        "read_only": {"type": "boolean"},
+        "experimental": {"type": "boolean"}
+      }
+    }
+  }
+}

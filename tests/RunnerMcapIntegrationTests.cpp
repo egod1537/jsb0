@@ -128,7 +128,7 @@ void TestSuccessfulRunArtifactsAndSignals() {
   Require(result.exitCode == RunnerExitCode::Success,
       "runner failed: " + result.error);
   Require(result.status == "completed", "runner status is not completed");
-  Require(result.steps == 10, "runner produced an unexpected step count");
+  Require(result.steps == 12, "runner produced an unexpected step count");
 
   const std::filesystem::path manifestPath = output / "run.json";
   const std::filesystem::path mcapPath = output / "telemetry.mcap";
@@ -158,7 +158,7 @@ void TestSuccessfulRunArtifactsAndSignals() {
       "failed to open runner MCAP: " + reader.GetLastError());
   Require(reader.GetRunInfo().scenarioName == "Headless Smoke",
       "runner MCAP scenario metadata is incorrect");
-  Require(reader.GetRunInfo().simulationDtSec == 0.01,
+  Require(reader.GetRunInfo().simulationDtSec == sim::DefaultSimulationDtSec,
       "runner MCAP timestep metadata is incorrect");
   Require(reader.GetRunInfo().contractVersion == "2.0.0",
       "runner MCAP contract version is incorrect");
@@ -200,7 +200,7 @@ void TestSuccessfulRunArtifactsAndSignals() {
         "runner simulation event payload is invalid");
     if (event.type() == jsb::telemetry::v1::SIMULATION_EVENT_COMMAND_APPLIED) {
       foundScheduledCommand = true;
-      Require(event.sim_time_ns() == 20'000'000,
+      Require(event.sim_time_ns() == 25'000'000,
           "scenario command did not execute at its declared simulation time");
       Require(event.has_target_roll_rad(),
           "scenario command event omitted the resolved roll target");
@@ -208,7 +208,7 @@ void TestSuccessfulRunArtifactsAndSignals() {
   }
   Require(foundScheduledCommand,
       "runner MCAP did not record the scheduled scenario command");
-  Require(diagnostics.front().logTimeNanoseconds == 10'000'000,
+  Require(diagnostics.front().logTimeNanoseconds == 8'333'333,
       "runner MCAP does not start at the first simulation step");
   Require(diagnostics.back().logTimeNanoseconds == 100'000'000,
       "runner MCAP simulation time range is incorrect");
@@ -283,6 +283,15 @@ void TestOutputParameterFileConfiguresBaselineOnly() {
   const RunnerResult tunedResult = RunWithMcap(tunedOptions);
   Require(tunedResult.exitCode == RunnerExitCode::Success,
       "parameterized runner failed: " + tunedResult.error);
+  const std::string tunedManifest = ReadTextFile(tunedOutput / "run.json");
+  Require(tunedManifest.find("\"file\": \"parameters.yaml\"")
+              != std::string::npos,
+      "parameterized run metadata omits the parameter snapshot");
+  Require(tunedManifest.find("\"digest_sha256\": \"") != std::string::npos,
+      "parameterized run metadata omits the parameter digest");
+  Require(tunedManifest.find("\"variants\": [\"baseline\"]")
+              != std::string::npos,
+      "parameterized run metadata omits parameter variant applicability");
 
   McapRecordingReader defaultReader;
   McapRecordingReader tunedReader;
@@ -320,6 +329,55 @@ void TestOutputParameterFileConfiguresBaselineOnly() {
       "baseline parameter did not change baseline telemetry");
 }
 
+void TestInvalidParameterSetsAreRejected() {
+  TemporaryDirectory temporary;
+  const std::filesystem::path scenarioPath =
+      temporary.GetPath() / "parameter-validation-scenario.yaml";
+  {
+    std::ofstream scenario(scenarioPath);
+    scenario << ReadTextFile(JSB_TEST_HEADLESS_SCENARIO_PATH)
+             << "\ncontroller_parameters:\n  - FW_R_TC\n";
+  }
+  const auto runInvalid = [&](std::string_view directoryName,
+                              std::string_view contents) {
+    const std::filesystem::path output = temporary.GetPath() / directoryName;
+    std::filesystem::create_directories(output);
+    {
+      std::ofstream parameters(output / "parameters.yaml");
+      parameters << contents;
+    }
+    RunnerOptions options = MakeOptions(output);
+    options.scenarioPath = scenarioPath;
+    return RunWithMcap(options);
+  };
+
+  const RunnerResult unknown =
+      runInvalid("unknown", "controller_parameters:\n  FW_RR_P: 1.0\n");
+  Require(unknown.exitCode == RunnerExitCode::ScenarioLoadFailure
+              && unknown.error.find("not declared by the Scenario")
+                     != std::string::npos,
+      "runner accepted a parameter outside the Scenario whitelist");
+
+  const RunnerResult outOfRange =
+      runInvalid("out-of-range", "controller_parameters:\n  FW_R_TC: 9.0\n");
+  Require(outOfRange.exitCode == RunnerExitCode::SimulationInitializationFailure
+              && outOfRange.error.find("outside") != std::string::npos,
+      "runner accepted an out-of-range controller parameter");
+
+  const RunnerResult nonFinite =
+      runInvalid("non-finite", "controller_parameters:\n  FW_R_TC: .nan\n");
+  Require(nonFinite.exitCode == RunnerExitCode::ScenarioLoadFailure
+              && nonFinite.error.find("must be finite") != std::string::npos,
+      "runner accepted a non-finite controller parameter");
+
+  const RunnerResult unknownRoot = runInvalid("unknown-root",
+      "controller_parameters:\n  FW_R_TC: 0.4\nunexpected: true\n");
+  Require(unknownRoot.exitCode == RunnerExitCode::ScenarioLoadFailure
+              && unknownRoot.error.find("must contain only")
+                     != std::string::npos,
+      "runner accepted an unknown parameter-set root field");
+}
+
 void TestFailureManifestAndMcapOpenFailure() {
   TemporaryDirectory temporary;
 
@@ -331,6 +389,13 @@ void TestFailureManifestAndMcapOpenFailure() {
   Require(std::filesystem::is_regular_file(
               invalidScenario.outputDirectory / "run.json"),
       "missing scenario did not produce run.json");
+  const std::string failureManifest =
+      ReadTextFile(invalidScenario.outputDirectory / "run.json");
+  Require(failureManifest.find("\"category\": \"scenario\"")
+                  != std::string::npos
+              && failureManifest.find("\"code\": \"SCENARIO_INVALID\"")
+                     != std::string::npos,
+      "failure run metadata omits the stable scenario failure code");
 
   const std::filesystem::path blockedOutput = temporary.GetPath() / "blocked";
   std::filesystem::create_directories(blockedOutput / "telemetry.mcap");
@@ -373,7 +438,7 @@ void TestComparisonExecutionArtifactsAndSynchronization() {
   const RunnerResult result = RunWithMcap(options);
   Require(result.exitCode == RunnerExitCode::Success,
       "comparison execution failed: " + result.error);
-  Require(result.steps == 900 && result.simulationTimeSec == 30.0,
+  Require(result.steps == 3600 && result.simulationTimeSec == 30.0,
       "comparison did not use the shared scenario horizon");
   Require(result.baselineStatus == "completed"
               && result.primaryStatus == "completed",
@@ -411,9 +476,9 @@ void TestComparisonExecutionArtifactsAndSynchronization() {
       reader.ReadMessages("/jsb/baseline/aircraft/state");
   const auto primaryAircraft =
       reader.ReadMessages("/jsb/primary/aircraft/state");
-  Require(baseline.size() == 900 && primary.size() == 900,
+  Require(baseline.size() == 3600 && primary.size() == 3600,
       "comparison MCAP does not contain both complete trajectories");
-  Require(baselineAircraft.size() == 900 && primaryAircraft.size() == 900,
+  Require(baselineAircraft.size() == 3600 && primaryAircraft.size() == 3600,
       "comparison MCAP does not contain both aircraft trajectories");
   for (std::size_t index = 0; index < baseline.size(); ++index) {
     Require(baseline[index].logTimeNanoseconds
@@ -680,6 +745,7 @@ void TestVariantParameterBoundary() {
 int main() {
   TestSuccessfulRunArtifactsAndSignals();
   TestOutputParameterFileConfiguresBaselineOnly();
+  TestInvalidParameterSetsAreRejected();
   TestFailureManifestAndMcapOpenFailure();
   TestInterruptedRunFinalizesMcap();
   TestComparisonExecutionArtifactsAndSynchronization();

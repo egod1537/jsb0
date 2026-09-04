@@ -1,5 +1,7 @@
 #include "sim/jsbsim/FDMStateAccess.hpp"
 
+#include "common/math/Math.hpp"
+
 #include <FGFDMExec.h>
 #include <algorithm>
 #include <math/FGQuaternion.h>
@@ -27,11 +29,11 @@ void ExtractKinematicState(const JSBSim::FGFDMExec &fdmExec,
 
   state.latitudeRad = propagate->GetLatitude();
   state.longitudeRad = propagate->GetLongitude();
-  state.altitudeAslFt = propagate->GetAltitudeASL();
-  state.bodyVelocityFps = {
-      propagate->GetUVW(FirstAxis),
-      propagate->GetUVW(SecondAxis),
-      propagate->GetUVW(ThirdAxis),
+  state.altitudeAslM = math::FeetToMeters(propagate->GetAltitudeASL());
+  state.bodyVelocityMps = {
+      math::FeetPerSecondToMetersPerSecond(propagate->GetUVW(FirstAxis)),
+      math::FeetPerSecondToMetersPerSecond(propagate->GetUVW(SecondAxis)),
+      math::FeetPerSecondToMetersPerSecond(propagate->GetUVW(ThirdAxis)),
   };
   state.attitudeRad = {
       propagate->GetEuler(FirstAxis),
@@ -54,7 +56,7 @@ void ApplyKinematicState(JSBSim::FGFDMExec &fdmExec,
 
   propagate->SetLatitude(state.latitudeRad);
   propagate->SetLongitude(state.longitudeRad);
-  propagate->SetAltitudeASL(state.altitudeAslFt);
+  propagate->SetAltitudeASL(math::MetersToFeet(state.altitudeAslM));
 
   const JSBSim::FGQuaternion localAttitude(state.attitudeRad[0],
       state.attitudeRad[1],
@@ -65,7 +67,8 @@ void ApplyKinematicState(JSBSim::FGFDMExec &fdmExec,
 
   for (int axis = FirstAxis; axis <= ThirdAxis; ++axis) {
     const auto index = static_cast<std::size_t>(axis - FirstAxis);
-    propagate->SetUVW(axis, state.bodyVelocityFps[index]);
+    propagate->SetUVW(axis,
+        math::MetersPerSecondToFeetPerSecond(state.bodyVelocityMps[index]));
     propagate->SetPQR(axis, state.bodyAngularRatesRadPerSec[index]);
   }
 }
@@ -176,20 +179,22 @@ void ExtractEnvironmentState(const JSBSim::FGFDMExec &fdmExec,
     sim::FDMEnvironmentState &state) {
   const auto atmosphere = fdmExec.GetAtmosphere();
   if (atmosphere != nullptr) {
-    state.seaLevelTemperatureRankine = atmosphere->GetTemperatureSL();
-    state.seaLevelPressurePsf =
-        atmosphere->GetPressureSL(JSBSim::FGAtmosphere::ePSF);
+    state.seaLevelTemperatureK =
+        math::RankineToKelvin(atmosphere->GetTemperatureSL());
+    state.seaLevelPressurePa = math::PoundsPerSquareFootToPascals(
+        atmosphere->GetPressureSL(JSBSim::FGAtmosphere::ePSF));
 
     const auto standardAtmosphere =
         std::dynamic_pointer_cast<JSBSim::FGStandardAtmosphere>(atmosphere);
     if (standardAtmosphere != nullptr) {
       state.hasStandardAtmosphere = true;
-      state.temperatureBiasRankine = standardAtmosphere->GetTemperatureBias(
-          JSBSim::FGAtmosphere::eRankine);
-      state.seaLevelGradedTemperatureDeltaRankine =
+      state.temperatureBiasK = math::RankineToKelvin(
+          standardAtmosphere->GetTemperatureBias(
+              JSBSim::FGAtmosphere::eRankine));
+      state.seaLevelGradedTemperatureDeltaK = math::RankineToKelvin(
           standardAtmosphere->GetTemperature(0.0)
-          - standardAtmosphere->GetStdTemperature(0.0)
-          - state.temperatureBiasRankine;
+          - standardAtmosphere->GetStdTemperature(0.0))
+          - state.temperatureBiasK;
       state.vaporMassFractionPpm =
           standardAtmosphere->GetVaporMassFractionPPM();
     }
@@ -199,20 +204,25 @@ void ExtractEnvironmentState(const JSBSim::FGFDMExec &fdmExec,
   if (winds != nullptr) {
     for (int axis = FirstAxis; axis <= ThirdAxis; ++axis) {
       const auto index = static_cast<std::size_t>(axis - FirstAxis);
-      state.windNedFps[index] = winds->GetWindNED(axis);
-      state.gustNedFps[index] = winds->GetGustNED(axis);
-      state.turbulenceNedFps[index] = winds->GetTurbNED(axis);
+      state.windNedMps[index] =
+          math::FeetPerSecondToMetersPerSecond(winds->GetWindNED(axis));
+      state.gustNedMps[index] =
+          math::FeetPerSecondToMetersPerSecond(winds->GetGustNED(axis));
+      state.turbulenceNedMps[index] =
+          math::FeetPerSecondToMetersPerSecond(winds->GetTurbNED(axis));
     }
     state.turbulenceType = static_cast<int>(winds->GetTurbType());
     state.turbulenceGain = winds->GetTurbGain();
     state.turbulenceRate = winds->GetTurbRate();
     state.turbulenceRhythmicity = winds->GetRhythmicity();
-    state.windSpeedAt20FtFps = winds->GetWindspeed20ft();
+    state.windSpeedAt20FtMps =
+        math::FeetPerSecondToMetersPerSecond(winds->GetWindspeed20ft());
   }
 
   const auto propagate = fdmExec.GetPropagate();
   if (propagate != nullptr) {
-    state.terrainElevationFt = propagate->GetTerrainElevation();
+    state.terrainElevationM =
+        math::FeetToMeters(propagate->GetTerrainElevation());
   }
 
   const auto inertial = fdmExec.GetInertial();
@@ -231,42 +241,48 @@ void ApplyEnvironmentState(JSBSim::FGFDMExec &fdmExec,
     if (state.hasStandardAtmosphere && standardAtmosphere != nullptr) {
       standardAtmosphere->ResetSLTemperature();
       standardAtmosphere->SetTemperatureBias(JSBSim::FGAtmosphere::eRankine,
-          state.temperatureBiasRankine);
+          math::KelvinToRankine(state.temperatureBiasK));
       standardAtmosphere->SetSLTemperatureGradedDelta(
           JSBSim::FGAtmosphere::eRankine,
-          state.seaLevelGradedTemperatureDeltaRankine);
+          math::KelvinToRankine(state.seaLevelGradedTemperatureDeltaK));
       standardAtmosphere->SetVaporMassFractionPPM(state.vaporMassFractionPpm);
     } else {
-      atmosphere->SetTemperatureSL(state.seaLevelTemperatureRankine,
+      atmosphere->SetTemperatureSL(
+          math::KelvinToRankine(state.seaLevelTemperatureK),
           JSBSim::FGAtmosphere::eRankine);
     }
     atmosphere->SetPressureSL(JSBSim::FGAtmosphere::ePSF,
-        state.seaLevelPressurePsf);
+        math::PascalsToPoundsPerSquareFoot(state.seaLevelPressurePa));
   }
 
   const auto winds = fdmExec.GetWinds();
   if (winds != nullptr) {
-    winds->SetWindNED(state.windNedFps[0],
-        state.windNedFps[1],
-        state.windNedFps[2]);
-    winds->SetGustNED(state.gustNedFps[0],
-        state.gustNedFps[1],
-        state.gustNedFps[2]);
+    winds->SetWindNED(
+        math::MetersPerSecondToFeetPerSecond(state.windNedMps[0]),
+        math::MetersPerSecondToFeetPerSecond(state.windNedMps[1]),
+        math::MetersPerSecondToFeetPerSecond(state.windNedMps[2]));
+    winds->SetGustNED(
+        math::MetersPerSecondToFeetPerSecond(state.gustNedMps[0]),
+        math::MetersPerSecondToFeetPerSecond(state.gustNedMps[1]),
+        math::MetersPerSecondToFeetPerSecond(state.gustNedMps[2]));
     for (int axis = FirstAxis; axis <= ThirdAxis; ++axis) {
       const auto index = static_cast<std::size_t>(axis - FirstAxis);
-      winds->SetTurbNED(axis, state.turbulenceNedFps[index]);
+      winds->SetTurbNED(axis,
+          math::MetersPerSecondToFeetPerSecond(
+              state.turbulenceNedMps[index]));
     }
     winds->SetTurbType(
         static_cast<JSBSim::FGWinds::tType>(state.turbulenceType));
     winds->SetTurbGain(state.turbulenceGain);
     winds->SetTurbRate(state.turbulenceRate);
     winds->SetRhythmicity(state.turbulenceRhythmicity);
-    winds->SetWindspeed20ft(state.windSpeedAt20FtFps);
+    winds->SetWindspeed20ft(
+        math::MetersPerSecondToFeetPerSecond(state.windSpeedAt20FtMps));
   }
 
   const auto propagate = fdmExec.GetPropagate();
   if (propagate != nullptr) {
-    propagate->SetTerrainElevation(state.terrainElevationFt);
+    propagate->SetTerrainElevation(math::MetersToFeet(state.terrainElevationM));
   }
 
   const auto inertial = fdmExec.GetInertial();

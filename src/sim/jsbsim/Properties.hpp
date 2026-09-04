@@ -37,6 +37,7 @@ public:
   DistanceView(const Properties &properties, const char *ftPath);
 
   double Ft() const;
+  double M() const;
 
 private:
   const Properties &properties_;
@@ -48,6 +49,7 @@ public:
   MutableDistanceView(Properties &properties, const char *ftPath);
 
   double Ft() const;
+  double M() const;
   void SetFt(double value) const;
 
 private:
@@ -163,6 +165,7 @@ public:
   TimeView SimTime() const;
   MutableDistanceView AltitudeAgl();
   DistanceView AltitudeAgl() const;
+  DistanceView AltitudeAsl() const;
   AngleView Latitude() const;
   AngleView Longitude() const;
   DistanceView RadiusToVehicle() const;

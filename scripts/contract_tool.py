@@ -29,6 +29,7 @@ REQUIRED_SIGNALS = {
     "control.commanded_roll_rate",
     "actuator.aileron",
 }
+KNOWN_UNITS = {"ns", "rad", "rad/s", "normalized"}
 
 
 class ContractError(RuntimeError):
@@ -156,8 +157,26 @@ def type_matches(instance: Any, expected: str) -> bool:
     return True
 
 
-def validate_instance(instance: Any, schema: dict[str, Any], location: str = "$") -> list[str]:
+def validate_instance(
+    instance: Any,
+    schema: dict[str, Any],
+    location: str = "$",
+    root_schema: dict[str, Any] | None = None,
+) -> list[str]:
     errors: list[str] = []
+    if root_schema is None:
+        root_schema = schema
+    reference = schema.get("$ref")
+    if reference:
+        if not reference.startswith("#/"):
+            return [f"{location}: unsupported schema reference {reference}"]
+        resolved: Any = root_schema
+        for component in reference[2:].split("/"):
+            component = component.replace("~1", "/").replace("~0", "~")
+            if not isinstance(resolved, dict) or component not in resolved:
+                return [f"{location}: unresolved schema reference {reference}"]
+            resolved = resolved[component]
+        return validate_instance(instance, resolved, location, root_schema)
     if "const" in schema and instance != schema["const"]:
         errors.append(f"{location}: expected constant {schema['const']!r}")
     if "enum" in schema and instance not in schema["enum"]:
@@ -176,7 +195,9 @@ def validate_instance(instance: Any, schema: dict[str, Any], location: str = "$"
                     errors.append(f"{location}: unexpected property {key}")
         for key, value in instance.items():
             if key in properties:
-                errors.extend(validate_instance(value, properties[key], f"{location}.{key}"))
+                errors.extend(
+                    validate_instance(value, properties[key], f"{location}.{key}", root_schema)
+                )
     if isinstance(instance, list):
         if len(instance) < schema.get("minItems", 0):
             errors.append(f"{location}: array is shorter than minItems")
@@ -188,7 +209,9 @@ def validate_instance(instance: Any, schema: dict[str, Any], location: str = "$"
         item_schema = schema.get("items")
         if item_schema:
             for index, value in enumerate(instance):
-                errors.extend(validate_instance(value, item_schema, f"{location}[{index}]"))
+                errors.extend(
+                    validate_instance(value, item_schema, f"{location}[{index}]", root_schema)
+                )
     if isinstance(instance, str):
         if len(instance) < schema.get("minLength", 0):
             errors.append(f"{location}: string is shorter than minLength")
@@ -203,9 +226,104 @@ def validate_instance(instance: Any, schema: dict[str, Any], location: str = "$"
             errors.append(f"{location}: number must be finite")
         if "minimum" in schema and instance < schema["minimum"]:
             errors.append(f"{location}: value is below minimum")
+        if "maximum" in schema and instance > schema["maximum"]:
+            errors.append(f"{location}: value is above maximum")
         if "exclusiveMinimum" in schema and instance <= schema["exclusiveMinimum"]:
             errors.append(f"{location}: value is not above exclusiveMinimum")
     return errors
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ContractError(f"{path}: root must be an object")
+    return value
+
+
+def validate_parameter_contract(
+    contract_root: Path,
+    parameters: dict[str, Any],
+    parameter_set_schema: dict[str, Any],
+    variants: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    definitions = parameters.get("parameters", [])
+    identifiers = [entry.get("id") for entry in definitions if isinstance(entry, dict)]
+    if len(identifiers) != len(set(identifiers)):
+        errors.append("execution parameter IDs must be unique")
+    supported_variants = set(variants.get("variants", []))
+    known_units = {"s", "deg/s", "%/rad/s", "%/rad", "normalized"}
+    by_id: dict[str, dict[str, Any]] = {}
+    for index, definition in enumerate(definitions):
+        if not isinstance(definition, dict):
+            continue
+        identifier = definition.get("id")
+        if isinstance(identifier, str):
+            by_id[identifier] = definition
+        minimum = definition.get("minimum")
+        maximum = definition.get("maximum")
+        algorithm_default = definition.get("algorithm_default")
+        default_value = definition.get("default_value")
+        values = [algorithm_default, default_value]
+        profiles = definition.get("profiles", {})
+        if isinstance(profiles, dict):
+            values.extend(
+                profile.get("value")
+                for profile in profiles.values()
+                if isinstance(profile, dict)
+            )
+        if all(isinstance(value, (int, float)) for value in (minimum, maximum)):
+            if minimum > maximum:
+                errors.append(f"parameters[{index}] minimum exceeds maximum")
+            for value in values:
+                if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                    errors.append(f"parameters[{index}] contains a non-finite default")
+                elif value < minimum or value > maximum:
+                    errors.append(f"parameters[{index}] default/profile value is out of range")
+        profile_default = profiles.get("c172x", {}).get("value") if isinstance(profiles, dict) else None
+        if default_value != profile_default:
+            errors.append(f"parameters[{index}] default_value must equal the c172x profile")
+        if not set(definition.get("variants", [])).issubset(supported_variants):
+            errors.append(f"parameters[{index}] references an unknown execution variant")
+        if definition.get("unit") not in known_units:
+            errors.append(f"parameters[{index}] uses an unknown unit")
+
+    parameter_properties = (
+        parameter_set_schema.get("properties", {})
+        .get("controller_parameters", {})
+        .get("properties", {})
+    )
+    if set(parameter_properties) != set(by_id):
+        errors.append("parameter-set schema IDs do not match parameters.json IDs")
+    for identifier, definition in by_id.items():
+        value_schema = parameter_properties.get(identifier, {})
+        if value_schema.get("minimum") != definition.get("minimum"):
+            errors.append(f"parameter-set minimum differs for {identifier}")
+        if value_schema.get("maximum") != definition.get("maximum"):
+            errors.append(f"parameter-set maximum differs for {identifier}")
+
+    for scenario_path in (
+        list((contract_root / "examples/scenario").glob("*.yaml"))
+        + list((contract_root.parent / "scenarios").glob("*.yaml"))
+    ):
+        scenario = load_yaml_mapping(scenario_path)
+        unknown = set(scenario.get("controller_parameters", [])) - set(by_id)
+        if unknown:
+            errors.append(f"{scenario_path}: whitelist references unknown IDs {sorted(unknown)}")
+    return errors
+
+
+def verify_generated_parameters(root: Path, generated: Path) -> None:
+    for filename in ("parameters.json", "parameter-set.schema.json"):
+        committed_path = root / "contract/execution" / filename
+        generated_path = generated / filename
+        if not generated_path.is_file():
+            raise ContractError(f"generated parameter contract is missing {filename}")
+        if committed_path.read_bytes() != generated_path.read_bytes():
+            raise ContractError(
+                f"{filename} differs from C++ metadata; rebuild the committed export"
+            )
+    print("parameter contract matches C++ runtime metadata")
 
 
 def validate_execution_metadata(metadata: dict[str, Any]) -> list[str]:
@@ -265,30 +383,96 @@ def validate_contract(root: Path, protoc: Path, output: Path) -> None:
     if not re.fullmatch(r"[1-9]\d*\.\d+\.\d+", version):
         raise ContractError("VERSION must be a semantic version with a non-zero major")
 
-    scenario_schema = json.loads((contract_root / "scenario/scenario.schema.json").read_text(encoding="utf-8"))
-    metadata_schema = json.loads((contract_root / "metadata/run.schema.json").read_text(encoding="utf-8"))
-    variants_schema = json.loads((contract_root / "execution/variants.schema.json").read_text(encoding="utf-8"))
-    capabilities_schema = json.loads((contract_root / "execution/capabilities.schema.json").read_text(encoding="utf-8"))
-    for name, schema in (("scenario", scenario_schema), ("metadata", metadata_schema), ("execution variants", variants_schema), ("execution capabilities", capabilities_schema)):
+    scenario_schema = load_json(contract_root / "scenario/scenario.schema.json")
+    metadata_schema = load_json(contract_root / "metadata/run.schema.json")
+    variants_schema = load_json(contract_root / "execution/variants.schema.json")
+    capabilities_schema = load_json(contract_root / "execution/capabilities.schema.json")
+    parameters_schema = load_json(contract_root / "execution/parameters.schema.json")
+    parameter_set_schema = load_json(contract_root / "execution/parameter-set.schema.json")
+    artifacts_schema = load_json(contract_root / "execution/artifacts.schema.json")
+    index_schema = load_json(contract_root / "index.schema.json")
+    schemas = (
+        ("scenario", scenario_schema),
+        ("metadata", metadata_schema),
+        ("execution variants", variants_schema),
+        ("execution capabilities", capabilities_schema),
+        ("execution parameters", parameters_schema),
+        ("parameter set", parameter_set_schema),
+        ("execution artifacts", artifacts_schema),
+        ("contract index", index_schema),
+    )
+    for name, schema in schemas:
         if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
             raise ContractError(f"{name} schema must declare JSON Schema draft 2020-12")
 
     scenario = load_yaml_mapping(contract_root / "examples/scenario/roll_hold.yaml")
-    metadata = json.loads((contract_root / "examples/metadata/run.json").read_text(encoding="utf-8"))
-    variants = json.loads((contract_root / "execution/variants.json").read_text(encoding="utf-8"))
-    capabilities = json.loads((contract_root / "execution/capabilities.json").read_text(encoding="utf-8"))
+    metadata = load_json(contract_root / "examples/metadata/run.json")
+    variants = load_json(contract_root / "execution/variants.json")
+    capabilities = load_json(contract_root / "execution/capabilities.json")
+    parameters = load_json(contract_root / "execution/parameters.json")
+    artifacts = load_json(contract_root / "execution/artifacts.json")
+    index = load_json(contract_root / "index.json")
+    parameter_set = load_yaml_mapping(
+        contract_root / "examples/execution/parameters.yaml"
+    )
     errors = validate_instance(scenario, scenario_schema)
     errors.extend(validate_instance(metadata, metadata_schema))
     errors.extend(validate_instance(variants, variants_schema))
     errors.extend(validate_instance(capabilities, capabilities_schema))
+    errors.extend(validate_instance(parameters, parameters_schema))
+    errors.extend(validate_instance(parameter_set, parameter_set_schema))
+    errors.extend(validate_instance(artifacts, artifacts_schema))
+    errors.extend(validate_instance(index, index_schema))
     if variants.get("variants") != ["baseline", "primary"]:
         errors.append("$.variants must expose baseline and primary in canonical order")
-    if capabilities != {
-        "modes": ["compare"],
-        "variants": ["baseline", "primary"],
-        "compare_variants": ["baseline", "primary"],
-    }:
+    if capabilities.get("modes") != ["compare"] or capabilities.get(
+        "compare_variants"
+    ) != ["baseline", "primary"]:
         errors.append("execution capabilities do not expose canonical modes and variants")
+    if capabilities.get("variants") != variants.get("variants"):
+        errors.append("execution capability variants differ from variants.json")
+    if capabilities.get("contract_major") != int(version.split(".", 1)[0]):
+        errors.append("execution capability contract_major differs from VERSION")
+    if capabilities.get("scenario_contract", {}).get("schema_version") != (
+        scenario_schema.get("properties", {}).get("schema_version", {}).get("const")
+    ):
+        errors.append("execution capability scenario schema version is inconsistent")
+    if capabilities.get("telemetry_contract", {}).get("schema_version") != 1:
+        errors.append("execution capability telemetry schema version is inconsistent")
+    artifact_manifest = capabilities.get("artifact_manifest")
+    if artifact_manifest != "artifacts.json" or not (
+        contract_root / "execution" / str(artifact_manifest)
+    ).is_file():
+        errors.append("execution capability artifact manifest is invalid")
+    errors.extend(
+        validate_parameter_contract(
+            contract_root, parameters, parameter_set_schema, variants
+        )
+    )
+    invalid_parameter_sets = (
+        {"controller_parameters": {"UNKNOWN_PARAMETER": 1.0}},
+        {"controller_parameters": {"FW_R_TC": -1.0}},
+        {"controller_parameters": {"FW_R_TC": float("nan")}},
+        {"controller_parameters": {}, "unexpected": True},
+    )
+    for invalid_parameter_set in invalid_parameter_sets:
+        if not validate_instance(invalid_parameter_set, parameter_set_schema):
+            errors.append("parameter-set schema accepted a required invalid fixture")
+    indexed_paths = [value for key, value in index.items() if key != "telemetry_descriptor"]
+    for relative in indexed_paths:
+        if not isinstance(relative, str) or Path(relative).is_absolute() or ".." in Path(relative).parts:
+            errors.append(f"contract index contains an invalid relative path: {relative!r}")
+        elif not (contract_root / relative).is_file():
+            errors.append(f"contract index references a missing file: {relative}")
+    artifact_types: set[str] = set()
+    artifact_paths: set[str] = set()
+    for artifact in artifacts.get("artifacts", []):
+        artifact_type = artifact.get("type")
+        artifact_path = artifact.get("path")
+        if artifact_type in artifact_types or artifact_path in artifact_paths:
+            errors.append("artifact types and paths must be unique")
+        artifact_types.add(artifact_type)
+        artifact_paths.add(artifact_path)
     errors.extend(validate_execution_metadata(metadata))
     scenario_digest = hashlib.sha256(
         (contract_root / "examples/scenario/roll_hold.yaml").read_bytes()
@@ -330,9 +514,14 @@ def validate_contract(root: Path, protoc: Path, output: Path) -> None:
         if not isinstance(definition, dict):
             errors.append(f"signal {logical_name} must be a mapping")
             continue
-        for key in ("topic", "field", "type", "unit", "frame", "convention", "required"):
+        for key in (
+            "topic", "field", "type", "unit", "frame", "sign",
+            "convention", "description", "group", "required",
+        ):
             if key not in definition:
                 errors.append(f"signal {logical_name} is missing {key}")
+        if definition.get("unit") not in KNOWN_UNITS:
+            errors.append(f"signal {logical_name} uses an unknown unit")
         topic = definition.get("topic")
         topic_definition = topics.get(topic, {}) if isinstance(topics, dict) else {}
         message = topic_definition.get("message") if isinstance(topic_definition, dict) else None
@@ -362,12 +551,46 @@ def validate_contract(root: Path, protoc: Path, output: Path) -> None:
     print(f"contract {version}: validation passed")
 
 
-def export_contract(root: Path, output: Path) -> None:
+def export_contract(root: Path, protoc: Path, output: Path) -> None:
     source = root / "contract"
     if output.exists():
         shutil.rmtree(output)
     shutil.copytree(source, output, ignore=shutil.ignore_patterns("tests", "__pycache__"))
+    run_protoc(output, protoc, output, python=False)
     print(f"exported contract to {output}")
+
+
+def validate_export(output: Path, protoc: Path) -> None:
+    index = load_json(output / "index.json")
+    version_path = output / index["version"]
+    if not re.fullmatch(r"[1-9]\d*\.\d+\.\d+", version_path.read_text(encoding="utf-8").strip()):
+        raise ContractError("exported contract version is invalid")
+    for key, relative in index.items():
+        if key == "version":
+            continue
+        path = output / relative
+        if not path.is_file():
+            raise ContractError(f"exported contract is missing {relative}")
+        if key.endswith("schema") or key in {"parameters", "capabilities", "variants", "artifacts"}:
+            if path.suffix == ".json":
+                json.loads(path.read_text(encoding="utf-8"))
+    descriptor = output / index["telemetry_descriptor"]
+    if descriptor.stat().st_size == 0:
+        raise ContractError("exported telemetry descriptor is empty")
+    decoded = subprocess.run(
+        [str(protoc), "--decode_raw"],
+        input=descriptor.read_bytes(),
+        capture_output=True,
+    )
+    if decoded.returncode != 0:
+        raise ContractError("exported telemetry descriptor cannot be decoded")
+    for proto_file in PROTO_FILES:
+        if proto_file.encode("utf-8") not in decoded.stdout:
+            raise ContractError(
+                f"exported telemetry descriptor is missing {proto_file}"
+            )
+    load_yaml_mapping(output / index["signals"])
+    print(f"standalone consumer validated exported contract {output}")
 
 
 def validate_run_metadata(root: Path, run_json: Path) -> None:
@@ -395,7 +618,14 @@ def main() -> int:
         subparser.add_argument("--output", type=Path, required=True)
     export_parser = subparsers.add_parser("export")
     export_parser.add_argument("--root", type=Path, required=True)
+    export_parser.add_argument("--protoc", type=Path, required=True)
     export_parser.add_argument("--output", type=Path, required=True)
+    verify_parser = subparsers.add_parser("verify-parameters")
+    verify_parser.add_argument("--root", type=Path, required=True)
+    verify_parser.add_argument("--generated", type=Path, required=True)
+    consumer_parser = subparsers.add_parser("validate-export")
+    consumer_parser.add_argument("--output", type=Path, required=True)
+    consumer_parser.add_argument("--protoc", type=Path, required=True)
     run_parser = subparsers.add_parser("validate-run")
     run_parser.add_argument("--root", type=Path, required=True)
     run_parser.add_argument("--run-json", type=Path, required=True)
@@ -412,7 +642,17 @@ def main() -> int:
             )
             print(f"generated Python contract types in {arguments.output.resolve()}")
         elif arguments.command == "export":
-            export_contract(arguments.root.resolve(), arguments.output.resolve())
+            export_contract(
+                arguments.root.resolve(),
+                arguments.protoc.resolve(),
+                arguments.output.resolve(),
+            )
+        elif arguments.command == "verify-parameters":
+            verify_generated_parameters(
+                arguments.root.resolve(), arguments.generated.resolve()
+            )
+        elif arguments.command == "validate-export":
+            validate_export(arguments.output.resolve(), arguments.protoc.resolve())
         else:
             validate_run_metadata(
                 arguments.root.resolve(), arguments.run_json.resolve()

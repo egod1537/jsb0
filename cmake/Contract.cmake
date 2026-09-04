@@ -130,7 +130,11 @@ add_custom_target(contract_export
     "${PROJECT_SOURCE_DIR}/scripts/contract_tool.py"
     export
     --root "${PROJECT_SOURCE_DIR}"
+    --protoc "$<TARGET_FILE:protobuf::protoc>"
     --output "${PROJECT_BINARY_DIR}/dist/contract"
+  DEPENDS
+    protobuf::protoc
+    ${JSB_CONTRACT_PROTO_PATHS}
   COMMENT "Exporting JSB0 Runtime contract artifact"
   VERBATIM
 )

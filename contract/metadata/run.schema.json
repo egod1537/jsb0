@@ -44,6 +44,16 @@
       },
       "required": ["variants"]
     },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "digest_sha256", "variants"],
+      "properties": {
+        "file": {"const": "parameters.yaml"},
+        "digest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "variants": {"type": "array", "const": ["baseline"]}
+      }
+    },
     "results": {
       "type": "object",
       "additionalProperties": false,
@@ -62,7 +72,29 @@
     "wall_time_s": {"type": "number", "minimum": 0},
     "realtime_factor": {"type": "number", "minimum": 0},
     "steps": {"type": "integer", "minimum": 0},
-    "error": {"type": "string"}
+    "error": {"type": "string"},
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "code", "message", "simulation_time_s"],
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["invocation", "scenario", "runtime", "artifact", "interruption"]
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_ARGUMENTS", "SCENARIO_INVALID",
+            "RUNTIME_INITIALIZATION_FAILED", "RUNTIME_EXECUTION_FAILED",
+            "ARTIFACT_WRITE_FAILED", "RUN_INTERRUPTED", "GENERAL_FAILURE"
+          ]
+        },
+        "message": {"type": "string", "minLength": 1},
+        "failing_variant": {"type": "string", "enum": ["baseline", "primary"]},
+        "simulation_time_s": {"type": "number", "minimum": 0}
+      }
+    }
   },
   "$defs": {
     "variantResult": {

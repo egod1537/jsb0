@@ -1,16 +1,16 @@
 #include "sim/gnc/autopilot/AutopilotFactory.hpp"
 
+#include "sim/gnc/autopilot/experimental/ExperimentalAutopilotFactory.hpp"
 #include "sim/gnc/autopilot/IAutopilot.hpp"
-#include "sim/gnc/autopilot/MyAutopilot.hpp"
-#include "sim/gnc/autopilot/PX4Autopilot.hpp"
+#include "sim/gnc/autopilot/px4/Px4AutopilotFactory.hpp"
 
 namespace gnc {
 std::unique_ptr<IAutopilot> CreateAutopilot(AutopilotKind kind) {
   switch (kind) {
   case AutopilotKind::Primary:
-    return std::make_unique<MyAutopilot>();
+    return CreateExperimentalAutopilot();
   case AutopilotKind::Baseline:
-    return std::make_unique<PX4Autopilot>();
+    return CreateC172xPx4Autopilot();
   }
   return nullptr;
 }
@@ -39,10 +39,10 @@ bool TryParseAutopilotKind(std::string_view value, AutopilotKind &kind) {
 
 std::optional<AutopilotKind> IdentifyAutopilotKind(
     const IAutopilot &autopilot) {
-  if (dynamic_cast<const MyAutopilot *>(&autopilot) != nullptr) {
+  if (IsExperimentalAutopilot(autopilot)) {
     return AutopilotKind::Primary;
   }
-  if (dynamic_cast<const PX4Autopilot *>(&autopilot) != nullptr) {
+  if (IsPx4Autopilot(autopilot)) {
     return AutopilotKind::Baseline;
   }
   return std::nullopt;

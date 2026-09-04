@@ -6,8 +6,63 @@
   "additionalProperties": false,
   "required": ["modes", "variants", "compare_variants"],
   "properties": {
+    "contract_major": {"const": 2},
     "modes": {"type": "array", "const": ["compare"]},
     "variants": {"type": "array", "const": ["baseline", "primary"]},
-    "compare_variants": {"type": "array", "const": ["baseline", "primary"]}
+    "compare_variants": {"type": "array", "const": ["baseline", "primary"]},
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable", "required_arguments"],
+      "properties": {
+        "executable": {"const": "jsb-sim-runner"},
+        "required_arguments": {"type": "array", "const": ["--scenario", "--output"]}
+      }
+    },
+    "parameter_overrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supported", "transport", "path", "schema",
+        "scenario_whitelist_required", "unknown_id_behavior",
+        "unsupported_variant_behavior", "invalid_range_behavior",
+        "non_finite_behavior"
+      ],
+      "properties": {
+        "supported": {"const": true},
+        "transport": {"const": "output_file"},
+        "path": {"const": "parameters.yaml"},
+        "schema": {"const": "parameter-set.schema.json"},
+        "scenario_whitelist_required": {"const": true},
+        "unknown_id_behavior": {"const": "reject"},
+        "unsupported_variant_behavior": {"const": "reject"},
+        "invalid_range_behavior": {"const": "reject"},
+        "non_finite_behavior": {"const": "reject"}
+      }
+    },
+    "scenario_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "schema"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "schema": {"const": "../scenario/scenario.schema.json"}
+      }
+    },
+    "telemetry_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "format", "message_encoding",
+        "embedded_file_descriptor_set"
+      ],
+      "properties": {
+        "schema_version": {"const": 1},
+        "format": {"const": "mcap"},
+        "message_encoding": {"const": "protobuf"},
+        "embedded_file_descriptor_set": {"const": true}
+      }
+    },
+    "artifact_manifest": {"const": "artifacts.json"}
   }
 }

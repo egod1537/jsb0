@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsb0.dev/contract/v2/parameter-set.schema.json",
+  "title": "JSB0 Controller Parameter Set",
+  "description": "YAML parameter override file read from the run output directory. JSON Schema numeric values exclude NaN and infinity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["controller_parameters"],
+  "properties": {
+    "controller_parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "FW_R_TC": {"type": "number", "minimum": 0.2, "maximum": 1},
+        "FW_R_RMAX": {"type": "number", "minimum": 0, "maximum": 180},
+        "FW_RR_P": {"type": "number", "minimum": 0, "maximum": 10},
+        "FW_RR_I": {"type": "number", "minimum": 0, "maximum": 10},
+        "FW_RR_D": {"type": "number", "minimum": 0, "maximum": 10},
+        "FW_RR_FF": {"type": "number", "minimum": 0, "maximum": 10},
+        "FW_RR_IMAX": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 #include "gui/features/simulation/ScenarioSetupPopup.hpp"
 
+#include "common/math/Math.hpp"
 #include "flightui/FlightUI.hpp"
 #include "gui/features/simulation/ScenarioController.hpp"
 
@@ -164,15 +165,18 @@ void ScenarioSetupPopup::DrawSummary() {
   std::snprintf(attitudeSummary,
       sizeof(attitudeSummary),
       "roll %.3f deg, pitch %.3f deg, heading %.3f deg",
-      condition.rollDeg,
-      condition.pitchDeg,
-      condition.headingDeg);
+      math::RadToDeg(condition.rollRad),
+      math::RadToDeg(condition.pitchRad),
+      math::RadToDeg(condition.headingRad));
   UI::PropertyGridBuilder initial = MakeGrid("ScenarioSetupInitial");
   initial
-      .Add("Altitude",
-          UI::ValueLabel("##SetupAltitude", condition.altitudeFt, "%.3f ft"))
-      .Add("Airspeed",
-          UI::ValueLabel("##SetupAirspeed", condition.airspeedKts, "%.3f kt"))
+      .Add("Altitude ASL",
+          UI::ValueLabel(
+              "##SetupAltitude", condition.altitudeAslM, "%.3f m"))
+      .Add("CAS",
+          UI::ValueLabel("##SetupAirspeed",
+              condition.calibratedAirspeedMps,
+              "%.3f m/s"))
       .Add("Attitude", UI::Text(attitudeSummary))
       .Add("Environment",
           UI::Text(scenario.windEnabled ? "Wind enabled" : "No wind"))
@@ -191,7 +195,7 @@ void ScenarioSetupPopup::DrawSummary() {
           sizeof(summary),
           "%.3f s   roll command = %.3f deg",
           event.timeSec,
-          event.command.rollDeg);
+          math::RadToDeg(event.command.rollRad));
       UI::Text(summary).Render();
     }
   }

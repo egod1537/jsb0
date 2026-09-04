@@ -40,10 +40,10 @@ TrimResult BuildTrimResult(const sim::Aircraft &aircraft) {
 
   TrimResult result{};
   result.success = true;
-  result.alphaDeg = properties.Alpha().Deg();
-  result.betaDeg = properties.Beta().Deg();
-  result.rollDeg = properties.Roll().Deg();
-  result.pitchDeg = properties.Pitch().Deg();
+  result.alphaRad = properties.Alpha().Rad();
+  result.betaRad = properties.Beta().Rad();
+  result.rollRad = properties.Roll().Rad();
+  result.pitchRad = properties.Pitch().Rad();
 
   result.throttle = appliedInput.throttle;
   result.elevator = appliedInput.elevator;
@@ -51,12 +51,12 @@ TrimResult BuildTrimResult(const sim::Aircraft &aircraft) {
   result.aileron = appliedInput.aileron;
   result.rudder = appliedInput.rudder;
 
-  result.uDot = properties.U().DotMps2();
-  result.vDot = properties.V().DotMps2();
-  result.wDot = properties.W().DotMps2();
-  result.pDot = properties.P().DotDegPerSec2();
-  result.qDot = properties.Q().DotDegPerSec2();
-  result.rDot = properties.R().DotDegPerSec2();
+  result.uDotMps2 = properties.U().DotMps2();
+  result.vDotMps2 = properties.V().DotMps2();
+  result.wDotMps2 = properties.W().DotMps2();
+  result.pDotRadPerSec2 = properties.P().DotRadPerSec2();
+  result.qDotRadPerSec2 = properties.Q().DotRadPerSec2();
+  result.rDotRadPerSec2 = properties.R().DotRadPerSec2();
 
   return result;
 }

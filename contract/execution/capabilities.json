@@ -1,4 +1,5 @@
 {
+  "contract_major": 2,
   "modes": [
     "compare"
   ],
@@ -9,5 +10,31 @@
   "compare_variants": [
     "baseline",
     "primary"
-  ]
+  ],
+  "runner": {
+    "executable": "jsb-sim-runner",
+    "required_arguments": ["--scenario", "--output"]
+  },
+  "parameter_overrides": {
+    "supported": true,
+    "transport": "output_file",
+    "path": "parameters.yaml",
+    "schema": "parameter-set.schema.json",
+    "scenario_whitelist_required": true,
+    "unknown_id_behavior": "reject",
+    "unsupported_variant_behavior": "reject",
+    "invalid_range_behavior": "reject",
+    "non_finite_behavior": "reject"
+  },
+  "scenario_contract": {
+    "schema_version": 1,
+    "schema": "../scenario/scenario.schema.json"
+  },
+  "telemetry_contract": {
+    "schema_version": 1,
+    "format": "mcap",
+    "message_encoding": "protobuf",
+    "embedded_file_descriptor_set": true
+  },
+  "artifact_manifest": "artifacts.json"
 }

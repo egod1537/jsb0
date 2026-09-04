@@ -1,4 +1,6 @@
 #include "sim/scenario/SimulationScenarioSerializer.hpp"
+
+#include "common/math/Math.hpp"
 #include "common/crypto/Sha256.hpp"
 
 #include <yaml-cpp/yaml.h>
@@ -177,25 +179,30 @@ SimulationScenario ParseScenario(const YAML::Node &root,
           "q_rad_s",
           "r_rad_s"},
       "initial_condition");
-  scenario.initialCondition.latitudeDeg = ReadRequired<double>(initial,
-      "latitude_deg",
-      "initial_condition.latitude_deg");
-  scenario.initialCondition.longitudeDeg = ReadRequired<double>(initial,
-      "longitude_deg",
-      "initial_condition.longitude_deg");
-  scenario.initialCondition.altitudeFt = ReadRequired<double>(initial,
-      "altitude_ft",
-      "initial_condition.altitude_ft");
-  scenario.initialCondition.airspeedKts = ReadRequired<double>(initial,
-      "airspeed_kts",
-      "initial_condition.airspeed_kts");
-  scenario.initialCondition.rollDeg =
-      ReadRequired<double>(initial, "roll_deg", "initial_condition.roll_deg");
-  scenario.initialCondition.pitchDeg =
-      ReadRequired<double>(initial, "pitch_deg", "initial_condition.pitch_deg");
-  scenario.initialCondition.headingDeg = ReadRequired<double>(initial,
-      "heading_deg",
-      "initial_condition.heading_deg");
+  scenario.initialCondition.latitudeRad = math::DegToRad(
+      ReadRequired<double>(initial,
+          "latitude_deg",
+          "initial_condition.latitude_deg"));
+  scenario.initialCondition.longitudeRad = math::DegToRad(
+      ReadRequired<double>(initial,
+          "longitude_deg",
+          "initial_condition.longitude_deg"));
+  scenario.initialCondition.altitudeAslM = math::FeetToMeters(
+      ReadRequired<double>(initial,
+          "altitude_ft",
+          "initial_condition.altitude_ft"));
+  scenario.initialCondition.calibratedAirspeedMps =
+      math::KnotsToMetersPerSecond(ReadRequired<double>(initial,
+          "airspeed_kts",
+          "initial_condition.airspeed_kts"));
+  scenario.initialCondition.rollRad = math::DegToRad(
+      ReadRequired<double>(initial, "roll_deg", "initial_condition.roll_deg"));
+  scenario.initialCondition.pitchRad = math::DegToRad(ReadRequired<double>(
+      initial, "pitch_deg", "initial_condition.pitch_deg"));
+  scenario.initialCondition.headingRad = math::DegToRad(
+      ReadRequired<double>(initial,
+          "heading_deg",
+          "initial_condition.heading_deg"));
   scenario.initialCondition.pRadPerSec =
       ReadRequired<double>(initial, "p_rad_s", "initial_condition.p_rad_s");
   scenario.initialCondition.qRadPerSec =
@@ -243,8 +250,8 @@ SimulationScenario ParseScenario(const YAML::Node &root,
           path + ".command.type: unsupported command '" + type + "'");
     }
     definition.command.type = ScenarioCommandType::RollHold;
-    definition.command.rollDeg =
-        ReadRequired<double>(command, "roll_deg", path + ".command.roll_deg");
+    definition.command.rollRad = math::DegToRad(
+        ReadRequired<double>(command, "roll_deg", path + ".command.roll_deg"));
     scenario.events.push_back(definition);
   }
 
@@ -255,15 +262,15 @@ SimulationScenario ParseScenario(const YAML::Node &root,
           "overshoot_limit_deg",
           "max_oscillation_cycles"},
       "acceptance");
-  scenario.settlingBandDeg = ReadRequired<double>(acceptance,
+  scenario.settlingBandRad = math::DegToRad(ReadRequired<double>(acceptance,
       "settling_band_deg",
-      "acceptance.settling_band_deg");
+      "acceptance.settling_band_deg"));
   scenario.settlingTimeLimitSec = ReadRequired<double>(acceptance,
       "settling_time_limit_sec",
       "acceptance.settling_time_limit_sec");
-  scenario.overshootLimitDeg = ReadRequired<double>(acceptance,
+  scenario.overshootLimitRad = math::DegToRad(ReadRequired<double>(acceptance,
       "overshoot_limit_deg",
-      "acceptance.overshoot_limit_deg");
+      "acceptance.overshoot_limit_deg"));
   scenario.maxOscillationCycles = ReadRequired<double>(acceptance,
       "max_oscillation_cycles",
       "acceptance.max_oscillation_cycles");
@@ -294,13 +301,17 @@ std::string SimulationScenarioSerializer::Serialize(
   }
   const InitialCondition &initial = scenario.initialCondition;
   output << YAML::Key << "initial_condition" << YAML::Value << YAML::BeginMap
-         << YAML::Key << "latitude_deg" << YAML::Value << initial.latitudeDeg
-         << YAML::Key << "longitude_deg" << YAML::Value << initial.longitudeDeg
-         << YAML::Key << "altitude_ft" << YAML::Value << initial.altitudeFt
-         << YAML::Key << "airspeed_kts" << YAML::Value << initial.airspeedKts
-         << YAML::Key << "roll_deg" << YAML::Value << initial.rollDeg
-         << YAML::Key << "pitch_deg" << YAML::Value << initial.pitchDeg
-         << YAML::Key << "heading_deg" << YAML::Value << initial.headingDeg
+         << YAML::Key << "latitude_deg" << YAML::Value
+         << math::RadToDeg(initial.latitudeRad) << YAML::Key << "longitude_deg"
+         << YAML::Value << math::RadToDeg(initial.longitudeRad) << YAML::Key
+         << "altitude_ft" << YAML::Value
+         << math::MetersToFeet(initial.altitudeAslM) << YAML::Key
+         << "airspeed_kts" << YAML::Value
+         << math::MetersPerSecondToKnots(initial.calibratedAirspeedMps)
+         << YAML::Key << "roll_deg" << YAML::Value
+         << math::RadToDeg(initial.rollRad) << YAML::Key << "pitch_deg"
+         << YAML::Value << math::RadToDeg(initial.pitchRad) << YAML::Key
+         << "heading_deg" << YAML::Value << math::RadToDeg(initial.headingRad)
          << YAML::Key << "p_rad_s" << YAML::Value << initial.pRadPerSec
          << YAML::Key << "q_rad_s" << YAML::Value << initial.qRadPerSec
          << YAML::Key << "r_rad_s" << YAML::Value << initial.rRadPerSec
@@ -321,14 +332,17 @@ std::string SimulationScenarioSerializer::Serialize(
            << event.timeSec << YAML::Key << "command" << YAML::Value
            << YAML::BeginMap << YAML::Key << "type" << YAML::Value
            << "roll_hold" << YAML::Key << "roll_deg" << YAML::Value
-           << event.command.rollDeg << YAML::EndMap << YAML::EndMap;
+           << math::RadToDeg(event.command.rollRad) << YAML::EndMap
+           << YAML::EndMap;
   }
   output << YAML::EndSeq;
   output << YAML::Key << "acceptance" << YAML::Value << YAML::BeginMap
          << YAML::Key << "settling_band_deg" << YAML::Value
-         << scenario.settlingBandDeg << YAML::Key << "settling_time_limit_sec"
+         << math::RadToDeg(scenario.settlingBandRad) << YAML::Key
+         << "settling_time_limit_sec"
          << YAML::Value << scenario.settlingTimeLimitSec << YAML::Key
-         << "overshoot_limit_deg" << YAML::Value << scenario.overshootLimitDeg
+         << "overshoot_limit_deg" << YAML::Value
+         << math::RadToDeg(scenario.overshootLimitRad)
          << YAML::Key << "max_oscillation_cycles" << YAML::Value
          << scenario.maxOscillationCycles << YAML::EndMap << YAML::EndMap;
   if (!output.good())

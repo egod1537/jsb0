@@ -1,8 +1,8 @@
 #pragma once
 
-#include "sim/gnc/hold/PitchDynamics.hpp"
-#include "sim/gnc/hold/RollDynamics.hpp"
-#include "sim/gnc/hold/YawDynamics.hpp"
+#include "sim/gnc/control/legacy/PitchDynamics.hpp"
+#include "sim/gnc/control/legacy/RollDynamics.hpp"
+#include "sim/gnc/control/legacy/YawDynamics.hpp"
 #include "sim/linearization/DynamicModeAnalyzer.hpp"
 #include "sim/linearization/DynamicModeHistory.hpp"
 #include "sim/linearization/LinearizationResult.hpp"

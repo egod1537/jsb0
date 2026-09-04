@@ -8,7 +8,8 @@ class MonitorController;
 
 class FlightDataMonitorWindow final : public Window {
 public:
-  explicit FlightDataMonitorWindow(MonitorController &controller);
+  explicit FlightDataMonitorWindow(MonitorController &controller,
+      MonitorConfig config = {});
 
 protected:
   ImGuiWindowFlags GetWindowFlags() const override;

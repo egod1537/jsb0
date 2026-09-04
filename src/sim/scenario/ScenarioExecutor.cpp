@@ -3,7 +3,6 @@
 #include "sim/Simulation.hpp"
 #include "sim/control/FlightControlManager.hpp"
 #include "sim/gnc/autopilot/IRollHoldAutopilot.hpp"
-#include "common/math/Math.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,14 +18,14 @@ FDMEnvironmentState MakeEnvironment(const Simulation &reference,
           .ExtractFDMState(FDMStateFlags::Environment)
           .environment;
   if (!windEnabled) {
-    environment.windNedFps.fill(0.0);
-    environment.gustNedFps.fill(0.0);
-    environment.turbulenceNedFps.fill(0.0);
+    environment.windNedMps.fill(0.0);
+    environment.gustNedMps.fill(0.0);
+    environment.turbulenceNedMps.fill(0.0);
     environment.turbulenceType = 0;
     environment.turbulenceGain = 0.0;
     environment.turbulenceRate = 0.0;
     environment.turbulenceRhythmicity = 0.0;
-    environment.windSpeedAt20FtFps = 0.0;
+    environment.windSpeedAt20FtMps = 0.0;
   }
   return environment;
 }
@@ -207,8 +206,7 @@ bool ScenarioExecutor::ResetSimulations() {
 bool ScenarioExecutor::ApplyControlState() {
   while (nextEventIndex_ < scenario_.events.size()
          && stepCount_ >= eventStepIndices_[nextEventIndex_]) {
-    targetRollRad_ =
-        math::DegToRad(scenario_.events[nextEventIndex_].command.rollDeg);
+    targetRollRad_ = scenario_.events[nextEventIndex_].command.rollRad;
     commandActive_ = true;
     pendingCommandActivations_.push_back({
         .simulationTimeSec = simulation_.GetTime(),

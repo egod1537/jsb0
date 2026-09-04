@@ -3,6 +3,7 @@
 #include <string_view>
 
 namespace telemetry::paths {
+// Raw aircraft telemetry is SI: rad, rad/s, m, m/s, and normalized controls.
 inline constexpr std::string_view AircraftAeroAlpha = "aircraft/aero/alpha";
 inline constexpr std::string_view AircraftAeroBeta = "aircraft/aero/beta";
 
@@ -50,6 +51,10 @@ inline constexpr std::string_view AircraftAngularAccelerationR =
 
 inline constexpr std::string_view AircraftControlAileron =
     "aircraft/control/aileron";
+inline constexpr std::string_view AircraftControlElevator =
+    "aircraft/control/elevator";
 inline constexpr std::string_view AircraftControlRudder =
     "aircraft/control/rudder";
+inline constexpr std::string_view AircraftControlThrottle =
+    "aircraft/control/throttle";
 } // namespace telemetry::paths

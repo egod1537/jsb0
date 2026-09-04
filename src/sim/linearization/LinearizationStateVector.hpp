@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sim/linearization/LinearizationPerturbation.hpp"
+#include "common/math/Math.hpp"
 
 #include <Eigen/Core>
 #include <array>
@@ -17,13 +18,12 @@ using InputVector = Eigen::Matrix<double, 4, 1>;
 using StateMatrix = Eigen::Matrix<double, 12, 12>;
 using InputMatrix = Eigen::Matrix<double, 12, 4>;
 
-// LinearizationState defines the fixed state-vector ordering in native FDM
-// units:
-// U, V, W (ft/s); P, Q, R (rad/s); Roll, Pitch, Heading (rad);
-// Latitude, Longitude (rad); Altitude (ft).
-// StateDerivativeVector reuses the same indices for UDot, VDot, WDot (ft/s^2),
+// LinearizationState defines the fixed state-vector ordering in SI units:
+// U, V, W (m/s); P, Q, R (rad/s); Roll, Pitch, Heading (rad);
+// Latitude, Longitude (rad); Altitude ASL (m).
+// StateDerivativeVector reuses the same indices for UDot, VDot, WDot (m/s^2),
 // PDot, QDot, RDot (rad/s^2), Euler rates (rad/s), geographic rates
-// (rad/s), and AltitudeDot (ft/s).
+// (rad/s), and AltitudeDot (m/s).
 // LinearizationInput defines the fixed input-vector ordering. All values are
 // normalized commands.
 
@@ -51,9 +51,9 @@ bool ApplyInputVector(FDMState &state, const InputVector &vector);
 StateDerivativeVector ExtractStateDerivativeVector(const Aircraft &aircraft);
 
 constexpr std::array<double, ToIndex(LinearizationState::Count)> StateSteps = {
-    /* U */ 0.5,
-    /* V */ 0.5,
-    /* W */ 0.5,
+    /* U */ math::FeetPerSecondToMetersPerSecond(0.5),
+    /* V */ math::FeetPerSecondToMetersPerSecond(0.5),
+    /* W */ math::FeetPerSecondToMetersPerSecond(0.5),
     /* P */ 1e-3,
     /* Q */ 1e-3,
     /* R */ 1e-3,
@@ -62,7 +62,7 @@ constexpr std::array<double, ToIndex(LinearizationState::Count)> StateSteps = {
     /* Heading */ 1e-3,
     /* Latitude */ 1e-6,
     /* Longitude */ 1e-6,
-    /* Altitude */ 1.0,
+    /* Altitude */ math::FeetToMeters(1.0),
 };
 constexpr std::array<double, ToIndex(LinearizationInput::Count)> InputSteps = {
     1e-3, // aileron

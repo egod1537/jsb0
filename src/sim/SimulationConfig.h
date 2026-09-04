@@ -2,7 +2,8 @@
 #include <string>
 
 namespace sim {
-inline constexpr double DefaultSimulationHz = 30.0;
+inline constexpr double DefaultSimulationHz = 120.0;
+inline constexpr double DefaultSimulationDtSec = 1.0 / DefaultSimulationHz;
 
 struct SimulationConfig {
   std::string aircraftName = "c172x";

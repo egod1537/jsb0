@@ -50,9 +50,14 @@ void TestCommandsSnapshotsAndTelemetry() {
   assert(harness.client.GetSimulationExecutionState()
          == sim::SimulationExecutionState::Running);
   assert(harness.Tick());
-  const double runningTime =
-      harness.client.GetSimulationSnapshot().primary.aircraft.simulationTimeSec;
+  const sim::SimulationSnapshot runningSnapshot =
+      harness.client.GetSimulationSnapshot();
+  const double runningTime = runningSnapshot.primary.aircraft.simulationTimeSec;
   assert(runningTime > 0.0);
+  assert(runningSnapshot.baseline.has_value());
+  assert(std::abs(
+             runningSnapshot.baseline->aircraft.simulationTimeSec - runningTime)
+         < 1.0e-12);
 
   harness.client.PauseSimulation();
   assert(harness.client.GetSimulationExecutionState()
@@ -74,8 +79,26 @@ void TestCommandsSnapshotsAndTelemetry() {
                       .primaryAutopilot.manualControl.aileron
                   - input.aileron)
          < 1.0e-12);
+  harness.client.RequestSimulationTick();
+  assert(harness.Tick());
+  const sim::SimulationSnapshot synchronizedSnapshot =
+      harness.client.GetSimulationSnapshot();
+  assert(synchronizedSnapshot.baseline.has_value());
+  assert(synchronizedSnapshot.baselineAutopilot.has_value());
+  assert(std::abs(synchronizedSnapshot.baseline->aircraft.simulationTimeSec
+                  - synchronizedSnapshot.primary.aircraft.simulationTimeSec)
+         < 1.0e-12);
+  assert(std::abs(synchronizedSnapshot.baselineAutopilot->manualControl.aileron
+                  - input.aileron)
+         < 1.0e-12);
 
   assert(harness.client.ResetSimulation());
+  const sim::SimulationSnapshot resetSnapshot =
+      harness.client.GetSimulationSnapshot();
+  assert(resetSnapshot.baseline.has_value());
+  assert(std::abs(resetSnapshot.primary.aircraft.simulationTimeSec) < 1.0e-12);
+  assert(
+      std::abs(resetSnapshot.baseline->aircraft.simulationTimeSec) < 1.0e-12);
   const auto primaryTelemetry =
       harness.client.GetTelemetrySnapshot(sim::SimulationSlot::Primary);
   const auto baselineTelemetry =
@@ -109,6 +132,65 @@ void TestFailedRequestPreservesErrorAndSuccessClearsIt() {
   assert(!client.GetLastCommandError().has_value());
 }
 
+void TestBaselineAutopilotConfigurationFlowsThroughGuiBoundary() {
+  Harness harness;
+  assert(harness.Initialize());
+
+  sim::BaselineRollHoldConfig config;
+  config.enabled = true;
+  config.pitchHoldEnabled = true;
+  config.targetPitchRad = math::DegToRad(4.0);
+  config.pitchTimeConstantSec = 0.65;
+  config.maximumPositivePitchRateRadPerSec = math::DegToRad(45.0);
+  config.maximumNegativePitchRateRadPerSec = math::DegToRad(35.0);
+  config.pitchRateProportionalGain = 0.12;
+  config.pitchRateIntegralGain = 0.09;
+  config.pitchRateDerivativeGain = 0.01;
+  config.pitchRateFeedForwardGain = 0.6;
+  config.pitchIntegratorLimit = 0.3;
+  config.yawRateControlEnabled = true;
+  config.coordinatedTurnEnabled = true;
+  config.yawRateProportionalGain = 0.8;
+  config.yawRateIntegralGain = 0.0;
+  config.yawRateDerivativeGain = 0.0;
+  config.yawRateFeedForwardGain = 0.0;
+  config.sideslipToYawRateGain = 8.0;
+  config.yawRateWashoutTimeConstantSec = 0.0;
+  config.rollToYawFeedForwardGain = 0.0;
+  assert(harness.client.SetBaselineRollHoldConfig(config));
+
+  const sim::SimulationSnapshot configured =
+      harness.client.GetSimulationSnapshot();
+  assert(configured.baselineAutopilot.has_value());
+  const sim::BaselineRollHoldConfig &actual =
+      configured.baselineAutopilot->baselineRollHold;
+  assert(actual.yawRateControlEnabled);
+  assert(actual.coordinatedTurnEnabled);
+  assert(actual.yawRateProportionalGain == 0.8);
+  assert(actual.sideslipToYawRateGain == 8.0);
+  assert(actual.pitchHoldEnabled);
+  assert(actual.targetPitchRad == math::DegToRad(4.0));
+  assert(actual.pitchTimeConstantSec == 0.65);
+  assert(actual.maximumPositivePitchRateRadPerSec == math::DegToRad(45.0));
+  assert(actual.maximumNegativePitchRateRadPerSec == math::DegToRad(35.0));
+  assert(actual.pitchRateProportionalGain == 0.12);
+  assert(actual.pitchRateIntegralGain == 0.09);
+  assert(actual.pitchRateDerivativeGain == 0.01);
+  assert(actual.pitchRateFeedForwardGain == 0.6);
+  assert(actual.pitchIntegratorLimit == 0.3);
+
+  harness.client.StartSimulation();
+  assert(harness.Tick());
+  const auto telemetry =
+      harness.client.GetTelemetrySnapshot(sim::SimulationSlot::Baseline);
+  assert(telemetry != nullptr);
+  assert(telemetry->Find("autopilot/yaw_rate/yaw_rate") != nullptr);
+  assert(telemetry->Find("autopilot/yaw_rate/sideslip_rate_correction")
+         != nullptr);
+  assert(telemetry->Find("autopilot/pitch_hold/commanded_pitch") != nullptr);
+  assert(telemetry->Find("autopilot/pitch_hold/elevator_command") != nullptr);
+}
+
 void TestMissingSynchronousResultFailsCleanly() {
   application::messaging::MessageBus bus;
   application::SimulationMessageClient client(bus);
@@ -123,6 +205,13 @@ void TestMissingSynchronousResultFailsCleanly() {
 void TestTrimAndScenarioRequestResults() {
   Harness harness;
   assert(harness.Initialize());
+
+  assert(harness.client.SetAutomaticLinearizationEnabled(false));
+  const sim::SimulationSnapshot linearizationDisabled =
+      harness.client.GetSimulationSnapshot();
+  assert(linearizationDisabled.linearization.available);
+  assert(!linearizationDisabled.linearization.automaticUpdatesEnabled);
+  assert(harness.client.SetAutomaticLinearizationEnabled(true));
 
   gnc::TrimRequest trimRequest;
   assert(harness.client.RunTrim(trimRequest, false));
@@ -214,6 +303,7 @@ void TestTelemetryCacheRetainsFullSessionRangeEfficiently() {
 
 int main() {
   TestCommandsSnapshotsAndTelemetry();
+  TestBaselineAutopilotConfigurationFlowsThroughGuiBoundary();
   TestFailedRequestPreservesErrorAndSuccessClearsIt();
   TestMissingSynchronousResultFailsCleanly();
   TestTrimAndScenarioRequestResults();

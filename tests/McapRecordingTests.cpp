@@ -4,6 +4,8 @@
 #include "sim/gnc/autopilot/IRollHoldAutopilot.hpp"
 #include "sim/gnc/autopilot/MyAutopilot.hpp"
 #include "sim/gnc/autopilot/PX4Autopilot.hpp"
+#include "sim/telemetry/AircraftTelemetry.hpp"
+#include "sim/telemetry/AutopilotTelemetry.hpp"
 #include "sim/telemetry/recording/TelemetryRecordingService.hpp"
 #include "contract/telemetry/TelemetryTime.hpp"
 #include "contract/telemetry/mcap/McapRecordingReader.hpp"
@@ -298,6 +300,42 @@ void EnableRollHold(sim::Simulation &simulation, double targetRollRad) {
   manager->SetMode(control::FlightControlMode::Autopilot);
 }
 
+void TestRegistrySiValuesReachWireModelWithoutConversion() {
+  constexpr double TimeSec = 2.0;
+  telemetry::TelemetryRegistry registry;
+  registry.Publish(telemetry::paths::AutopilotRollHoldCommandedRoll,
+      TimeSec,
+      0.10);
+  registry.Publish(telemetry::paths::AutopilotRollHoldRoll, TimeSec, 0.08);
+  registry.Publish(telemetry::paths::AutopilotRollHoldRollError, TimeSec, 0.02);
+  registry.Publish(telemetry::paths::AutopilotRollHoldCommandedRollRate,
+      TimeSec,
+      0.15);
+  registry.Publish(telemetry::paths::AutopilotRollHoldRollRate, TimeSec, 0.12);
+  registry.Publish(telemetry::paths::AutopilotRollHoldRollRateError,
+      TimeSec,
+      0.03);
+  registry.Publish(telemetry::paths::AutopilotRollHoldAileronCommand,
+      TimeSec,
+      -0.25);
+  registry.Publish(telemetry::paths::AircraftAttitudeRoll, TimeSec, 0.08);
+  registry.Publish(telemetry::paths::AircraftRateP, TimeSec, 0.12);
+  registry.Publish(telemetry::paths::AircraftControlAileron, TimeSec, -0.25);
+
+  const auto source =
+      telemetry::recording::TelemetryRecordingService::CaptureSource(registry,
+          TimeSec);
+  Require(source.has_value() && source->rollHold.has_value()
+              && source->aircraftState.has_value(),
+      "SI registry values were not captured for recording");
+  Require(source->rollHold->commandedRollRad == 0.10,
+      "Recorder converted an already-radian roll command");
+  Require(source->rollHold->rollRateRadPerSec == 0.12,
+      "Recorder converted an already-rad/s roll rate");
+  Require(source->aircraftState->rollRad == 0.08,
+      "Recorder converted an already-radian aircraft roll");
+}
+
 void TestSimulationIntegrationAndWriteSample() {
   const std::filesystem::path samplePath = JSB_TEST_SAMPLE_MCAP_PATH;
   std::filesystem::create_directories(samplePath.parent_path());
@@ -368,6 +406,7 @@ int main() {
   TestTimestampConversion();
   TestRoundTripMultipleChannelsAndMetadata();
   TestLifecycleEmptyAndFailureHandling();
+  TestRegistrySiValuesReachWireModelWithoutConversion();
   TestSimulationIntegrationAndWriteSample();
   return 0;
 }

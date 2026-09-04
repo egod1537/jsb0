@@ -131,12 +131,18 @@ to overlay the Primary and Baseline roll, rate, and aileron histories.
 The embedded controller follows PX4 v1.17's fixed-wing attitude/rate control
 equations. PX4 roll torque is mapped directly to the C172x normalized aileron
 direction; the Rascal bridge's servo-channel reversal is intentionally not
-applied. Its default gains use the tuned C172x profile
-(`FW_R_TC=0.35`, `FW_RR_P=0.160`, `FW_RR_I=0.080`,
-`FW_RR_FF=0.80`, and `FW_RR_IMAX=0.15`). This mode executes the PX4 control law
+applied. Its default gains use the automated C172x tuning profile
+(`FW_R_TC=0.40`, `FW_RR_P=1.90`, `FW_RR_I=0.25`, `FW_RR_D=0`,
+`FW_RR_FF=1.20`, and `FW_RR_IMAX=0.20`). This mode executes the PX4 control law
 in-process; use the standalone PX4 environment below when validating the
 complete PX4 SITL binary, estimator, flight mode, control allocation, and
 MAVLink behavior.
+
+The Baseline autopilot also provides a PX4-style TECS longitudinal outer loop.
+It converts altitude and calibrated-airspeed setpoints into pitch and throttle
+setpoints, while the existing Pitch Hold remains the sole owner of elevator
+control. See [PX4-style TECS baseline](docs/PX4_TECS.md) for the implemented
+control law, C172x tuning, diagnostics, and deterministic flight-test results.
 
 With `Baseline` selected, expand `PX4 v1.17 Reference Tuning` to adjust the
 corresponding `FW_R_*` and `FW_RR_*` values live. `Reset C172x PX4 Tuning`
@@ -144,12 +150,12 @@ restores the tuned profile. If roll oscillation remains for a changed flight
 condition, increase `FW_R_TC` first or reduce `FW_RR_P`/`FW_RR_FF`; keep
 `FW_RR_I` low and raise it only to remove a persistent steady-state offset.
 
-Re-run the deterministic C172x `+10/-10 deg` tuning benchmark after changing
-the controller or its defaults:
+Re-run the deterministic direct roll-rate sweep after changing the controller
+or its defaults:
 
 ```powershell
 cmake --build build --target px4_roll_tuning_probe
-.\build\px4_roll_tuning_probe.exe
+.\build\px4_roll_tuning_probe.exe --output .\build\test-results\px4-roll-tuning
 ```
 
 ## PX4 + JSBSim SITL
@@ -201,8 +207,10 @@ build-headless/jsb-sim-runner.exe --scenario scenarios/c172_roll_hold_5deg.yaml 
 
 The runner performs no realtime sleeping or GUI initialization and writes a
 contract-valid `run.json` plus Protobuf telemetry in `telemetry.mcap`. Runtime
-scenario, telemetry, metadata, signal semantics, generation, and compatibility
-rules are defined in [`contract/README.md`](contract/README.md).
+scenario, tunable parameter metadata, execution capabilities, artifact layout,
+telemetry, signal semantics, generation, and compatibility rules are indexed by
+`contract/index.json` and documented in
+[`contract/README.md`](contract/README.md).
 
 | Key | Action            |
 | --- | ----------------- |

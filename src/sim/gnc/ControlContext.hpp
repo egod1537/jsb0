@@ -1,7 +1,7 @@
 #pragma once
 
-#include "sim/gnc/hold/PitchDynamics.hpp"
-#include "sim/gnc/hold/YawDynamics.hpp"
+#include "sim/gnc/control/legacy/PitchDynamics.hpp"
+#include "sim/gnc/control/legacy/YawDynamics.hpp"
 
 #include <optional>
 

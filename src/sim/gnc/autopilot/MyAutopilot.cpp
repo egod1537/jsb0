@@ -5,8 +5,9 @@
 #include "sim/Tick.hpp"
 #include "sim/control/ControlInput.hpp"
 #include "sim/gnc/ControlContext.hpp"
-#include "sim/gnc/hold/PitchDynamics.hpp"
-#include "sim/gnc/hold/RollDynamics.hpp"
+#include "sim/gnc/control/legacy/PitchDynamics.hpp"
+#include "sim/gnc/control/legacy/RollDynamics.hpp"
+#include "sim/gnc/trim/AircraftTrimReference.hpp"
 #include "sim/linearization/AsyncAircraftLinearizer.hpp"
 #include <algorithm>
 #include <cstdint>
@@ -255,10 +256,10 @@ void MyAutopilot::InvalidateLinearization() {
   ++linearizationGeneration_;
 }
 
-void MyAutopilot::SynchronizeTrimReferences(sim::Aircraft &,
-    const TrimResult &trimResult) {
+void MyAutopilot::SynchronizeTrimReferences(
+    const AircraftTrimReference &trimReference) {
   ResetControllers();
-  SyncControllerTrimReferences(trimResult);
+  SyncControllerTrimReferences(trimReference);
   InvalidateLinearization();
 }
 
@@ -268,9 +269,10 @@ void MyAutopilot::ResetControllers() {
   }
 }
 
-void MyAutopilot::SyncControllerTrimReferences(const TrimResult &result) {
+void MyAutopilot::SyncControllerTrimReferences(
+    const AircraftTrimReference &trimReference) {
   if (auto *rollHold = GetController<RollHoldController>()) {
-    rollHold->SetTrimAileron(result.aileron);
+    rollHold->SetTrimAileron(trimReference.aileron);
   }
 }
 

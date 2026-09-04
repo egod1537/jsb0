@@ -2,7 +2,7 @@
 
 #include "sim/Aircraft.hpp"
 #include "sim/gnc/autopilot/IAutopilotAnalysis.hpp"
-#include "sim/gnc/autopilot/ITrimReferenceConsumer.hpp"
+#include "sim/gnc/trim/AircraftTrimReference.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -79,10 +79,8 @@ void FlightControlManager::SynchronizeWithTrimResult(sim::Aircraft &aircraft,
       .throttle = trimResult.throttle,
   });
 
-  if (auto *trimConsumer =
-          dynamic_cast<gnc::ITrimReferenceConsumer *>(autopilot_.get())) {
-    trimConsumer->SynchronizeTrimReferences(aircraft, trimResult);
-  }
+  autopilot_->SynchronizeTrimReferences(
+      gnc::MakeAircraftTrimReference(aircraft, trimResult));
 }
 
 } // namespace control

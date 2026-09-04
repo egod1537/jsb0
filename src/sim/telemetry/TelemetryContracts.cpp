@@ -14,6 +14,17 @@ const TelemetrySeries *TelemetrySnapshot::Find(std::string_view path) const {
   return found != series.end() && found->path == path ? &*found : nullptr;
 }
 
+const TelemetrySignalMetadata *TelemetrySnapshot::FindMetadata(
+    std::string_view path) const {
+  const auto found = std::lower_bound(metadata.begin(),
+      metadata.end(),
+      path,
+      [](const TelemetrySignalMetadata &candidate, std::string_view requested) {
+        return candidate.path < requested;
+      });
+  return found != metadata.end() && found->path == path ? &*found : nullptr;
+}
+
 std::vector<std::string_view> TelemetrySnapshot::GetChannelPaths() const {
   std::vector<std::string_view> paths;
   paths.reserve(series.size());

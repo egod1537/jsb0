@@ -6,6 +6,7 @@
 namespace {
 constexpr const char *SimTimeSec = "simulation/sim-time-sec";
 constexpr const char *AltitudeAglFt = "position/h-agl-ft";
+constexpr const char *AltitudeAslFt = "position/h-sl-ft";
 constexpr const char *LatitudeRad = "position/lat-gc-rad";
 constexpr const char *LongitudeRad = "position/long-gc-rad";
 constexpr const char *RadiusToVehicleFt = "position/radius-to-vehicle-ft";
@@ -34,13 +35,6 @@ constexpr const char *WDotFtPerSec2 = "accelerations/wdot-ft_sec2";
 constexpr const char *PdotRadPerSec2 = "accelerations/pdot-rad_sec2";
 constexpr const char *QdotRadPerSec2 = "accelerations/qdot-rad_sec2";
 constexpr const char *RdotRadPerSec2 = "accelerations/rdot-rad_sec2";
-
-constexpr double FeetToMeters = 0.3048;
-constexpr double KnotToFeetPerSec = 1.6878098571011957;
-double FeetPerSecToMetersPerSec(double value) { return value * FeetToMeters; }
-double FeetPerSec2ToMetersPerSec2(double value) { return value * FeetToMeters; }
-double FeetPerSecToKts(double value) { return value / KnotToFeetPerSec; }
-double KtsToFeetPerSec(double value) { return value * KnotToFeetPerSec; }
 } // namespace
 
 namespace sim::jsbsim {
@@ -63,11 +57,15 @@ DistanceView::DistanceView(const Properties &properties, const char *ftPath)
 
 double DistanceView::Ft() const { return properties_.Get(ftPath_); }
 
+double DistanceView::M() const { return math::FeetToMeters(Ft()); }
+
 MutableDistanceView::MutableDistanceView(Properties &properties,
     const char *ftPath)
     : properties_(properties), ftPath_(ftPath) {}
 
 double MutableDistanceView::Ft() const { return properties_.Get(ftPath_); }
+
+double MutableDistanceView::M() const { return math::FeetToMeters(Ft()); }
 
 void MutableDistanceView::SetFt(double value) const {
   properties_.Set(ftPath_, value);
@@ -166,7 +164,7 @@ double LinearVelocityView::Fps() const {
 }
 
 double LinearVelocityView::Mps() const {
-  return FeetPerSecToMetersPerSec(Fps());
+  return math::FeetPerSecondToMetersPerSecond(Fps());
 }
 
 double LinearVelocityView::DotFps2() const {
@@ -174,21 +172,24 @@ double LinearVelocityView::DotFps2() const {
 }
 
 double LinearVelocityView::DotMps2() const {
-  return FeetPerSec2ToMetersPerSec2(DotFps2());
+  return math::FeetPerSecondSquaredToMetersPerSecondSquared(DotFps2());
 }
 
 SpeedView::SpeedView(const Properties &properties, const char *fpsPath,
     const char *ktsPath)
     : properties_(properties), fpsPath_(fpsPath), ktsPath_(ktsPath) {}
 
-double SpeedView::Mps() const { return FeetPerSecToMetersPerSec(Fps()); }
+double SpeedView::Mps() const {
+  return math::FeetPerSecondToMetersPerSecond(Fps());
+}
 
 double SpeedView::Kts() const {
   if (ktsPath_ != nullptr) {
     return properties_.Get(ktsPath_);
   }
 
-  return FeetPerSecToKts(Fps());
+  return math::MetersPerSecondToKnots(
+      math::FeetPerSecondToMetersPerSecond(Fps()));
 }
 
 double SpeedView::Fps() const {
@@ -196,7 +197,8 @@ double SpeedView::Fps() const {
     return properties_.Get(fpsPath_);
   }
 
-  return KtsToFeetPerSec(Kts());
+  return math::MetersPerSecondToFeetPerSecond(
+      math::KnotsToMetersPerSecond(Kts()));
 }
 
 double SpeedView::FtPerMin() const { return Fps() * 60.0; }
@@ -205,14 +207,17 @@ MutableSpeedView::MutableSpeedView(Properties &properties, const char *fpsPath,
     const char *ktsPath)
     : properties_(properties), fpsPath_(fpsPath), ktsPath_(ktsPath) {}
 
-double MutableSpeedView::Mps() const { return FeetPerSecToMetersPerSec(Fps()); }
+double MutableSpeedView::Mps() const {
+  return math::FeetPerSecondToMetersPerSecond(Fps());
+}
 
 double MutableSpeedView::Kts() const {
   if (ktsPath_ != nullptr) {
     return properties_.Get(ktsPath_);
   }
 
-  return FeetPerSecToKts(Fps());
+  return math::MetersPerSecondToKnots(
+      math::FeetPerSecondToMetersPerSecond(Fps()));
 }
 
 double MutableSpeedView::Fps() const {
@@ -220,7 +225,8 @@ double MutableSpeedView::Fps() const {
     return properties_.Get(fpsPath_);
   }
 
-  return KtsToFeetPerSec(Kts());
+  return math::MetersPerSecondToFeetPerSecond(
+      math::KnotsToMetersPerSecond(Kts()));
 }
 
 double MutableSpeedView::FtPerMin() const { return Fps() * 60.0; }
@@ -232,7 +238,9 @@ void MutableSpeedView::SetKts(double value) const {
   }
 
   if (fpsPath_ != nullptr) {
-    properties_.Set(fpsPath_, KtsToFeetPerSec(value));
+    properties_.Set(fpsPath_,
+        math::MetersPerSecondToFeetPerSecond(
+            math::KnotsToMetersPerSecond(value)));
   }
 }
 
@@ -258,6 +266,10 @@ MutableDistanceView Properties::AltitudeAgl() {
 
 DistanceView Properties::AltitudeAgl() const {
   return DistanceView(*this, AltitudeAglFt);
+}
+
+DistanceView Properties::AltitudeAsl() const {
+  return DistanceView(*this, AltitudeAslFt);
 }
 
 AngleView Properties::Latitude() const {
@@ -305,7 +317,8 @@ AngleView Properties::Course() const {
 }
 
 double Properties::GravityMps2() const {
-  return FeetPerSec2ToMetersPerSec2(Get(GravityFtPerSec2));
+  return math::FeetPerSecondSquaredToMetersPerSecondSquared(
+      Get(GravityFtPerSec2));
 }
 
 LinearVelocityView Properties::U() const {

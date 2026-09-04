@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common/math/Math.hpp"
 #include "contract/telemetry/RecordingTypes.hpp"
 #include "sim/AircraftState.hpp"
 #include "sim/EngineState.hpp"
@@ -11,7 +10,7 @@
 #include "sim/control/FlightControlMode.hpp"
 #include "sim/execution/ExecutionRequest.hpp"
 #include "sim/gnc/TrimTypes.hpp"
-#include "sim/gnc/hold/Px4RollHoldParameterMetadata.hpp"
+#include "sim/gnc/config/Px4ControlProfile.hpp"
 #include "sim/linearization/DynamicModeHistory.hpp"
 #include "sim/linearization/LinearizationResult.hpp"
 
@@ -57,30 +56,86 @@ struct PrimaryRollHoldConfig {
 };
 
 struct BaselineRollHoldConfig {
+  // PX4 Roll Hold
   bool enabled = false;
   double targetRollRad = 0.0;
-  double timeConstantSec = gnc::GetPx4RollHoldParameterMetadata(
-      gnc::Px4RollHoldParameter::TimeConstant)
-                               .defaultValue;
+  double timeConstantSec =
+      gnc::GetC172xPx4ControlProfile().roll.timeConstantSec;
   double maximumRollRateRadPerSec =
-      math::DegToRad(gnc::GetPx4RollHoldParameterMetadata(
-          gnc::Px4RollHoldParameter::MaximumRollRate)
-              .defaultValue);
-  double rateProportionalGain = gnc::GetPx4RollHoldParameterMetadata(
-      gnc::Px4RollHoldParameter::RateProportionalGain)
-                                    .defaultValue;
-  double rateIntegralGain = gnc::GetPx4RollHoldParameterMetadata(
-      gnc::Px4RollHoldParameter::RateIntegralGain)
-                                .defaultValue;
-  double rateDerivativeGain = gnc::GetPx4RollHoldParameterMetadata(
-      gnc::Px4RollHoldParameter::RateDerivativeGain)
-                                  .defaultValue;
-  double rateFeedForwardGain = gnc::GetPx4RollHoldParameterMetadata(
-      gnc::Px4RollHoldParameter::RateFeedForwardGain)
-                                   .defaultValue;
-  double integratorLimit = gnc::GetPx4RollHoldParameterMetadata(
-      gnc::Px4RollHoldParameter::IntegratorLimit)
-                               .defaultValue;
+      gnc::GetC172xPx4ControlProfile().roll.maximumRollRateRadPerSec;
+  double rateProportionalGain =
+      gnc::GetC172xPx4ControlProfile().roll.rateProportionalGain;
+  double rateIntegralGain =
+      gnc::GetC172xPx4ControlProfile().roll.rateIntegralGain;
+  double rateDerivativeGain =
+      gnc::GetC172xPx4ControlProfile().roll.rateDerivativeGain;
+  double rateFeedForwardGain =
+      gnc::GetC172xPx4ControlProfile().roll.rateFeedForwardGain;
+  double integratorLimit =
+      gnc::GetC172xPx4ControlProfile().roll.integratorLimit;
+
+  // PX4 Pitch Hold
+  bool pitchHoldEnabled = false;
+  double targetPitchRad = 0.0;
+  double pitchTimeConstantSec =
+      gnc::GetC172xPx4ControlProfile().pitch.timeConstantSec;
+  double maximumPositivePitchRateRadPerSec =
+      gnc::GetC172xPx4ControlProfile().pitch.maximumPositivePitchRateRadPerSec;
+  double maximumNegativePitchRateRadPerSec =
+      gnc::GetC172xPx4ControlProfile().pitch.maximumNegativePitchRateRadPerSec;
+  double pitchRateProportionalGain =
+      gnc::GetC172xPx4ControlProfile().pitch.rateProportionalGain;
+  double pitchRateIntegralGain =
+      gnc::GetC172xPx4ControlProfile().pitch.rateIntegralGain;
+  double pitchRateDerivativeGain =
+      gnc::GetC172xPx4ControlProfile().pitch.rateDerivativeGain;
+  double pitchRateFeedForwardGain =
+      gnc::GetC172xPx4ControlProfile().pitch.rateFeedForwardGain;
+  double pitchIntegratorLimit =
+      gnc::GetC172xPx4ControlProfile().pitch.integratorLimit;
+
+  // PX4 total-energy longitudinal outer loop
+  bool tecsEnabled = false;
+  double targetAltitudeM = 304.8;
+  double targetAirspeedMps = 41.1556;
+  gnc::Px4TecsSettings tecsSettings = gnc::GetC172xPx4ControlProfile().tecs;
+
+  // Temporary direct-rate tuning bypass
+  bool directRollRateTestEnabled = false;
+  double directRollRateCommandRadPerSec = 0.0;
+
+  // PX4 course/lateral outer loop
+  bool courseHoldEnabled = false;
+  double targetCourseRad = 0.0;
+  double courseGuidancePeriodSec =
+      gnc::GetC172xPx4ControlProfile().course.guidancePeriodSec;
+  double courseGuidanceDampingRatio =
+      gnc::GetC172xPx4ControlProfile().course.guidanceDampingRatio;
+  double courseMaxRollRad = gnc::GetC172xPx4ControlProfile().course.maxRollRad;
+  double courseMaxRollSetpointRateRadPerSec =
+      gnc::GetC172xPx4ControlProfile().course.maxRollSetpointRateRadPerSec;
+
+  // Experimental PX4 yaw-rate and sideslip augmentation
+  bool yawRateControlEnabled = false;
+  bool coordinatedTurnEnabled = true;
+  double maximumYawRateRadPerSec =
+      gnc::GetC172xPx4ControlProfile().yaw.maximumYawRateRadPerSec;
+  double yawRateProportionalGain =
+      gnc::GetC172xPx4ControlProfile().yaw.rateProportionalGain;
+  double yawRateIntegralGain =
+      gnc::GetC172xPx4ControlProfile().yaw.rateIntegralGain;
+  double yawRateDerivativeGain =
+      gnc::GetC172xPx4ControlProfile().yaw.rateDerivativeGain;
+  double yawRateFeedForwardGain =
+      gnc::GetC172xPx4ControlProfile().yaw.rateFeedForwardGain;
+  double yawIntegratorLimit =
+      gnc::GetC172xPx4ControlProfile().yaw.integratorLimit;
+  double sideslipToYawRateGain =
+      gnc::GetC172xPx4ControlProfile().yaw.sideslipToYawRateGain;
+  double yawRateWashoutTimeConstantSec =
+      gnc::GetC172xPx4ControlProfile().yaw.yawRateWashoutTimeConstantSec;
+  double rollToYawFeedForwardGain =
+      gnc::GetC172xPx4ControlProfile().yaw.rollToYawFeedForwardGain;
 };
 
 struct ControllerConfig {
@@ -104,6 +159,38 @@ struct BaselineRollHoldDiagnostics {
   double airspeedScaling = 1.0;
 };
 
+struct BaselineCourseHoldDiagnostics {
+  bool outputValid = false;
+  bool groundSpeedValid = false;
+  double targetCourseRad = 0.0;
+  double currentCourseRad = 0.0;
+  double courseErrorRad = 0.0;
+  double groundSpeedMps = 0.0;
+  double rawRollSetpointRad = 0.0;
+  double limitedRollSetpointRad = 0.0;
+  bool rollLimited = false;
+  bool rollSetpointRateLimited = false;
+};
+
+struct BaselinePitchHoldDiagnostics {
+  bool outputValid = false;
+  double elevatorCommand = 0.0;
+  double bodyRateSetpointRadPerSec = 0.0;
+  double pitchErrorRad = 0.0;
+  double airspeedScaling = 1.0;
+};
+
+struct BaselineTecsDiagnostics {
+  bool outputValid = false;
+  double internalAltitudeSetpointM = 0.0;
+  double targetPitchRad = 0.0;
+  double targetThrottle = 0.0;
+  double totalEnergyError = 0.0;
+  double energyBalanceError = 0.0;
+  bool underspeedProtectionActive = false;
+  bool overspeedProtectionActive = false;
+};
+
 struct AutopilotSnapshot {
   bool available = false;
   std::string strategyName;
@@ -112,6 +199,9 @@ struct AutopilotSnapshot {
   PrimaryRollHoldConfig primaryRollHold;
   BaselineRollHoldConfig baselineRollHold;
   BaselineRollHoldDiagnostics baselineDiagnostics;
+  BaselinePitchHoldDiagnostics baselinePitchDiagnostics;
+  BaselineTecsDiagnostics baselineTecsDiagnostics;
+  BaselineCourseHoldDiagnostics baselineCourseDiagnostics;
 };
 
 struct TrimSnapshot {

@@ -1,16 +1,13 @@
 #include "flightui/visualization/components/FlightCameraController.hpp"
 
 #include "flightui/visualization/render/CameraComponent.hpp"
-#include "common/math/Math.hpp"
 
 #include <algorithm>
 namespace {
 viz::Vec3 AircraftForward(const sim::AircraftState &state) {
   viz::Vec3 forward{1.0F, 0.0F, 0.0F};
-  forward = viz::RotateY(forward,
-      -static_cast<float>(math::DegToRad(state.pitchDeg)));
-  forward = viz::RotateZ(forward,
-      static_cast<float>(math::DegToRad(state.headingDeg)));
+  forward = viz::RotateY(forward, -static_cast<float>(state.pitchRad));
+  forward = viz::RotateZ(forward, static_cast<float>(state.headingRad));
   return viz::Normalize(forward);
 }
 } // namespace
@@ -40,10 +37,9 @@ void FlightCameraController::ApplyOrbitCamera(
   const float lift = std::min(altitude * 0.10F, 8.0F);
   const float lookDown = std::min(altitude * 0.36F, 18.0F);
 
-  camera_->SetEye(aircraft.position
-                  + Vec3{5.5F + pullBack * 0.35F,
-                      -8.0F - pullBack,
-                      3.85F + lift});
+  camera_->SetEye(
+      aircraft.position
+      + Vec3{5.5F + pullBack * 0.35F, -8.0F - pullBack, 3.85F + lift});
   camera_->SetTarget(aircraft.position + Vec3{0.0F, 0.0F, -lookDown});
   camera_->SetWorldUp({0.0F, 0.0F, 1.0F});
 }

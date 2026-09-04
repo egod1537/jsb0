@@ -5,8 +5,6 @@
 #include "sim/telemetry/TelemetryChannel.hpp"
 #include "sim/telemetry/TelemetryRegistry.hpp"
 #include "contract/telemetry/mcap/McapTelemetryRecorder.hpp"
-#include "common/math/Math.hpp"
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -60,12 +58,12 @@ std::optional<TelemetrySourceFrame> CaptureTelemetrySource(
   if (commandedRoll && roll && rollError && commandedRollRate && rollRate
       && rollRateError && rollHoldAileron) {
     source.rollHold = RollHoldDiagnostics{
-        .commandedRollRad = math::DegToRad(*commandedRoll),
-        .rollRad = math::DegToRad(*roll),
-        .rollErrorRad = math::DegToRad(*rollError),
-        .commandedRollRateRadPerSec = math::DegToRad(*commandedRollRate),
-        .rollRateRadPerSec = math::DegToRad(*rollRate),
-        .rollRateErrorRadPerSec = math::DegToRad(*rollRateError),
+        .commandedRollRad = *commandedRoll,
+        .rollRad = *roll,
+        .rollErrorRad = *rollError,
+        .commandedRollRateRadPerSec = *commandedRollRate,
+        .rollRateRadPerSec = *rollRate,
+        .rollRateErrorRadPerSec = *rollRateError,
         .aileronCommand = *rollHoldAileron,
     };
   }
@@ -78,9 +76,9 @@ std::optional<TelemetrySourceFrame> CaptureTelemetrySource(
       LatestValue(registry, paths::AircraftControlAileron, simulationTimeSec);
   if (!source.rollHold && commandedRoll && aircraftRoll && aircraftRollRate
       && aileron) {
-    const double commandedRollRad = math::DegToRad(*commandedRoll);
-    const double rollRad = math::DegToRad(*aircraftRoll);
-    const double rollRateRadPerSec = math::DegToRad(*aircraftRollRate);
+    const double commandedRollRad = *commandedRoll;
+    const double rollRad = *aircraftRoll;
+    const double rollRateRadPerSec = *aircraftRollRate;
     source.rollHold = RollHoldDiagnostics{
         .commandedRollRad = commandedRollRad,
         .rollRad = rollRad,
@@ -92,8 +90,7 @@ std::optional<TelemetrySourceFrame> CaptureTelemetrySource(
     };
   }
   if (aircraftRoll && aircraftRollRate) {
-    source.aircraftState = AircraftRollState{math::DegToRad(*aircraftRoll),
-        math::DegToRad(*aircraftRollRate)};
+    source.aircraftState = AircraftRollState{*aircraftRoll, *aircraftRollRate};
   }
 
   if (aileron) {

@@ -1,6 +1,7 @@
 #include "sim/InitialCondition.hpp"
 
 #include <cmath>
+#include <numbers>
 
 namespace {
 bool ValidationFailed(std::string *errorMessage, const char *message) {
@@ -19,32 +20,34 @@ bool ValidateInitialCondition(const InitialCondition &initialCondition,
     errorMessage->clear();
   }
 
-  if (!std::isfinite(initialCondition.latitudeDeg)
-      || initialCondition.latitudeDeg < -90.0
-      || initialCondition.latitudeDeg > 90.0) {
+  constexpr double HalfPi = std::numbers::pi_v<double> / 2.0;
+  constexpr double Pi = std::numbers::pi_v<double>;
+  if (!std::isfinite(initialCondition.latitudeRad)
+      || initialCondition.latitudeRad < -HalfPi
+      || initialCondition.latitudeRad > HalfPi) {
     return ValidationFailed(errorMessage,
-        "Latitude must be finite and between -90 and 90 degrees.");
+        "Latitude must be finite and between -pi/2 and pi/2 radians.");
   }
 
-  if (!std::isfinite(initialCondition.longitudeDeg)
-      || initialCondition.longitudeDeg < -180.0
-      || initialCondition.longitudeDeg > 180.0) {
+  if (!std::isfinite(initialCondition.longitudeRad)
+      || initialCondition.longitudeRad < -Pi
+      || initialCondition.longitudeRad > Pi) {
     return ValidationFailed(errorMessage,
-        "Longitude must be finite and between -180 and 180 degrees.");
+        "Longitude must be finite and between -pi and pi radians.");
   }
 
-  if (!std::isfinite(initialCondition.altitudeFt)) {
+  if (!std::isfinite(initialCondition.altitudeAslM)) {
     return ValidationFailed(errorMessage, "Altitude must be finite.");
   }
 
-  if (!std::isfinite(initialCondition.rollDeg)
-      || !std::isfinite(initialCondition.pitchDeg)
-      || !std::isfinite(initialCondition.headingDeg)) {
+  if (!std::isfinite(initialCondition.rollRad)
+      || !std::isfinite(initialCondition.pitchRad)
+      || !std::isfinite(initialCondition.headingRad)) {
     return ValidationFailed(errorMessage, "Attitude values must be finite.");
   }
 
-  if (!std::isfinite(initialCondition.airspeedKts)
-      || initialCondition.airspeedKts < 0.0) {
+  if (!std::isfinite(initialCondition.calibratedAirspeedMps)
+      || initialCondition.calibratedAirspeedMps < 0.0) {
     return ValidationFailed(errorMessage,
         "Airspeed must be finite and non-negative.");
   }

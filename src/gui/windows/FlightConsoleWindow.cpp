@@ -20,9 +20,10 @@ void FlightConsoleWindow::OnRender(const sim::SimulationSnapshot &snapshot) {
         +UI::Heading("JSB Flight Console")
         + UI::Text("Aircraft: " + config.aircraftName)
         + UI::ValueLabel("Simulation", config.simulationHz, "%.1f Hz")
-        + UI::ValueLabel("Initial altitude", initialCondition.altitudeFt, "%.0f ft")
-        + UI::ValueLabel("Initial airspeed", initialCondition.airspeedKts,
-                         "%.0f kt")
+        + UI::ValueLabel("Initial altitude ASL", initialCondition.altitudeAslM,
+                         "%.1f m")
+        + UI::ValueLabel("Initial CAS",
+                         initialCondition.calibratedAirspeedMps, "%.1f m/s")
       ];
   // clang-format on
 

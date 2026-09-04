@@ -95,18 +95,19 @@ void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
 
   sim::SimulationScenario scenario;
   scenario.name = "Dual Roll Hold";
-  scenario.initialCondition.altitudeFt = 4200.0;
-  scenario.initialCondition.airspeedKts = 105.0;
-  scenario.initialCondition.rollDeg = 2.0;
-  scenario.initialCondition.pitchDeg = 1.0;
-  scenario.initialCondition.headingDeg = 35.0;
+  scenario.initialCondition.altitudeAslM = math::FeetToMeters(4200.0);
+  scenario.initialCondition.calibratedAirspeedMps =
+      math::KnotsToMetersPerSecond(105.0);
+  scenario.initialCondition.rollRad = math::DegToRad(2.0);
+  scenario.initialCondition.pitchRad = math::DegToRad(1.0);
+  scenario.initialCondition.headingRad = math::DegToRad(35.0);
   scenario.runTrim = false;
   scenario.events.front().timeSec = 0.0;
-  scenario.events.front().command.rollDeg = 8.0;
+  scenario.events.front().command.rollRad = math::DegToRad(8.0);
   scenario.durationSec = 12.0;
 
   sim::SimulationScenario invalidScenario = scenario;
-  invalidScenario.settlingBandDeg = -1.0;
+  invalidScenario.settlingBandRad = -1.0;
   assert(!control.RunExecution(MakeRequest(invalidScenario)));
   assert(control.GetSimulationExecutionState()
          == application::SimulationExecutionState::Stopped);
@@ -129,20 +130,20 @@ void TestScenarioExecutesOnlyScenarioSelectedAutopilot() {
   assert(snapshot.baselineAutopilot.has_value());
   const sim::InitialCondition &primaryCondition =
       snapshot.primary.currentCondition;
-  assert(NearlyEqual(primaryCondition.altitudeFt,
-      scenario.initialCondition.altitudeFt));
-  assert(NearlyEqual(primaryCondition.airspeedKts,
-      scenario.initialCondition.airspeedKts));
-  assert(
-      NearlyEqual(primaryCondition.rollDeg, scenario.initialCondition.rollDeg));
-  assert(NearlyEqual(primaryCondition.pitchDeg,
-      scenario.initialCondition.pitchDeg));
-  assert(NearlyEqual(primaryCondition.headingDeg,
-      scenario.initialCondition.headingDeg));
+  assert(NearlyEqual(primaryCondition.altitudeAslM,
+      scenario.initialCondition.altitudeAslM));
+  assert(NearlyEqual(primaryCondition.calibratedAirspeedMps,
+      scenario.initialCondition.calibratedAirspeedMps));
+  assert(NearlyEqual(
+      primaryCondition.rollRad, scenario.initialCondition.rollRad));
+  assert(NearlyEqual(
+      primaryCondition.pitchRad, scenario.initialCondition.pitchRad));
+  assert(NearlyEqual(
+      primaryCondition.headingRad, scenario.initialCondition.headingRad));
   assert(snapshot.primaryAutopilot.primaryRollHold.enabled);
   assert(!snapshot.baselineAutopilot->baselineRollHold.enabled);
   assert(std::abs(snapshot.primaryAutopilot.primaryRollHold.targetRollRad
-                  - math::DegToRad(scenario.events.front().command.rollDeg))
+                  - scenario.events.front().command.rollRad)
          < 1.0e-12);
   const auto primaryTelemetry =
       control.GetTelemetrySnapshot(sim::SimulationSlot::Primary);

@@ -99,7 +99,7 @@ private:
   struct WorldOrigin {
     double latitudeRad = 0.0;
     double longitudeRad = 0.0;
-    double radiusFt = 0.0;
+    double altitudeAslM = 0.0;
     bool initialized = false;
   };
 

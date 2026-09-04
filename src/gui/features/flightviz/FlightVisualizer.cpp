@@ -22,15 +22,17 @@
 namespace {
 constexpr float MinVisualAltitude = 0.35F;
 constexpr float MaxVisualAltitude = 52.0F;
-constexpr float LinearAltitudeBreakFt = 1800.0F;
 constexpr float FeetPerVizUnit = 75.0F;
-constexpr float HighAltitudeLogFt = 450.0F;
+constexpr float MetersPerVizUnit =
+    static_cast<float>(math::FeetToMeters(FeetPerVizUnit));
+constexpr float LinearAltitudeBreakM =
+    static_cast<float>(math::FeetToMeters(1800.0));
+constexpr float HighAltitudeLogM =
+    static_cast<float>(math::FeetToMeters(450.0));
 constexpr float HighAltitudeLogScale = 8.0F;
-constexpr float MetersPerVizUnit = FeetPerVizUnit * 0.3048F;
 constexpr float AircraftOriginZ = 0.35F;
 constexpr double EarthRadiusMeters = 6'371'000.0;
 constexpr double MaxMotionTickSec = 0.25;
-constexpr double KnotsToMetersPerSec = 0.5144444444444445;
 constexpr double MinimumMinimapSpanMeters = 100.0;
 constexpr float MinimapHorizontalDirection = -1.0F;
 constexpr float ToolbarHeight = 28.0F;
@@ -41,22 +43,22 @@ ImVec2 Offset(ImVec2 point, float x, float y) {
   return {point.x + x, point.y + y};
 }
 
-float VisualAltitudeFromAglFt(double altitudeAglFt) {
-  if (!std::isfinite(altitudeAglFt)) {
+float VisualAltitudeFromAglM(double altitudeAglM) {
+  if (!std::isfinite(altitudeAglM)) {
     return MinVisualAltitude;
   }
 
-  const float altitudeFt = static_cast<float>(std::max(altitudeAglFt, 0.0));
-  if (altitudeFt <= LinearAltitudeBreakFt) {
-    return std::clamp(altitudeFt / FeetPerVizUnit,
+  const float altitudeM = static_cast<float>(std::max(altitudeAglM, 0.0));
+  if (altitudeM <= LinearAltitudeBreakM) {
+    return std::clamp(altitudeM / MetersPerVizUnit,
         MinVisualAltitude,
         MaxVisualAltitude);
   }
 
-  const float linearAltitude = LinearAltitudeBreakFt / FeetPerVizUnit;
+  const float linearAltitude = LinearAltitudeBreakM / MetersPerVizUnit;
   const float compressedAltitude =
       linearAltitude
-      + std::log1p((altitudeFt - LinearAltitudeBreakFt) / HighAltitudeLogFt)
+      + std::log1p((altitudeM - LinearAltitudeBreakM) / HighAltitudeLogM)
             * HighAltitudeLogScale;
   return std::clamp(compressedAltitude, MinVisualAltitude, MaxVisualAltitude);
 }
@@ -66,10 +68,9 @@ float HorizontalSpeedMps(const sim::AircraftState &state) {
     return static_cast<float>(state.trueAirspeedMps);
   }
 
-  if (std::isfinite(state.calibratedAirspeedKts)
-      && state.calibratedAirspeedKts > 0.1) {
-    return static_cast<float>(
-        state.calibratedAirspeedKts * KnotsToMetersPerSec);
+  if (std::isfinite(state.calibratedAirspeedMps)
+      && state.calibratedAirspeedMps > 0.1) {
+    return static_cast<float>(state.calibratedAirspeedMps);
   }
 
   return 0.0F;
@@ -456,7 +457,7 @@ void FlightVisualizer::RenderMinimap(ImVec2 min, ImVec2 max) {
         FlightUI::Ui(3.0F),
         IM_COL32(107, 166, 112, 230));
 
-    const double courseRad = math::DegToRad(snapshot_.aircraft.state.courseDeg);
+    const double courseRad = snapshot_.aircraft.state.courseRad;
     const ImVec2 forward{
         MinimapHorizontalDirection * static_cast<float>(std::sin(courseRad)),
         static_cast<float>(-std::cos(courseRad)),
@@ -495,8 +496,7 @@ AircraftSnapshot FlightVisualizer::CaptureAircraft(
   snapshot.controlInput = source.controlInput;
   snapshot.pitchTrim = source.pitchTrim;
   snapshot.position = ProjectWorldPosition(source);
-  snapshot.visualAltitude =
-      VisualAltitudeFromAglFt(snapshot.state.altitudeAglFt);
+  snapshot.visualAltitude = VisualAltitudeFromAglM(snapshot.state.altitudeAglM);
   snapshot.available = true;
   return snapshot;
 }
@@ -520,16 +520,16 @@ void FlightVisualizer::UpdateWorldOrigin(
   const sim::FDMKinematicState &state = source.fdmState.state;
   const double latitudeRad = state.latitudeRad;
   const double longitudeRad = state.longitudeRad;
-  const double radiusFt = state.altitudeAslFt;
+  const double altitudeAslM = source.aircraft.altitudeAslM;
   if (!std::isfinite(latitudeRad) || !std::isfinite(longitudeRad)
-      || !std::isfinite(radiusFt)) {
+      || !std::isfinite(altitudeAslM)) {
     return;
   }
 
   worldOrigin_ = {
       .latitudeRad = latitudeRad,
       .longitudeRad = longitudeRad,
-      .radiusFt = radiusFt,
+      .altitudeAslM = altitudeAslM,
       .initialized = true,
   };
 }
@@ -543,9 +543,9 @@ Vec3 FlightVisualizer::ProjectWorldPosition(
   const sim::FDMKinematicState &state = source.fdmState.state;
   const double latitudeRad = state.latitudeRad;
   const double longitudeRad = state.longitudeRad;
-  const double radiusFt = state.altitudeAslFt;
+  const double altitudeAslM = source.aircraft.altitudeAslM;
   if (!std::isfinite(latitudeRad) || !std::isfinite(longitudeRad)
-      || !std::isfinite(radiusFt)) {
+      || !std::isfinite(altitudeAslM)) {
     return {0.0F, 0.0F, AircraftOriginZ};
   }
 
@@ -554,11 +554,11 @@ Vec3 FlightVisualizer::ProjectWorldPosition(
   const double eastMeters =
       math::WrapAngleRad(longitudeRad - worldOrigin_.longitudeRad)
       * std::cos(worldOrigin_.latitudeRad) * EarthRadiusMeters;
-  const double altitudeDeltaFt = radiusFt - worldOrigin_.radiusFt;
+  const double altitudeDeltaM = altitudeAslM - worldOrigin_.altitudeAslM;
   return {
       static_cast<float>(northMeters / MetersPerVizUnit),
       static_cast<float>(eastMeters / MetersPerVizUnit),
-      AircraftOriginZ + static_cast<float>(altitudeDeltaFt / FeetPerVizUnit),
+      AircraftOriginZ + static_cast<float>(altitudeDeltaM / MetersPerVizUnit),
   };
 }
 
@@ -590,13 +590,13 @@ void FlightVisualizer::SyncGroundScroll(const sim::AircraftState &state) {
   }
 
   const float speedMps = HorizontalSpeedMps(state);
-  if (speedMps <= 0.0F || !std::isfinite(state.headingDeg)) {
+  if (speedMps <= 0.0F || !std::isfinite(state.headingRad)) {
     return;
   }
 
   const float distanceViz =
       static_cast<float>(dt) * speedMps / MetersPerVizUnit;
-  const float headingRad = static_cast<float>(math::DegToRad(state.headingDeg));
+  const float headingRad = static_cast<float>(state.headingRad);
   const Vec3 forward{std::cos(headingRad), std::sin(headingRad), 0.0F};
 
   motion_.groundScroll = motion_.groundScroll - forward * distanceViz;
